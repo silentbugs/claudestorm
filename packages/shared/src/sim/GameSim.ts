@@ -620,6 +620,7 @@ export class GameSim {
   }
 
   private leapLand(p: PlayerEntity): void {
+    if (p.leapLandRadius <= 0) return; // pure movement dash (Wind Rush): no landing slam
     this.events.push({ type: 'detonate', x: p.x, z: p.z, radius: p.leapLandRadius, abilityId: 'gustLeap' });
     for (const target of this.players.values()) {
       if (!target.alive || target.id === p.id) continue;
