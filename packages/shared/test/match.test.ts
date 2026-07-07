@@ -64,7 +64,7 @@ describe('storm', () => {
 describe('match flow', () => {
   it('ends with a winner when only one player remains', () => {
     const sim = makeSim([
-      player(1, 0, 0, { loadout: loadout(['frostArrow']) }),
+      player(1, 0, 0, { loadout: loadout(['rimeArrow']) }),
       player(2, 6, 0),
     ]);
     let snap = sim.step();
@@ -84,7 +84,7 @@ describe('determinism', () => {
       new GameSim({
         seed: 42,
         players: [
-          { id: 1, name: 'Human', isBot: false, loadout: loadout(['frostArrow', 'stormCall'], ['graspingChains'], 'rare') },
+          { id: 1, name: 'Human', isBot: false, loadout: loadout(['rimeArrow', 'starBomb'], ['huntersChains'], 'rare') },
           { id: 2, name: 'Bot1', isBot: true },
           { id: 3, name: 'Bot2', isBot: true },
           { id: 4, name: 'Bot3', isBot: true },

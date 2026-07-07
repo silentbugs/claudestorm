@@ -69,6 +69,7 @@ import {
   UTILITY_ABILITIES,
   slotCategory,
   stackedRarity,
+  type AbilityDef,
 } from './abilities.js';
 import { computeBotInput } from './bots.js';
 import type {
@@ -197,6 +198,15 @@ export class GameSim {
         rootTicks: 0,
         slowTicks: 0,
         slowFactor: 1,
+        stunTicks: 0,
+        poisonTicks: 0,
+        poisonDps: 0,
+        poisonSourceId: 0,
+        stealthTicks: 0,
+        immuneTicks: 0,
+        faeTicks: 0,
+        speedBuffTicks: 0,
+        speedBuffMult: 1,
         shieldHp: 0,
         shieldTicks: 0,
         auraTicks: 0,
@@ -210,6 +220,10 @@ export class GameSim {
         leapDamage: 0,
         leapLandRadius: 0,
         leapKnockback: 0,
+        leapLandStun: 0,
+        leapFlat: false,
+        leapDashDamage: 0,
+        leapHitIds: new Set(),
         kbTicks: 0,
         kbVelX: 0,
         kbVelZ: 0,
@@ -391,6 +405,16 @@ export class GameSim {
     if (p.healCdTicks > 0) p.healCdTicks--;
     if (p.slowTicks > 0) p.slowTicks--;
     if (p.rootTicks > 0) p.rootTicks--;
+    if (p.stunTicks > 0) p.stunTicks--;
+    if (p.stealthTicks > 0) p.stealthTicks--;
+    if (p.immuneTicks > 0) p.immuneTicks--;
+    if (p.faeTicks > 0) p.faeTicks--;
+    if (p.speedBuffTicks > 0) p.speedBuffTicks--;
+    if (p.poisonTicks > 0) {
+      p.poisonTicks--;
+      this.damagePlayer(p, p.poisonDps * TICK_DT, p.poisonSourceId);
+      if (!p.alive) return;
+    }
     if (p.shieldTicks > 0) {
       p.shieldTicks--;
       if (p.shieldTicks === 0) p.shieldHp = 0;
@@ -402,12 +426,14 @@ export class GameSim {
       this.auraDamage(p);
     }
 
-    // Buttons
-    const canAct = !p.gliding && this.phase === 'live';
-    if (p.pendingButtons.has('jump') && p.y === 0 && !p.gliding && p.leapTicks === 0) {
+    // Buttons. Stun blocks everything; faeform blocks attacks but not movement tools.
+    const stunned = p.stunTicks > 0;
+    const canAct = !p.gliding && this.phase === 'live' && !stunned;
+    const canAttack = canAct && p.faeTicks === 0;
+    if (p.pendingButtons.has('jump') && p.y === 0 && !p.gliding && p.leapTicks === 0 && !stunned) {
       p.vy = JUMP_VELOCITY;
     }
-    if (p.pendingButtons.has('roll') && !p.gliding && p.rollCdTicks === 0 && p.leapTicks === 0) {
+    if (p.pendingButtons.has('roll') && !p.gliding && p.rollCdTicks === 0 && p.leapTicks === 0 && !stunned) {
       const dir =
         Math.hypot(p.moveX, p.moveZ) > 0.1
           ? norm(p.moveX, p.moveZ)
@@ -425,8 +451,8 @@ export class GameSim {
       p.healCdTicks = Math.round(HEAL_COOLDOWN * TICK_RATE);
       this.events.push({ type: 'heal', playerId: p.id, amount, x: p.x, z: p.z });
     }
-    if (canAct && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
-    if (canAct) {
+    if (canAttack && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
+    if (canAttack) {
       for (const slot of p.pendingSlotCasts) this.tryCastSlot(p, slot);
     }
     p.pendingButtons.clear();
@@ -471,8 +497,29 @@ export class GameSim {
       vx = p.leapDirX * p.leapSpeed;
       vz = p.leapDirZ * p.leapSpeed;
       p.leapTicks--;
-      const t = 1 - p.leapTicks / p.leapTotalTicks;
-      p.y = Math.max(0, 10 * t * (1 - t));
+      if (p.leapFlat) {
+        p.y = 0;
+      } else {
+        const t = 1 - p.leapTicks / p.leapTotalTicks;
+        p.y = Math.max(0, 10 * t * (1 - t));
+      }
+      // Slicing Winds: carve through anyone touched mid-dash, once each.
+      if (p.leapDashDamage > 0) {
+        for (const target of this.players.values()) {
+          if (!target.alive || target.id === p.id || p.leapHitIds.has(target.id)) continue;
+          if (dist(p.x, p.z, target.x, target.z) < 1.4) {
+            p.leapHitIds.add(target.id);
+            this.damagePlayer(target, p.leapDashDamage, p.id);
+          }
+        }
+        for (const mob of this.mobs.values()) {
+          if (p.leapHitIds.has(mob.id)) continue;
+          if (dist(p.x, p.z, mob.x, mob.z) < 1.4 + mob.radius) {
+            p.leapHitIds.add(mob.id);
+            this.damageMob(mob, p.leapDashDamage, p.id);
+          }
+        }
+      }
       if (p.leapTicks === 0) {
         p.y = 0;
         this.leapLand(p);
@@ -481,10 +528,14 @@ export class GameSim {
       p.rollTicks--;
       vx = p.rollDirX * (ROLL_DISTANCE / ROLL_DURATION);
       vz = p.rollDirZ * (ROLL_DISTANCE / ROLL_DURATION);
-    } else if (p.rootTicks > 0) {
-      // rooted: no horizontal movement
+    } else if (p.rootTicks > 0 || p.stunTicks > 0) {
+      // rooted or stunned: no horizontal movement
     } else {
-      const speed = PLAYER_SPEED * (p.slowTicks > 0 ? p.slowFactor : 1);
+      const speed =
+        PLAYER_SPEED *
+        (p.slowTicks > 0 ? p.slowFactor : 1) *
+        (p.speedBuffTicks > 0 ? p.speedBuffMult : 1) *
+        (p.faeTicks > 0 ? 1.4 : 1);
       vx = p.moveX * speed;
       vz = p.moveZ * speed;
     }
@@ -505,6 +556,7 @@ export class GameSim {
   }
 
   private meleeSwing(p: PlayerEntity): void {
+    p.stealthTicks = 0; // attacking breaks stealth
     p.meleeCdTicks = Math.round(MELEE_INTERVAL * TICK_RATE);
     p.comboCount = p.comboCount >= 3 ? 1 : p.comboCount + 1;
     p.comboExpireTick = this.tick + Math.round(MELEE_COMBO_WINDOW * TICK_RATE);
@@ -550,27 +602,38 @@ export class GameSim {
     const scale = RARITY_MULT[equipped.rarity] * levelDamageMult(p.level);
     p.slotCds[slotIndex] = Math.round(def.cooldown * TICK_RATE);
     p.channel = null;
+    if (def.behavior !== 'buff' && !def.blink) p.stealthTicks = 0; // attacking breaks stealth
     this.events.push({ type: 'cast', casterId: p.id, abilityId: def.id, x: p.x, z: p.z });
 
     switch (def.behavior) {
       case 'projectile': {
         let dir = norm(p.aimX - p.x, p.aimZ - p.z);
         if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
-        const spawnDist = PLAYER_RADIUS + def.projectileRadius! + 0.1;
-        this.projectiles.push({
-          id: this.nextEntityId++,
-          abilityId: def.id,
-          ownerId: p.id,
-          x: p.x + dir.x * spawnDist,
-          z: p.z + dir.z * spawnDist,
-          dirX: dir.x,
-          dirZ: dir.z,
-          speed: def.projectileSpeed!,
-          radius: def.projectileRadius!,
-          damage: def.damage * scale,
-          ticksLeft: Math.round(def.projectileLifetime! * TICK_RATE),
-          scale,
-        });
+        const count = def.volley ?? 1;
+        const spread = def.volleySpreadRad ?? 0;
+        const baseAngle = Math.atan2(dir.x, dir.z);
+        for (let i = 0; i < count; i++) {
+          const angle = baseAngle + (count > 1 ? spread * (i / (count - 1) - 0.5) : 0);
+          const dx = Math.sin(angle);
+          const dz = Math.cos(angle);
+          const spawnDist = PLAYER_RADIUS + def.projectileRadius! + 0.1;
+          this.projectiles.push({
+            id: this.nextEntityId++,
+            abilityId: def.id,
+            ownerId: p.id,
+            x: p.x + dx * spawnDist,
+            z: p.z + dz * spawnDist,
+            dirX: dx,
+            dirZ: dz,
+            speed: def.projectileSpeed!,
+            radius: def.projectileRadius!,
+            damage: def.damage * scale,
+            ticksLeft: Math.round(def.projectileLifetime! * TICK_RATE),
+            scale,
+            returning: false,
+            hitIds: new Set(),
+          });
+        }
         break;
       }
       case 'groundAoE': {
@@ -592,18 +655,59 @@ export class GameSim {
           damage: def.damage * scale,
           endTick: this.tick + Math.round(def.telegraph! * TICK_RATE),
           dps: 0,
+          slowFactor: 1,
+          rootDuration: 0,
         });
+        break;
+      }
+      case 'cone': {
+        this.coneAttack(p, def, scale);
         break;
       }
       case 'selfAura': {
         p.auraTicks = Math.round(def.auraDuration! * TICK_RATE);
         p.auraDps = def.damage * scale;
         p.auraRadius = def.auraRadius!;
+        if (def.auraSpeedMult) {
+          p.speedBuffTicks = p.auraTicks;
+          p.speedBuffMult = def.auraSpeedMult;
+        }
         break;
       }
       case 'leap': {
         let dir = norm(p.moveX, p.moveZ);
         if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+        if (def.dashBackward) dir = { x: -dir.x, z: -dir.z };
+        // Explosive Caltrops: the cluster lands where you were standing.
+        if (def.poolRadius) {
+          this.zones.push({
+            id: this.nextEntityId++,
+            abilityId: def.id,
+            ownerId: p.id,
+            kind: 'pool',
+            x: p.x,
+            z: p.z,
+            radius: def.poolRadius,
+            damage: 0,
+            endTick: this.tick + Math.round(def.poolDuration! * TICK_RATE),
+            dps: (def.poolDps ?? 0) * scale,
+            slowFactor: def.poolSlowFactor ?? 1,
+            rootDuration: 0,
+          });
+        }
+        if (def.blink) {
+          // Fade to Shadow: instant reposition + stealth.
+          const resolved = resolveCollisions(
+            p.x + dir.x * def.leapRange!,
+            p.z + dir.z * def.leapRange!,
+            PLAYER_RADIUS,
+            this.map,
+          );
+          p.x = resolved.x;
+          p.z = resolved.z;
+          p.stealthTicks = Math.round((def.stealthDuration ?? 0) * TICK_RATE);
+          break;
+        }
         p.leapDirX = dir.x;
         p.leapDirZ = dir.z;
         p.leapTotalTicks = Math.round(def.leapDuration! * TICK_RATE);
@@ -611,7 +715,11 @@ export class GameSim {
         p.leapSpeed = def.leapRange! / def.leapDuration!;
         p.leapDamage = def.damage * scale;
         p.leapLandRadius = def.landRadius!;
-        p.leapKnockback = def.knockbackDistance!;
+        p.leapKnockback = def.knockbackDistance ?? 0;
+        p.leapLandStun = def.landStunDuration ?? 0;
+        p.leapFlat = def.dashFlat ?? false;
+        p.leapDashDamage = def.dashDamage ? def.damage * scale : 0;
+        p.leapHitIds = new Set();
         break;
       }
       case 'shield': {
@@ -619,22 +727,92 @@ export class GameSim {
         p.shieldTicks = Math.round(def.shieldDuration! * TICK_RATE);
         break;
       }
+      case 'buff': {
+        const ticks = Math.round(def.buffDuration! * TICK_RATE);
+        if (def.buffKind === 'immune') p.immuneTicks = ticks;
+        else p.faeTicks = ticks;
+        break;
+      }
+      case 'trap': {
+        const fx = Math.sin(p.facing);
+        const fz = Math.cos(p.facing);
+        const count = def.trapCount ?? 3;
+        for (let i = 0; i < count; i++) {
+          const side = (i - (count - 1) / 2) * 1.6;
+          this.zones.push({
+            id: this.nextEntityId++,
+            abilityId: def.id,
+            ownerId: p.id,
+            kind: 'trap',
+            x: p.x + fx * 3 + -fz * side,
+            z: p.z + fz * 3 + fx * side,
+            radius: def.trapRadius ?? 1.2,
+            damage: def.damage * scale,
+            endTick: this.tick + Math.round((def.trapDuration ?? 15) * TICK_RATE),
+            dps: 0,
+            slowFactor: 1,
+            rootDuration: def.rootDuration ?? 1,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  /** Instant swing in a front arc (Searing Axe, Toxic Smackerel). */
+  private coneAttack(p: PlayerEntity, def: AbilityDef, scale: number): void {
+    const fx = Math.sin(p.facing);
+    const fz = Math.cos(p.facing);
+    const range = def.coneRange!;
+    const arcCos = def.coneArcCos!;
+    const inCone = (tx: number, tz: number, r: number): boolean => {
+      const d = dist(p.x, p.z, tx, tz);
+      if (d > range + r) return false;
+      if (d < 0.01) return true;
+      return ((tx - p.x) / d) * fx + ((tz - p.z) / d) * fz > arcCos;
+    };
+    for (const target of this.players.values()) {
+      if (!target.alive || target.id === p.id) continue;
+      if (!inCone(target.x, target.z, PLAYER_RADIUS)) continue;
+      let damage = def.damage * scale;
+      if (def.poisonBonusMult && target.poisonTicks > 0) damage *= def.poisonBonusMult;
+      this.damagePlayer(target, damage, p.id);
+      if (!target.alive) continue;
+      if (def.poisonDps) {
+        target.poisonTicks = Math.round(def.poisonDuration! * TICK_RATE);
+        target.poisonDps = def.poisonDps * scale;
+        target.poisonSourceId = p.id;
+      }
+      if (def.knockbackDistance) {
+        const dir = norm(target.x - p.x, target.z - p.z);
+        target.kbTicks = 4;
+        target.kbVelX = dir.x * def.knockbackDistance * 5;
+        target.kbVelZ = dir.z * def.knockbackDistance * 5;
+      }
+    }
+    for (const mob of this.mobs.values()) {
+      if (inCone(mob.x, mob.z, mob.radius)) this.damageMob(mob, def.damage * scale, p.id);
     }
   }
 
   private leapLand(p: PlayerEntity): void {
-    if (p.leapLandRadius <= 0) return; // pure movement dash (Wind Rush): no landing slam
-    this.events.push({ type: 'detonate', x: p.x, z: p.z, radius: p.leapLandRadius, abilityId: 'gustLeap' });
+    if (p.leapLandRadius <= 0) return; // pure movement dash: no landing slam
+    this.events.push({ type: 'detonate', x: p.x, z: p.z, radius: p.leapLandRadius, abilityId: 'quakingLeap' });
     for (const target of this.players.values()) {
       if (!target.alive || target.id === p.id) continue;
       const d = dist(p.x, p.z, target.x, target.z);
       if (d > p.leapLandRadius) continue;
       this.damagePlayer(target, p.leapDamage, p.id);
       if (target.alive) {
-        const dir = d > 0.01 ? norm(target.x - p.x, target.z - p.z) : { x: 1, z: 0 };
-        target.kbTicks = 4;
-        target.kbVelX = dir.x * p.leapKnockback * 5;
-        target.kbVelZ = dir.z * p.leapKnockback * 5;
+        if (p.leapLandStun > 0) {
+          target.stunTicks = Math.max(target.stunTicks, Math.round(p.leapLandStun * TICK_RATE));
+        }
+        if (p.leapKnockback > 0) {
+          const dir = d > 0.01 ? norm(target.x - p.x, target.z - p.z) : { x: 1, z: 0 };
+          target.kbTicks = 4;
+          target.kbVelX = dir.x * p.leapKnockback * 5;
+          target.kbVelZ = dir.z * p.leapKnockback * 5;
+        }
       }
     }
     for (const mob of this.mobs.values()) {
@@ -748,39 +926,79 @@ export class GameSim {
   private updateProjectiles(): void {
     const survivors: ProjectileEntity[] = [];
     for (const proj of this.projectiles) {
+      const def = ABILITIES[proj.abilityId];
+      const owner = this.players.get(proj.ownerId);
+
+      // Boomerang (Holy Shield): after the outward leg, home back to the owner.
+      if (def.boomerang && proj.ticksLeft <= 0 && !proj.returning) {
+        proj.returning = true;
+      }
+      if (proj.returning && owner?.alive) {
+        const back = norm(owner.x - proj.x, owner.z - proj.z);
+        proj.dirX = back.x;
+        proj.dirZ = back.z;
+      }
       proj.x += proj.dirX * proj.speed * TICK_DT;
       proj.z += proj.dirZ * proj.speed * TICK_DT;
       proj.ticksLeft--;
-      const def = ABILITIES[proj.abilityId];
 
       let gone = false;
-      let expired = false;
-      if (circleBlocked(proj.x, proj.z, proj.radius, this.map)) {
+      if (proj.returning) {
+        // Caught by the owner (or owner died mid-flight).
+        if (!owner?.alive || dist(proj.x, proj.z, owner.x, owner.z) < 1.0) gone = true;
+      } else if (circleBlocked(proj.x, proj.z, proj.radius, this.map)) {
         gone = true;
-        expired = true;
-      } else if (proj.ticksLeft <= 0) {
+      } else if (proj.ticksLeft <= 0 && !def.boomerang) {
         gone = true;
-        expired = true;
-      } else {
+      }
+
+      if (!gone) {
         for (const target of this.players.values()) {
-          if (!target.alive || target.id === proj.ownerId) continue;
+          if (!target.alive || target.id === proj.ownerId || proj.hitIds.has(target.id)) continue;
           if (target.rollTicks > 0) continue; // barrel roll dodges projectiles
           if (dist(proj.x, proj.z, target.x, target.z) < proj.radius + PLAYER_RADIUS) {
+            proj.hitIds.add(target.id);
             this.damagePlayer(target, proj.damage, proj.ownerId);
-            if (def.slowDuration && target.alive) {
-              target.slowTicks = Math.round(def.slowDuration * TICK_RATE);
-              target.slowFactor = def.slowFactor ?? 1;
+            if (target.alive) {
+              if (def.slowDuration) {
+                target.slowTicks = Math.round(def.slowDuration * TICK_RATE);
+                target.slowFactor = def.slowFactor ?? 1;
+              }
+              if (def.stunDuration) {
+                target.stunTicks = Math.max(target.stunTicks, Math.round(def.stunDuration * TICK_RATE));
+              }
+              if (def.knockbackDistance) {
+                const dir = norm(target.x - proj.x + proj.dirX, target.z - proj.z + proj.dirZ);
+                target.kbTicks = 4;
+                target.kbVelX = dir.x * def.knockbackDistance * 5;
+                target.kbVelZ = dir.z * def.knockbackDistance * 5;
+              }
+              if (def.pull) this.pullTarget(proj.ownerId, target, def.rootDuration ?? 0);
             }
-            if (def.pull && target.alive) this.pullTarget(proj.ownerId, target, def.rootDuration ?? 0);
-            gone = true;
+            // Chilling splash around the impact (Rime Arrow).
+            if (def.splashRadius) {
+              for (const other of this.players.values()) {
+                if (!other.alive || other.id === proj.ownerId || other.id === target.id) continue;
+                if (dist(proj.x, proj.z, other.x, other.z) <= def.splashRadius) {
+                  this.damagePlayer(other, proj.damage * (def.splashMult ?? 0.5), proj.ownerId);
+                  if (other.alive && def.slowDuration) {
+                    other.slowTicks = Math.round(def.slowDuration * TICK_RATE);
+                    other.slowFactor = def.slowFactor ?? 1;
+                  }
+                }
+              }
+            }
+            if (!def.boomerang) gone = true;
             break;
           }
         }
         if (!gone) {
           for (const mob of this.mobs.values()) {
+            if (proj.hitIds.has(mob.id)) continue;
             if (dist(proj.x, proj.z, mob.x, mob.z) < proj.radius + mob.radius) {
+              proj.hitIds.add(mob.id);
               this.damageMob(mob, proj.damage, proj.ownerId);
-              gone = true;
+              if (!def.boomerang) gone = true;
               break;
             }
           }
@@ -799,11 +1017,12 @@ export class GameSim {
             radius: def.poolRadius,
             damage: 0,
             endTick: this.tick + Math.round(def.poolDuration! * TICK_RATE),
-            dps: def.poolDps! * proj.scale,
+            dps: (def.poolDps ?? 0) * proj.scale,
+            slowFactor: def.poolSlowFactor ?? 1,
+            rootDuration: 0,
           });
         }
         this.events.push({ type: 'projectileGone', id: proj.id, x: proj.x, z: proj.z });
-        void expired;
       } else {
         survivors.push(proj);
       }
@@ -835,31 +1054,70 @@ export class GameSim {
         for (const target of this.players.values()) {
           if (!target.alive || target.id === zone.ownerId) continue;
           if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
-            this.damagePlayer(target, zone.damage, zone.ownerId);
-            if (zoneDef.rootDuration && target.alive) {
-              target.rootTicks = Math.max(
-                target.rootTicks,
-                Math.round(zoneDef.rootDuration * TICK_RATE),
-              );
+            if (zone.damage > 0) this.damagePlayer(target, zone.damage, zone.ownerId);
+            if (!target.alive) continue;
+            if (zoneDef.stunDuration) {
+              target.stunTicks = Math.max(target.stunTicks, Math.round(zoneDef.stunDuration * TICK_RATE));
+            }
+            if (zoneDef.rootDuration) {
+              target.rootTicks = Math.max(target.rootTicks, Math.round(zoneDef.rootDuration * TICK_RATE));
             }
           }
         }
         for (const mob of this.mobs.values()) {
-          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + mob.radius) {
+          if (zone.damage > 0 && dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + mob.radius) {
             this.damageMob(mob, zone.damage, zone.ownerId);
           }
         }
+        // Snowdrift: the detonation leaves a chilling pool behind.
+        if (zoneDef.poolRadius && zoneDef.behavior === 'groundAoE') {
+          const scale = zone.damage > 0 ? zone.damage / Math.max(1, zoneDef.damage) : 1;
+          this.zones.push({
+            id: this.nextEntityId++,
+            abilityId: zone.abilityId,
+            ownerId: zone.ownerId,
+            kind: 'pool',
+            x: zone.x,
+            z: zone.z,
+            radius: zoneDef.poolRadius,
+            damage: 0,
+            endTick: this.tick + Math.round(zoneDef.poolDuration! * TICK_RATE),
+            dps: (zoneDef.poolDps ?? 0) * scale,
+            slowFactor: zoneDef.poolSlowFactor ?? 1,
+            rootDuration: 0,
+          });
+        }
+      } else if (zone.kind === 'trap') {
+        if (this.tick >= zone.endTick) continue;
+        let sprung = false;
+        for (const target of this.players.values()) {
+          if (!target.alive || target.id === zone.ownerId) continue;
+          if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
+            this.damagePlayer(target, zone.damage, zone.ownerId);
+            if (target.alive) {
+              target.rootTicks = Math.max(target.rootTicks, Math.round(zone.rootDuration * TICK_RATE));
+            }
+            this.events.push({ type: 'detonate', x: zone.x, z: zone.z, radius: zone.radius, abilityId: zone.abilityId });
+            sprung = true;
+            break;
+          }
+        }
+        if (!sprung) survivors.push(zone);
       } else {
-        // Damaging pool
+        // Damaging / chilling pool
         if (this.tick >= zone.endTick) continue;
         for (const target of this.players.values()) {
           if (!target.alive || target.id === zone.ownerId) continue;
           if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
-            this.damagePlayer(target, zone.dps * TICK_DT, zone.ownerId);
+            if (zone.dps > 0) this.damagePlayer(target, zone.dps * TICK_DT, zone.ownerId);
+            if (target.alive && zone.slowFactor < 1) {
+              target.slowTicks = Math.max(target.slowTicks, 8); // refreshed while inside
+              target.slowFactor = zone.slowFactor;
+            }
           }
         }
         for (const mob of this.mobs.values()) {
-          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + mob.radius) {
+          if (zone.dps > 0 && dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + mob.radius) {
             this.damageMob(mob, zone.dps * TICK_DT, zone.ownerId);
           }
         }
@@ -882,7 +1140,7 @@ export class GameSim {
       if (!target) {
         let best = mob.aggroRadius;
         for (const p of this.players.values()) {
-          if (!p.alive || p.gliding) continue;
+          if (!p.alive || p.gliding || p.stealthTicks > 0) continue;
           const d = dist(mob.x, mob.z, p.x, p.z);
           if (d < best) {
             best = d;
@@ -991,6 +1249,9 @@ export class GameSim {
 
   private damagePlayer(target: PlayerEntity, amount: number, sourceId: number | null): void {
     if (this.phase !== 'live' || !target.alive) return;
+    if (target.immuneTicks > 0) return; // Repel: the barrier turns everything away
+    if (target.faeTicks > 0) amount *= 0.4; // Faeform damage reduction
+    target.stealthTicks = 0; // taking damage reveals you
     let remaining = amount;
     if (target.shieldHp > 0) {
       const absorbed = Math.min(target.shieldHp, remaining);
@@ -1099,6 +1360,11 @@ export class GameSim {
         rolling: p.rollTicks > 0,
         rooted: p.rootTicks > 0,
         slowed: p.slowTicks > 0,
+        stunned: p.stunTicks > 0,
+        poisoned: p.poisonTicks > 0,
+        stealthed: p.stealthTicks > 0,
+        immune: p.immuneTicks > 0,
+        fae: p.faeTicks > 0,
         auraActive: p.auraTicks > 0,
         channeling: p.channel ? 1 - p.channel.ticksLeft / p.channel.totalTicks : -1,
         slots: {

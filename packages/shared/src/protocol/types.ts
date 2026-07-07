@@ -1,14 +1,27 @@
+/** The authentic Plunderstorm roster: 10 offensive + 10 utility spells. */
 export type AbilityId =
-  | 'frostArrow'
-  | 'flameCyclone'
-  | 'stormCall'
-  | 'venomOrb'
-  | 'frostNova'
-  | 'shadowLance'
-  | 'gustLeap'
-  | 'graspingChains'
-  | 'stoneShield'
-  | 'windRush';
+  // Offense
+  | 'rimeArrow'
+  | 'fireWhirl'
+  | 'earthbreaker'
+  | 'holyShield'
+  | 'stormArchon'
+  | 'manaSphere'
+  | 'searingAxe'
+  | 'slicingWinds'
+  | 'starBomb'
+  | 'toxicSmackerel'
+  // Utility
+  | 'quakingLeap'
+  | 'huntersChains'
+  | 'steelTraps'
+  | 'windstorm'
+  | 'explosiveCaltrops'
+  | 'snowdrift'
+  | 'lightningBulwark'
+  | 'fadeToShadow'
+  | 'repel'
+  | 'faeform';
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic';
 export type SlotCategory = 'offense' | 'utility';
@@ -72,6 +85,14 @@ export interface PlayerSnapshot {
   rolling: boolean;
   rooted: boolean;
   slowed: boolean;
+  stunned: boolean;
+  poisoned: boolean;
+  /** Hidden from bots; rendered translucent. */
+  stealthed: boolean;
+  /** Repel barrier: immune to all damage. */
+  immune: boolean;
+  /** Faeform: fast, damage-reduced, cannot attack. */
+  fae: boolean;
   auraActive: boolean;
   /** Chest-open progress 0..1, or -1 when not channeling. */
   channeling: number;
@@ -128,8 +149,8 @@ export interface ZoneSnapshot {
   x: number;
   z: number;
   radius: number;
-  kind: 'telegraph' | 'pool';
-  /** Seconds until detonation (telegraph) or disappearance (pool). */
+  kind: 'telegraph' | 'pool' | 'trap';
+  /** Seconds until detonation (telegraph) or disappearance (pool/trap). */
   endsIn: number;
   abilityId: AbilityId;
 }

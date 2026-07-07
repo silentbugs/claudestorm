@@ -51,7 +51,7 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   let target: PlayerEntity | null = null;
   let targetDist = Infinity;
   for (const p of ctx.players) {
-    if (p.id === bot.id || !p.alive) continue;
+    if (p.id === bot.id || !p.alive || p.stealthTicks > 0) continue;
     const d = dist(bot.x, bot.z, p.x, p.z);
     if (d < targetDist) {
       targetDist = d;
@@ -79,27 +79,37 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
 
     if (targetDist < 2.4) buttons.melee = true;
 
-    // Fire whatever offense slots are ready.
+    // Fire whatever offense slots are ready and in range for their behavior.
     for (let i = 0; i < 2; i++) {
       const equipped = bot.slots.offense[i];
       if (!equipped || bot.slotCds[i]! > 0) continue;
       const def = ABILITIES[equipped.abilityId];
       const inRange =
         def.behavior === 'selfAura'
-          ? targetDist < (def.auraRadius ?? 3) + 1.5
+          ? targetDist < (def.auraRadius ?? 3) + 2.5
           : def.behavior === 'groundAoE'
             ? targetDist < Math.max(def.castRange ?? 20, (def.aoeRadius ?? 0) + 1)
-            : targetDist < 26;
+            : def.behavior === 'cone'
+              ? targetDist < (def.coneRange ?? 3) + 0.5
+              : def.behavior === 'leap'
+                ? targetDist > 3 && targetDist < (def.leapRange ?? 10) + 2
+                : targetDist < 26;
       if (inRange && rng.next() < 0.45) slotCasts.push(i);
     }
-    // Utility: chains at mid range, leap/shield when hurt.
+    // Utility: chains at mid range, defensive tools when hurt, traps/CC up close.
     for (const slot of [2, 3]) {
       const utility = bot.slots.utility[slot - 2];
       if (!utility || bot.slotCds[slot]! > 0) continue;
       const def = ABILITIES[utility.abilityId];
       if (def.pull && targetDist > 7 && targetDist < 16 && rng.next() < 0.4) slotCasts.push(slot);
       else if (def.behavior === 'shield' && bot.hp < 45 && rng.next() < 0.5) slotCasts.push(slot);
+      else if (def.behavior === 'buff' && bot.hp < 40 && rng.next() < 0.5) slotCasts.push(slot);
       else if (def.behavior === 'leap' && bot.hp < 35 && rng.next() < 0.35) slotCasts.push(slot);
+      else if (def.behavior === 'trap' && targetDist < 12 && rng.next() < 0.2) slotCasts.push(slot);
+      else if (def.behavior === 'groundAoE' && targetDist < (def.aoeRadius ?? 4) + 1 && rng.next() < 0.35)
+        slotCasts.push(slot);
+      else if (def.behavior === 'projectile' && !def.pull && targetDist < 18 && rng.next() < 0.3)
+        slotCasts.push(slot);
     }
     if (bot.rollCdTicks === 0 && rng.next() < 0.02) buttons.roll = true;
 

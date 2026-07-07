@@ -25,10 +25,12 @@ export const RARITY_COLORS: Record<Rarity, number> = {
 };
 
 const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
-  frostArrow: 0x7fd4ff,
-  venomOrb: 0x6fd44a,
-  graspingChains: 0xd8d8e8,
-  shadowLance: 0xb05df0,
+  rimeArrow: 0x7fd4ff,
+  holyShield: 0xffe9a8,
+  stormArchon: 0x8fd0ff,
+  manaSphere: 0x7a8cff,
+  huntersChains: 0xd8d8e8,
+  windstorm: 0xcfe8dd,
 };
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -193,6 +195,10 @@ class PlayerView {
       gliding: boolean;
       rolling: boolean;
       shielded: boolean;
+      stealthed: boolean;
+      immune: boolean;
+      fae: boolean;
+      poisoned: boolean;
       auraActive: boolean;
       auraRadius: number;
     },
@@ -229,7 +235,10 @@ class PlayerView {
     }
     this.bodyPivot.position.y = 0.95;
     this.glider.visible = p.gliding;
-    this.shield.visible = p.shielded;
+    this.shield.visible = p.shielded || p.immune;
+    (this.shield.material as THREE.MeshBasicMaterial).color.setHex(
+      p.immune ? 0xcfe0ff : 0x9fc4e8,
+    );
     this.aura.visible = p.auraActive;
     if (p.auraActive) {
       this.aura.scale.setScalar(p.auraRadius);
@@ -254,8 +263,14 @@ class PlayerView {
 
     const color = new THREE.Color(this.baseColor(isSelf, isBot));
     if (p.slowed) color.lerp(new THREE.Color(SLOW_COLOR), 0.55);
+    if (p.poisoned) color.lerp(new THREE.Color(0x5fce6a), 0.4);
+    if (p.fae) color.lerp(new THREE.Color(0xe98fd8), 0.7);
     this.bodyMat.color.copy(color);
-    this.hpGroup.visible = true;
+    // Stealth: nearly invisible to enemies, ghostly to yourself.
+    const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
+    this.bodyMat.transparent = this.headMat.transparent = opacity < 1;
+    this.bodyMat.opacity = this.headMat.opacity = opacity;
+    this.hpGroup.visible = !p.stealthed;
     setBar(this.hpFill, p.hpFrac, 1.3);
     this.hpGroup.quaternion.copy(camera.quaternion);
     this.hpGroup.rotation.z = 0;
@@ -397,7 +412,7 @@ interface Effect {
 function makeProjectileMesh(abilityId: AbilityId): THREE.Mesh {
   const color = PROJECTILE_COLORS[abilityId] ?? 0xffffff;
   switch (abilityId) {
-    case 'frostArrow': {
+    case 'rimeArrow': {
       const geo = new THREE.ConeGeometry(0.16, 0.95, 8);
       geo.rotateX(Math.PI / 2); // point along +z so rotation.y aims it
       return new THREE.Mesh(
@@ -405,19 +420,31 @@ function makeProjectileMesh(abilityId: AbilityId): THREE.Mesh {
         new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.6 }),
       );
     }
-    case 'shadowLance': {
-      const geo = new THREE.BoxGeometry(0.15, 0.15, 1.35);
+    case 'holyShield': {
+      // Spinning golden disc.
+      const geo = new THREE.CylinderGeometry(0.55, 0.55, 0.12, 16);
+      geo.rotateX(Math.PI / 2);
       return new THREE.Mesh(
         geo,
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.8 }),
+        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3 }),
       );
     }
-    case 'venomOrb':
+    case 'stormArchon':
       return new THREE.Mesh(
-        new THREE.SphereGeometry(0.42, 12, 10),
+        new THREE.OctahedronGeometry(0.28),
+        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.8 }),
+      );
+    case 'manaSphere':
+      return new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 14, 12),
+        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3 }),
+      );
+    case 'windstorm':
+      return new THREE.Mesh(
+        new THREE.TorusKnotGeometry(0.3, 0.1, 32, 6),
         new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }),
       );
-    case 'graspingChains':
+    case 'huntersChains':
       return new THREE.Mesh(
         new THREE.BoxGeometry(0.24, 0.24, 0.24),
         new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }),
@@ -476,8 +503,12 @@ export class EntityViews {
           gliding: p.gliding,
           rolling: p.rolling,
           shielded: p.shieldHp > 0,
+          stealthed: p.stealthed,
+          immune: p.immune,
+          fae: p.fae,
+          poisoned: p.poisoned,
           auraActive: p.auraActive,
-          auraRadius: ABILITIES.flameCyclone.auraRadius ?? 3,
+          auraRadius: ABILITIES.fireWhirl.auraRadius ?? 3,
         },
         p.id === selfId,
         p.isBot,
@@ -581,9 +612,10 @@ export class EntityViews {
       const pp = prevProj.get(proj.id) ?? proj;
       mesh.position.set(lerp(pp.x, proj.x, t), 1.1, lerp(pp.z, proj.z, t));
       mesh.rotation.y = Math.atan2(proj.dirX, proj.dirZ);
-      if (proj.abilityId === 'graspingChains') mesh.rotation.z = now * 14;
-      else if (proj.abilityId === 'venomOrb') mesh.scale.setScalar(1 + 0.14 * Math.sin(now * 13));
-      else if (proj.abilityId === 'shadowLance') mesh.rotation.z = now * 9;
+      if (proj.abilityId === 'huntersChains') mesh.rotation.z = now * 14;
+      else if (proj.abilityId === 'holyShield') mesh.rotation.z = now * 12;
+      else if (proj.abilityId === 'manaSphere') mesh.scale.setScalar(1 + 0.1 * Math.sin(now * 11));
+      else if (proj.abilityId === 'windstorm') mesh.rotation.z = now * 8;
     }
     for (const [id, mesh] of this.projectiles) {
       if (!liveProj.has(id)) {
@@ -598,11 +630,16 @@ export class EntityViews {
       liveZones.add(zone.id);
       let view = this.zones.get(zone.id);
       if (!view) {
-        const isPool = zone.kind === 'pool';
-        // Telegraph tint hints at what's coming: icy blue for Frost Nova.
-        const icy = zone.abilityId === 'frostNova';
-        const color = isPool ? 0x59c33a : icy ? 0x9fd8ff : 0xffb14d;
-        const fillColor = isPool ? 0x3f9c28 : icy ? 0x4d9be6 : 0xff8c2e;
+        const icy = zone.abilityId === 'snowdrift' || zone.abilityId === 'rimeArrow';
+        let color: number;
+        let fillColor: number;
+        if (zone.kind === 'trap') {
+          [color, fillColor] = [0xb8bcc8, 0x6a6f7d];
+        } else if (zone.kind === 'pool') {
+          [color, fillColor] = icy ? [0x9fd8ff, 0x4d9be6] : [0xff8c5e, 0xd45a2e];
+        } else {
+          [color, fillColor] = icy ? [0x9fd8ff, 0x4d9be6] : [0xffb14d, 0xff8c2e];
+        }
         const group = new THREE.Group();
         const outline = new THREE.Mesh(
           new THREE.RingGeometry(zone.radius - 0.15, zone.radius, 48),
@@ -611,7 +648,11 @@ export class EntityViews {
         outline.rotation.x = -Math.PI / 2;
         const fill = new THREE.Mesh(
           new THREE.CircleGeometry(zone.radius, 48),
-          new THREE.MeshBasicMaterial({ color: fillColor, transparent: true, opacity: isPool ? 0.4 : 0.3 }),
+          new THREE.MeshBasicMaterial({
+            color: fillColor,
+            transparent: true,
+            opacity: zone.kind === 'pool' ? 0.4 : zone.kind === 'trap' ? 0.25 : 0.3,
+          }),
         );
         fill.rotation.x = -Math.PI / 2;
         group.add(outline, fill);
@@ -647,22 +688,33 @@ export class EntityViews {
         case 'cast':
           this.players.get(ev.casterId)?.triggerCast();
           switch (ev.abilityId) {
-            case 'gustLeap':
-            case 'windRush':
+            case 'quakingLeap':
+            case 'slicingWinds':
+            case 'explosiveCaltrops':
               this.spawnBurst(ev.x, ev.z, 1.6, 0xd8cfb8, 0.35); // dust kick at takeoff
               break;
-            case 'frostArrow':
-            case 'frostNova':
+            case 'rimeArrow':
+            case 'snowdrift':
               this.spawnFlash(ev.x, ev.z, 0.9, 0x9fd8ff, 0.16);
               break;
-            case 'shadowLance':
-              this.spawnFlash(ev.x, ev.z, 0.9, 0xb05df0, 0.2);
+            case 'earthbreaker':
+              this.spawnBurst(ev.x, ev.z, 1.4, 0xa8845a, 0.3);
               break;
-            case 'flameCyclone':
+            case 'fireWhirl':
+            case 'searingAxe':
               this.spawnBurst(ev.x, ev.z, 1.2, 0xff7b2e, 0.3);
               break;
-            case 'stoneShield':
-              this.spawnFlash(ev.x, ev.z, 1.3, 0xc9c2a8, 0.3);
+            case 'fadeToShadow':
+              this.spawnBurst(ev.x, ev.z, 1.4, 0x3a2f55, 0.45, 0.8); // shadow puff at origin
+              break;
+            case 'repel':
+              this.spawnFlash(ev.x, ev.z, 1.5, 0x9fb8ff, 0.3);
+              break;
+            case 'faeform':
+              this.spawnBurst(ev.x, ev.z, 1.4, 0xe98fd8, 0.4, 1.0);
+              break;
+            case 'lightningBulwark':
+              this.spawnFlash(ev.x, ev.z, 1.3, 0xc9e2ff, 0.3);
               break;
             default:
               this.spawnFlash(ev.x, ev.z, 1.1, 0xcfe8ff, 0.16);
@@ -676,15 +728,19 @@ export class EntityViews {
           break;
         }
         case 'detonate':
-          if (ev.abilityId === 'stormCall') {
-            // Lightning: a bright column stabbing down from the sky.
-            this.spawnColumn(ev.x, ev.z, 0.5, 16, 0xeaf2ff, 0.25);
-            this.spawnBurst(ev.x, ev.z, ev.radius, 0xffe38a, 0.35);
-          } else if (ev.abilityId === 'frostNova') {
+          if (ev.abilityId === 'starBomb') {
+            // Cosmic blast: a bright column stabbing down from the sky.
+            this.spawnColumn(ev.x, ev.z, 0.5, 16, 0xd8c8ff, 0.25);
+            this.spawnBurst(ev.x, ev.z, ev.radius, 0xb89aff, 0.35);
+          } else if (ev.abilityId === 'snowdrift') {
             this.spawnBurst(ev.x, ev.z, ev.radius, 0x9fd8ff, 0.4);
-            this.spawnFlash(ev.x, ev.z, ev.radius * 0.5, 0xe8f6ff, 0.25);
-          } else if (ev.abilityId === 'gustLeap') {
+          } else if (ev.abilityId === 'earthbreaker') {
+            this.spawnBurst(ev.x, ev.z, ev.radius, 0xa8845a, 0.4);
+            this.spawnFlash(ev.x, ev.z, ev.radius * 0.5, 0xd9c9a8, 0.25);
+          } else if (ev.abilityId === 'quakingLeap') {
             this.spawnBurst(ev.x, ev.z, ev.radius, 0xd8cfb8, 0.35);
+          } else if (ev.abilityId === 'steelTraps') {
+            this.spawnFlash(ev.x, ev.z, 1.0, 0xd8d8e8, 0.2);
           } else {
             this.spawnBurst(ev.x, ev.z, ev.radius, 0xffe38a, 0.35);
             this.spawnFlash(ev.x, ev.z, ev.radius * 0.6, 0xfff6d9, 0.25);

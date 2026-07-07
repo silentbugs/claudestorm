@@ -95,14 +95,24 @@ export class Hud {
 
     const abilityStats = (def: AbilityDef): string => {
       const parts: string[] = [];
-      if (def.damage > 0) parts.push(`${def.behavior === 'selfAura' ? `${def.damage}/s` : def.damage} damage`);
+      if (def.damage > 0)
+        parts.push(
+          `${def.behavior === 'selfAura' ? `${def.damage}/s` : def.damage} damage${def.volley ? ` ×${def.volley}` : ''}`,
+        );
       parts.push(`${def.cooldown}s cooldown`);
-      if (def.slowDuration) parts.push('slows');
+      if (def.slowDuration || (def.poolSlowFactor ?? 1) < 1) parts.push('slows');
+      if (def.stunDuration || def.landStunDuration) parts.push('stuns');
       if (def.rootDuration) parts.push('roots');
       if (def.pull) parts.push('pulls');
+      if (def.poisonDps) parts.push('poisons');
+      if (def.boomerang) parts.push('returns to you');
       if (def.poolDps) parts.push(`${def.poolDps}/s pool`);
       if (def.shieldAmount) parts.push(`${def.shieldAmount} absorb`);
       if (def.knockbackDistance) parts.push('knockback');
+      if (def.stealthDuration) parts.push('stealth');
+      if (def.buffKind === 'immune') parts.push(`${def.buffDuration}s immunity`);
+      if (def.buffKind === 'faeform') parts.push('fast + tough, no attacks');
+      if (def.trapCount) parts.push(`${def.trapCount} traps`);
       return parts.join(' · ');
     };
 

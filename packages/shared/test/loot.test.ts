@@ -17,7 +17,7 @@ describe('chests', () => {
   it('opens after channeling and spawns loot', () => {
     const map = { ...FLAT_MAP, chests: [{ x: 2, z: 0 }] };
     // Full loadout so spawned scrolls are not auto-equipped before we count them.
-    const full = loadout(['frostArrow', 'stormCall'], ['gustLeap']);
+    const full = loadout(['rimeArrow', 'starBomb'], ['quakingLeap']);
     const sim = makeSim([player(1, 0, 0, { loadout: full })], { map });
     sim.applyInput(1, cmd({ buttons: PRESS_INTERACT }));
     const channelTicks = Math.round(CHEST_CHANNEL_SECONDS * TICK_RATE);
@@ -61,10 +61,10 @@ describe('scrolls', () => {
 describe('ability rank-ups', () => {
   it('picking up a duplicate scroll upgrades the equipped rank', () => {
     const map = { ...FLAT_MAP, scrolls: [{ x: 1, z: 0 }] };
-    const sim = makeSim([player(1, 0, 0, { loadout: loadout(['frostArrow']) })], { map });
+    const sim = makeSim([player(1, 0, 0, { loadout: loadout(['rimeArrow']) })], { map });
     // Force the world scroll to be a common duplicate of the equipped ability.
     const scroll = [...sim.scrolls.values()][0]!;
-    scroll.abilityId = 'frostArrow';
+    scroll.abilityId = 'rimeArrow';
     scroll.rarity = 'common';
     const snap = sim.step(); // auto-pickup range
     expect(snap.scrolls).toHaveLength(0);
@@ -74,17 +74,17 @@ describe('ability rank-ups', () => {
 
   it('a higher-rarity duplicate jumps straight to its rank; epic caps and leaves the scroll', () => {
     const map = { ...FLAT_MAP, scrolls: [{ x: 1, z: 0 }] };
-    const sim = makeSim([player(1, 0, 0, { loadout: loadout(['frostArrow']) })], { map });
+    const sim = makeSim([player(1, 0, 0, { loadout: loadout(['rimeArrow']) })], { map });
     const scroll = [...sim.scrolls.values()][0]!;
-    scroll.abilityId = 'frostArrow';
+    scroll.abilityId = 'rimeArrow';
     scroll.rarity = 'epic';
     sim.step();
     expect(sim.players.get(1)!.slots.offense[0]!.rarity).toBe('epic');
     // Second epic duplicate: nothing to gain, scroll stays on the ground.
     const map2 = { ...FLAT_MAP, scrolls: [{ x: 1, z: 0 }] };
-    const sim2 = makeSim([player(1, 0, 0, { loadout: loadout(['frostArrow'], [null, null], 'epic') })], { map: map2 });
+    const sim2 = makeSim([player(1, 0, 0, { loadout: loadout(['rimeArrow'], [null, null], 'epic') })], { map: map2 });
     const scroll2 = [...sim2.scrolls.values()][0]!;
-    scroll2.abilityId = 'frostArrow';
+    scroll2.abilityId = 'rimeArrow';
     scroll2.rarity = 'common';
     const snap2 = sim2.step();
     expect(snap2.scrolls).toHaveLength(1);
@@ -111,7 +111,7 @@ describe('mobs and leveling', () => {
   });
 
   it('elites always drop a rare-or-better skill scroll and extra coins', () => {
-    const full = loadout(['frostArrow', 'stormCall'], ['gustLeap']); // block auto-equip
+    const full = loadout(['rimeArrow', 'starBomb'], ['quakingLeap']); // block auto-equip
     const map = { ...FLAT_MAP, elites: [{ x: 2, z: 0 }] };
     const sim = makeSim([player(1, 0, 0, { loadout: full })], { map });
     const elite = [...sim.mobs.values()][0]!;

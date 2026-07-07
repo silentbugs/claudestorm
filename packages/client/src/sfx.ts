@@ -35,35 +35,67 @@ class Sfx {
 
   cast(ability: AbilityId): void {
     switch (ability) {
-      case 'frostArrow':
+      // Offense
+      case 'rimeArrow':
         this.tone(760, 0.12, 'triangle', 0.11, 1050);
         break;
-      case 'stormCall':
-        this.tone(300, 0.18, 'sawtooth', 0.07, 180);
-        break;
-      case 'flameCyclone':
+      case 'fireWhirl':
         this.tone(180, 0.4, 'sawtooth', 0.08, 320);
         break;
-      case 'venomOrb':
+      case 'earthbreaker':
+        this.tone(120, 0.35, 'sawtooth', 0.12, 45);
+        break;
+      case 'holyShield':
+        this.tone(660, 0.2, 'triangle', 0.1, 880);
+        break;
+      case 'stormArchon':
+        this.tone(500, 0.14, 'square', 0.07, 900);
+        break;
+      case 'manaSphere':
+        this.tone(340, 0.2, 'sine', 0.12, 200);
+        break;
+      case 'searingAxe':
+        this.tone(200, 0.22, 'sawtooth', 0.11, 80);
+        break;
+      case 'slicingWinds':
+        this.tone(420, 0.18, 'sine', 0.1, 980);
+        break;
+      case 'starBomb':
+        this.tone(300, 0.18, 'sawtooth', 0.07, 180);
+        break;
+      case 'toxicSmackerel':
         this.tone(420, 0.15, 'triangle', 0.1, 240);
         break;
-      case 'graspingChains':
-        this.tone(900, 0.1, 'square', 0.06, 500);
-        break;
-      case 'gustLeap':
+      // Utility
+      case 'quakingLeap':
         this.tone(340, 0.25, 'sine', 0.12, 720);
         break;
-      case 'stoneShield':
-        this.tone(220, 0.3, 'triangle', 0.12, 330);
+      case 'huntersChains':
+        this.tone(900, 0.1, 'square', 0.06, 500);
         break;
-      case 'frostNova':
+      case 'steelTraps':
+        this.tone(700, 0.09, 'square', 0.07, 350);
+        break;
+      case 'windstorm':
+        this.tone(280, 0.25, 'sine', 0.1, 760);
+        break;
+      case 'explosiveCaltrops':
+        this.tone(520, 0.12, 'square', 0.08, 260);
+        break;
+      case 'snowdrift':
         this.tone(980, 0.2, 'triangle', 0.1, 520);
         break;
-      case 'shadowLance':
-        this.tone(240, 0.16, 'sawtooth', 0.09, 90);
+      case 'lightningBulwark':
+        this.tone(220, 0.3, 'triangle', 0.12, 330);
         break;
-      case 'windRush':
-        this.tone(300, 0.2, 'sine', 0.11, 900);
+      case 'fadeToShadow':
+        this.tone(300, 0.25, 'sine', 0.09, 90);
+        break;
+      case 'repel':
+        this.tone(540, 0.2, 'triangle', 0.11, 720);
+        break;
+      case 'faeform':
+        this.tone(620, 0.25, 'sine', 0.1, 1240);
         break;
     }
   }

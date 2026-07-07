@@ -54,6 +54,15 @@ export interface PlayerEntity {
   rootTicks: number;
   slowTicks: number;
   slowFactor: number;
+  stunTicks: number;
+  poisonTicks: number;
+  poisonDps: number;
+  poisonSourceId: number;
+  stealthTicks: number;
+  immuneTicks: number;
+  faeTicks: number;
+  speedBuffTicks: number;
+  speedBuffMult: number;
 
   shieldHp: number;
   shieldTicks: number;
@@ -70,6 +79,11 @@ export interface PlayerEntity {
   leapDamage: number;
   leapLandRadius: number;
   leapKnockback: number;
+  leapLandStun: number;
+  /** Ground dash (no arc); damages enemies passed through when leapDashDamage > 0. */
+  leapFlat: boolean;
+  leapDashDamage: number;
+  leapHitIds: Set<number>;
 
   kbTicks: number;
   kbVelX: number;
@@ -150,19 +164,27 @@ export interface ProjectileEntity {
   ticksLeft: number;
   /** Damage multiplier captured at cast (rarity × level). */
   scale: number;
+  /** Boomerang (Holy Shield): pierces, then flies back to its owner. */
+  returning: boolean;
+  /** Targets already struck (piercing projectiles hit each enemy once). */
+  hitIds: Set<number>;
 }
 
 export interface ZoneEntity {
   id: number;
   abilityId: AbilityId;
   ownerId: number;
-  kind: 'telegraph' | 'pool';
+  kind: 'telegraph' | 'pool' | 'trap';
   x: number;
   z: number;
   radius: number;
   damage: number;
-  /** telegraph: tick of detonation; pool: tick it disappears. */
+  /** telegraph: tick of detonation; pool/trap: tick it disappears. */
   endTick: number;
   /** pool damage per second (already scaled). */
   dps: number;
+  /** pool: slow applied to enemies standing inside (1 = none). */
+  slowFactor: number;
+  /** trap: root duration in seconds when sprung. */
+  rootDuration: number;
 }
