@@ -44,7 +44,7 @@ export function cmd(partial: Partial<InputCommand> = {}): InputCommand {
     yaw: 0,
     aimX: 0,
     aimZ: 0,
-    buttons: { melee: false, roll: false, jump: false, interact: false },
+    buttons: { melee: false, roll: false, jump: false, interact: false, heal: false },
     slotCasts: [],
     ...partial,
   };

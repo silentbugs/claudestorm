@@ -16,6 +16,10 @@ export const MELEE_INTERVAL = 0.55;
 export const MELEE_COMBO_WINDOW = 1.4;
 export const MELEE_COMBO_FINISHER_MULT = 1.8;
 
+/** Builtin heal: everyone has it, like the sword. */
+export const HEAL_AMOUNT = 40;
+export const HEAL_COOLDOWN = 20;
+
 /** Barrel roll: quick dodge with projectile immunity. */
 export const ROLL_DISTANCE = 7;
 export const ROLL_DURATION = 0.35;

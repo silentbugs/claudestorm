@@ -83,6 +83,11 @@ class Sfx {
     this.tone(1180, 0.09, 'triangle', 0.08, 1560);
   }
 
+  heal(): void {
+    this.tone(392, 0.14, 'sine', 0.12, 587);
+    setTimeout(() => this.tone(587, 0.2, 'sine', 0.1, 784), 110);
+  }
+
   levelUp(): void {
     this.tone(523, 0.12, 'triangle', 0.12);
     setTimeout(() => this.tone(784, 0.2, 'triangle', 0.12), 120);

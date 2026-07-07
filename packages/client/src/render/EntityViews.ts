@@ -529,6 +529,11 @@ export class EntityViews {
         case 'coin':
           if (ev.playerId === selfId) sfx.coin();
           break;
+        case 'heal':
+          this.spawnBurst(ev.x, ev.z, 1.6, 0x5fce6a, 0.5);
+          this.spawnFlash(ev.x, ev.z, 1.0, 0x9df0a5, 0.3);
+          if (ev.playerId === selfId) sfx.heal();
+          break;
         case 'pull': {
           const a = playerById.get(ev.casterId);
           const b = playerById.get(ev.targetId);

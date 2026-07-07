@@ -40,7 +40,7 @@ describe('drop phase', () => {
       ],
       { skipDrop: false },
     );
-    sim.applyInput(1, cmd({ buttons: { melee: true, roll: false, jump: false, interact: false } }));
+    sim.applyInput(1, cmd({ buttons: { melee: true, roll: false, jump: false, interact: false, heal: false } }));
     for (let i = 0; i < 20; i++) sim.step();
     expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
   });
@@ -101,7 +101,7 @@ describe('determinism', () => {
         yaw: Math.sin(i / 9) * Math.PI,
         aimX: Math.sin(i / 7) * 20,
         aimZ: Math.cos(i / 7) * 20,
-        buttons: { melee: i % 30 < 10, roll: i % 90 === 0, jump: i % 45 === 0, interact: i % 60 === 0 },
+        buttons: { melee: i % 30 < 10, roll: i % 90 === 0, jump: i % 45 === 0, interact: i % 60 === 0, heal: false },
         slotCasts: i % 25 === 0 ? [0] : i % 40 === 0 ? [1] : i % 55 === 0 ? [2] : [],
       });
       a.applyInput(1, input);

@@ -1,5 +1,6 @@
 import {
   ABILITIES,
+  HEAL_COOLDOWN,
   MELEE_INTERVAL,
   ROLL_COOLDOWN,
   type PlayerSnapshot,
@@ -96,6 +97,7 @@ export class Hud {
     this.updateAbilitySlot('0', self, 0);
     this.updateAbilitySlot('1', self, 1);
     this.updateAbilitySlot('2', self, 2);
+    this.updateSlot('heal', 'Heal', null, self.healCd, HEAL_COOLDOWN, false);
     this.updateSlot('roll', 'Roll', null, self.rollCd, ROLL_COOLDOWN, false);
 
     if (self.channeling >= 0) {

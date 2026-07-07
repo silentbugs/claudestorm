@@ -36,13 +36,14 @@ export interface PlayerEntity {
   aimX: number;
   aimZ: number;
   meleeHeld: boolean;
-  pendingButtons: Set<'roll' | 'jump' | 'interact'>;
+  pendingButtons: Set<'roll' | 'jump' | 'interact' | 'heal'>;
   pendingSlotCasts: Set<number>;
 
   /** Ticks remaining: [offense0, offense1, utility0]. */
   slotCds: number[];
   meleeCdTicks: number;
   rollCdTicks: number;
+  healCdTicks: number;
   comboCount: number;
   comboExpireTick: number;
 

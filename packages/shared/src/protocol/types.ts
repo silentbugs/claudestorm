@@ -23,6 +23,7 @@ export interface InputButtons {
   roll: boolean;
   jump: boolean;
   interact: boolean;
+  heal: boolean;
 }
 
 /** One tick worth of player intent. The only way anything controls a character. */
@@ -76,6 +77,7 @@ export interface PlayerSnapshot {
   slotCds: number[];
   meleeCd: number;
   rollCd: number;
+  healCd: number;
 }
 
 export interface MobSnapshot {
@@ -150,7 +152,8 @@ export type GameEvent =
   | { type: 'levelUp'; playerId: number; level: number }
   | { type: 'equip'; playerId: number; abilityId: AbilityId; rarity: Rarity }
   | { type: 'pull'; casterId: number; targetId: number }
-  | { type: 'coin'; playerId: number };
+  | { type: 'coin'; playerId: number }
+  | { type: 'heal'; playerId: number; amount: number; x: number; z: number };
 
 export interface Snapshot {
   tick: number;

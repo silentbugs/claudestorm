@@ -12,7 +12,7 @@ export interface BotContext {
 }
 
 function noButtons() {
-  return { melee: false, roll: false, jump: false, interact: false };
+  return { melee: false, roll: false, jump: false, interact: false, heal: false };
 }
 
 /**
@@ -44,6 +44,9 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       slotCasts,
     };
   }
+
+  // Everyone has the builtin heal — use it when hurt.
+  if (bot.healCdTicks === 0 && bot.hp < bot.maxHp * 0.45) buttons.heal = true;
 
   let target: PlayerEntity | null = null;
   let targetDist = Infinity;

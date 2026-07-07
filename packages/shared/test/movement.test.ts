@@ -40,7 +40,7 @@ describe('movement', () => {
 
   it('jumps and lands under gravity', () => {
     const sim = makeSim([player(1, 0, 0)]);
-    sim.applyInput(1, cmd({ buttons: { melee: false, roll: false, jump: true, interact: false } }));
+    sim.applyInput(1, cmd({ buttons: { melee: false, roll: false, jump: true, interact: false, heal: false } }));
     sim.step();
     let peak = 0;
     let airborneTicks = 0;
@@ -58,7 +58,7 @@ describe('movement', () => {
 
   it('barrel roll covers ROLL_DISTANCE and goes on cooldown', () => {
     const sim = makeSim([player(1, 0, 0)]);
-    sim.applyInput(1, cmd({ moveX: 1, buttons: { melee: false, roll: true, jump: false, interact: false } }));
+    sim.applyInput(1, cmd({ moveX: 1, buttons: { melee: false, roll: true, jump: false, interact: false, heal: false } }));
     const snap1 = sim.step();
     expect(snap1.players.find((p) => p.id === 1)!.rolling).toBe(true);
     for (let i = 0; i < 7; i++) sim.step();

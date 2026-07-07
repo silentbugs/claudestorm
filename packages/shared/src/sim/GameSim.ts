@@ -6,6 +6,8 @@ import {
   GLIDE_FALL_SPEED,
   GLIDE_MOVE_SPEED,
   GRAVITY,
+  HEAL_AMOUNT,
+  HEAL_COOLDOWN,
   INTERACT_RADIUS,
   JUMP_VELOCITY,
   LEVEL_HP_BONUS,
@@ -173,6 +175,7 @@ export class GameSim {
         slotCds: [0, 0, 0],
         meleeCdTicks: 0,
         rollCdTicks: 0,
+        healCdTicks: 0,
         comboCount: 0,
         comboExpireTick: 0,
         gliding: dropping,
@@ -291,6 +294,7 @@ export class GameSim {
     if (cmd.buttons.roll) p.pendingButtons.add('roll');
     if (cmd.buttons.jump) p.pendingButtons.add('jump');
     if (cmd.buttons.interact) p.pendingButtons.add('interact');
+    if (cmd.buttons.heal) p.pendingButtons.add('heal');
     for (const s of cmd.slotCasts) {
       if (s >= 0 && s < SLOT_COUNT) p.pendingSlotCasts.add(s);
     }
@@ -360,6 +364,7 @@ export class GameSim {
     for (let i = 0; i < SLOT_COUNT; i++) if (p.slotCds[i]! > 0) p.slotCds[i]!--;
     if (p.meleeCdTicks > 0) p.meleeCdTicks--;
     if (p.rollCdTicks > 0) p.rollCdTicks--;
+    if (p.healCdTicks > 0) p.healCdTicks--;
     if (p.slowTicks > 0) p.slowTicks--;
     if (p.rootTicks > 0) p.rootTicks--;
     if (p.shieldTicks > 0) {
@@ -390,6 +395,12 @@ export class GameSim {
       p.channel = null;
     }
     if (p.pendingButtons.has('interact') && !p.gliding) this.handleInteract(p);
+    if (canAct && p.pendingButtons.has('heal') && p.healCdTicks === 0 && p.hp < p.maxHp) {
+      const amount = Math.min(HEAL_AMOUNT, p.maxHp - p.hp);
+      p.hp += amount;
+      p.healCdTicks = Math.round(HEAL_COOLDOWN * TICK_RATE);
+      this.events.push({ type: 'heal', playerId: p.id, amount, x: p.x, z: p.z });
+    }
     if (canAct && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
     if (canAct) {
       for (const slot of p.pendingSlotCasts) this.tryCastSlot(p, slot);
@@ -1050,6 +1061,7 @@ export class GameSim {
         slotCds: p.slotCds.map((t) => t * TICK_DT),
         meleeCd: p.meleeCdTicks * TICK_DT,
         rollCd: p.rollCdTicks * TICK_DT,
+        healCd: p.healCdTicks * TICK_DT,
       })),
       mobs: [...this.mobs.values()].map((m) => ({
         id: m.id,

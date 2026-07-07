@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  HEAL_AMOUNT,
   MELEE_COMBO_FINISHER_MULT,
   MELEE_DAMAGE,
   PLAYER_BASE_HP,
@@ -8,8 +9,9 @@ import {
 import { ABILITIES } from '../src/sim/abilities.js';
 import { castCmd, cmd, loadout, makeSim, player } from './helpers.js';
 
-const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false };
-const PRESS_ROLL = { melee: false, roll: true, jump: false, interact: false };
+const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false, heal: false };
+const PRESS_ROLL = { melee: false, roll: true, jump: false, interact: false, heal: false };
+const PRESS_HEAL = { melee: false, roll: false, jump: false, interact: false, heal: true };
 
 describe('melee', () => {
   it('sword swing damages a target in the front arc', () => {
@@ -32,6 +34,43 @@ describe('melee', () => {
     for (let i = 0; i < 24; i++) sim.step(); // three swings at 0.55s interval
     const expected = PLAYER_BASE_HP - MELEE_DAMAGE * (2 + MELEE_COMBO_FINISHER_MULT);
     expect(sim.players.get(2)!.hp).toBeCloseTo(expected, 5);
+  });
+});
+
+describe('builtin heal', () => {
+  it('restores health up to max and starts its cooldown', () => {
+    const sim = makeSim([player(1, 0, 0), player(2, 40, 40)]);
+    const p = sim.players.get(1)!;
+    p.hp = 30;
+    sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
+    const snap = sim.step();
+    expect(p.hp).toBe(30 + HEAL_AMOUNT);
+    expect(snap.players.find((s) => s.id === 1)!.healCd).toBeGreaterThan(0);
+    expect(snap.events.some((e) => e.type === 'heal' && e.playerId === 1)).toBe(true);
+  });
+
+  it('does not overheal past max health', () => {
+    const sim = makeSim([player(1, 0, 0), player(2, 40, 40)]);
+    const p = sim.players.get(1)!;
+    p.hp = p.maxHp - 5;
+    sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
+    sim.step();
+    expect(p.hp).toBe(p.maxHp);
+  });
+
+  it('is gated by cooldown and does nothing at full health', () => {
+    const sim = makeSim([player(1, 0, 0), player(2, 40, 40)]);
+    const p = sim.players.get(1)!;
+    sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
+    sim.step();
+    expect(p.healCdTicks).toBe(0); // full hp: not consumed
+    p.hp = 20;
+    sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
+    sim.step();
+    expect(p.hp).toBe(20 + HEAL_AMOUNT);
+    sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
+    sim.step();
+    expect(p.hp).toBe(20 + HEAL_AMOUNT); // still on cooldown
   });
 });
 
