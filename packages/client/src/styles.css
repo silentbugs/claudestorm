@@ -1,0 +1,307 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0e1a;
+  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  user-select: none;
+}
+
+#app canvas {
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: #e8e6d9;
+}
+
+#topbar {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  font-size: 18px;
+  text-shadow: 0 1px 3px #000;
+}
+
+#plunder {
+  color: #f3c53d;
+}
+
+#storm-status.warning {
+  color: #c77dff;
+}
+
+#xp-row {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+#level-badge {
+  min-width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #2a3550;
+  border: 2px solid #f3c53d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 15px;
+}
+
+#xpbar {
+  width: 220px;
+  height: 8px;
+  background: #1a1d2c;
+  border: 1px solid #444a63;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#xpfill {
+  height: 100%;
+  width: 0%;
+  background: #f3c53d;
+}
+
+#center-msg {
+  position: absolute;
+  top: 26%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 34px;
+  font-weight: bold;
+  text-shadow: 0 2px 8px #000;
+}
+
+#interact-prompt {
+  position: absolute;
+  bottom: 210px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 18px;
+  text-shadow: 0 1px 4px #000;
+}
+
+#interact-prompt .kb {
+  display: inline-block;
+  padding: 1px 9px;
+  border: 1px solid #e8e6d9;
+  border-radius: 4px;
+  margin-right: 6px;
+  font-weight: bold;
+}
+
+#channel-bar {
+  position: absolute;
+  bottom: 250px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  height: 12px;
+  background: #1a1d2c;
+  border: 2px solid #444a63;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#channel-fill {
+  height: 100%;
+  width: 0%;
+  background: #ffd75e;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#end-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(5, 6, 12, 0.65);
+  pointer-events: auto;
+}
+
+#end-title {
+  font-size: 64px;
+  font-weight: bold;
+  text-shadow: 0 2px 12px #000;
+}
+
+#end-title.victory {
+  color: #ffd75e;
+}
+
+#end-title.defeat {
+  color: #e05555;
+}
+
+#end-sub {
+  font-size: 22px;
+  color: #b8b5a5;
+}
+
+#restart-btn {
+  margin-top: 18px;
+  padding: 12px 36px;
+  font-size: 20px;
+  font-family: inherit;
+  color: #e8e6d9;
+  background: #2a3550;
+  border: 2px solid #4da6ff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#restart-btn:hover {
+  background: #37456a;
+}
+
+#bottombar {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+#hpbar {
+  position: relative;
+  width: 340px;
+  height: 22px;
+  background: #1a1d2c;
+  border: 2px solid #444a63;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+#hpfill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(#5fce6a, #3a9e46);
+  transition: width 0.12s linear;
+}
+
+#shieldfill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: rgba(159, 196, 232, 0.75);
+  transition: width 0.12s linear;
+}
+
+#hptext {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  font-size: 14px;
+  line-height: 20px;
+  text-shadow: 0 1px 2px #000;
+}
+
+#hotbar {
+  display: flex;
+  gap: 10px;
+}
+
+.slot {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  background: #1a2138;
+  border: 2px solid #444a63;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.slot.empty {
+  opacity: 0.45;
+}
+
+.slot .key {
+  font-size: 15px;
+  font-weight: bold;
+  color: #ffd75e;
+}
+
+.slot .name {
+  font-size: 10.5px;
+  color: #d8d5c5;
+  text-align: center;
+  padding: 0 3px;
+}
+
+.slot .cd-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  background: rgba(10, 12, 20, 0.78);
+}
+
+.slot .cd-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+}
+
+#controls-hint {
+  font-size: 12px;
+  color: #8d8a7c;
+  text-shadow: 0 1px 2px #000;
+}
+
+#vignette {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 140px 40px rgba(200, 30, 30, 0.85);
+  opacity: 0;
+  transition: opacity 0.1s linear;
+}

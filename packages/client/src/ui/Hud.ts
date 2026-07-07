@@ -1,0 +1,169 @@
+import {
+  ABILITIES,
+  MELEE_INTERVAL,
+  ROLL_COOLDOWN,
+  type PlayerSnapshot,
+  type Rarity,
+  type Snapshot,
+} from '@claudestorm/shared';
+
+const RARITY_CSS: Record<Rarity, string> = {
+  common: '#b8b5a5',
+  uncommon: '#4bc26b',
+  rare: '#4d9be6',
+  epic: '#b05df0',
+};
+
+interface SlotEls {
+  root: HTMLElement;
+  name: HTMLElement;
+  overlay: HTMLElement;
+  text: HTMLElement;
+}
+
+/** DOM overlay: health/shield, hotbar, XP/level, plunder, prompts, end screen. */
+export class Hud {
+  private readonly alive = document.getElementById('alive')!;
+  private readonly stormStatus = document.getElementById('storm-status')!;
+  private readonly plunder = document.getElementById('plunder')!;
+  private readonly levelBadge = document.getElementById('level-badge')!;
+  private readonly xpFill = document.getElementById('xpfill')!;
+  private readonly centerMsg = document.getElementById('center-msg')!;
+  private readonly interactPrompt = document.getElementById('interact-prompt')!;
+  private readonly channelBar = document.getElementById('channel-bar')!;
+  private readonly channelFill = document.getElementById('channel-fill')!;
+  private readonly hpFill = document.getElementById('hpfill')!;
+  private readonly shieldFill = document.getElementById('shieldfill')!;
+  private readonly hpText = document.getElementById('hptext')!;
+  private readonly endScreen = document.getElementById('end-screen')!;
+  private readonly endTitle = document.getElementById('end-title')!;
+  private readonly endSub = document.getElementById('end-sub')!;
+  private readonly vignette = document.getElementById('vignette')!;
+  private readonly slotEls = new Map<string, SlotEls>();
+  private vignetteStrength = 0;
+
+  constructor(onRestart: () => void) {
+    document.getElementById('restart-btn')!.addEventListener('click', onRestart);
+    for (const el of document.querySelectorAll<HTMLElement>('.slot')) {
+      this.slotEls.set(el.dataset.slot!, {
+        root: el,
+        name: el.querySelector<HTMLElement>('.name')!,
+        overlay: el.querySelector<HTMLElement>('.cd-overlay')!,
+        text: el.querySelector<HTMLElement>('.cd-text')!,
+      });
+    }
+  }
+
+  update(snap: Snapshot, selfId: number): void {
+    this.alive.textContent = `${snap.aliveCount} alive`;
+
+    if (snap.phase === 'drop') {
+      this.stormStatus.textContent = '';
+      this.centerMsg.textContent = 'Steer with WASD — pick a landing spot!';
+    } else {
+      if (this.centerMsg.textContent) this.centerMsg.textContent = '';
+      if (snap.storm.shrinking) {
+        this.stormStatus.textContent = 'Storm is shrinking!';
+        this.stormStatus.classList.add('warning');
+      } else if (snap.storm.nextShrinkIn > 0) {
+        this.stormStatus.textContent = `Storm shrinks in ${Math.ceil(snap.storm.nextShrinkIn)}s`;
+        this.stormStatus.classList.remove('warning');
+      } else {
+        this.stormStatus.textContent = 'Final circle';
+        this.stormStatus.classList.add('warning');
+      }
+    }
+
+    const self = snap.players.find((p) => p.id === selfId);
+    if (!self) return;
+
+    this.plunder.textContent = `⛃ ${self.plunder}`;
+    this.levelBadge.textContent = String(self.level);
+    const xpSpan = self.xp + self.xpToNext;
+    this.xpFill.style.width =
+      self.xpToNext > 0 && xpSpan > 0 ? `${Math.min(100, (self.xp / xpSpan) * 100)}%` : '100%';
+
+    const total = self.maxHp + self.shieldHp;
+    this.hpFill.style.width = `${Math.max(0, (self.hp / total) * 100)}%`;
+    this.shieldFill.style.width = `${Math.max(0, (self.shieldHp / total) * 100)}%`;
+    this.shieldFill.style.left = `${Math.max(0, (self.hp / total) * 100)}%`;
+    this.hpText.textContent =
+      self.shieldHp > 0
+        ? `${Math.ceil(self.hp)} +${Math.ceil(self.shieldHp)} / ${self.maxHp}`
+        : `${Math.ceil(self.hp)} / ${self.maxHp}`;
+
+    this.updateSlot('melee', 'Sword', null, self.meleeCd, MELEE_INTERVAL, false);
+    this.updateAbilitySlot('0', self, 0);
+    this.updateAbilitySlot('1', self, 1);
+    this.updateAbilitySlot('2', self, 2);
+    this.updateSlot('roll', 'Roll', null, self.rollCd, ROLL_COOLDOWN, false);
+
+    if (self.channeling >= 0) {
+      this.channelBar.classList.remove('hidden');
+      this.channelFill.style.width = `${self.channeling * 100}%`;
+    } else {
+      this.channelBar.classList.add('hidden');
+    }
+  }
+
+  private updateAbilitySlot(key: string, self: PlayerSnapshot, slotIndex: number): void {
+    const equipped =
+      slotIndex < 2 ? self.slots.offense[slotIndex] : self.slots.utility[slotIndex - 2];
+    if (!equipped) {
+      this.updateSlot(key, '—', null, 0, 1, true);
+      return;
+    }
+    const def = ABILITIES[equipped.abilityId];
+    this.updateSlot(key, def.name, equipped.rarity, self.slotCds[slotIndex] ?? 0, def.cooldown, false);
+  }
+
+  private updateSlot(
+    key: string,
+    name: string,
+    rarity: Rarity | null,
+    cd: number,
+    cdTotal: number,
+    empty: boolean,
+  ): void {
+    const els = this.slotEls.get(key);
+    if (!els) return;
+    els.name.textContent = name;
+    els.root.classList.toggle('empty', empty);
+    els.root.style.borderColor = rarity ? RARITY_CSS[rarity] : '#444a63';
+    els.overlay.style.height = `${Math.min(100, (cd / cdTotal) * 100)}%`;
+    els.text.textContent = cd > 0.25 ? cd.toFixed(1) : '';
+  }
+
+  showInteract(text: string | null): void {
+    if (text) {
+      this.interactPrompt.innerHTML = `<span class="kb">F</span>${text}`;
+      this.interactPrompt.classList.remove('hidden');
+    } else {
+      this.interactPrompt.classList.add('hidden');
+    }
+  }
+
+  flashVignette(): void {
+    this.vignetteStrength = 0.9;
+  }
+
+  tick(dt: number): void {
+    if (this.vignetteStrength > 0) {
+      this.vignetteStrength = Math.max(0, this.vignetteStrength - dt * 2.5);
+      this.vignette.style.opacity = this.vignetteStrength.toFixed(2);
+    }
+  }
+
+  showEnd(victory: boolean, placement: number): void {
+    this.endScreen.classList.remove('hidden');
+    this.endTitle.textContent = victory ? 'VICTORY' : 'DEFEAT';
+    this.endTitle.className = victory ? 'victory' : 'defeat';
+    this.endSub.textContent = victory
+      ? 'Last one standing — the plunder is yours!'
+      : `You placed #${placement}`;
+  }
+
+  hideEnd(): void {
+    this.endScreen.classList.add('hidden');
+  }
+}

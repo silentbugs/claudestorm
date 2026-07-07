@@ -1,0 +1,151 @@
+import type { InputCommand } from '@claudestorm/shared';
+
+/**
+ * WoW-style controls: free cursor for aiming, hold right-mouse to look around,
+ * WASD camera-relative movement. Edge presses are accumulated so taps between
+ * command sends are never lost; melee (LMB) is a held state.
+ */
+export class InputManager {
+  private keys = new Set<string>();
+  private pendingEdges = new Set<'roll' | 'jump' | 'interact'>();
+  private pendingSlots = new Set<number>();
+  private seq = 0;
+  private lmbHeld = false;
+  private rmbHeld = false;
+
+  mouseX = 0;
+  mouseY = 0;
+  /** Accumulated look deltas (only while right mouse is held) — consumed by the camera. */
+  lookDX = 0;
+  lookDY = 0;
+  /** Accumulated wheel delta — consumed by the camera. */
+  zoomDelta = 0;
+
+  private readonly onKeyDown = (e: KeyboardEvent) => {
+    if (e.repeat) return;
+    this.keys.add(e.code);
+    switch (e.code) {
+      case 'Space':
+        this.pendingEdges.add('jump');
+        e.preventDefault();
+        break;
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.pendingEdges.add('roll');
+        break;
+      case 'KeyF':
+        this.pendingEdges.add('interact');
+        break;
+      case 'KeyQ':
+        this.pendingSlots.add(0);
+        break;
+      case 'KeyE':
+        this.pendingSlots.add(1);
+        break;
+      case 'KeyR':
+        this.pendingSlots.add(2);
+        break;
+    }
+  };
+
+  private readonly onKeyUp = (e: KeyboardEvent) => {
+    this.keys.delete(e.code);
+  };
+
+  private readonly onMouseMove = (e: MouseEvent) => {
+    this.mouseX = e.clientX;
+    this.mouseY = e.clientY;
+    if (this.rmbHeld) {
+      this.lookDX += e.movementX;
+      this.lookDY += e.movementY;
+    }
+  };
+
+  private readonly onMouseDown = (e: MouseEvent) => {
+    if (e.button === 0) this.lmbHeld = true;
+    if (e.button === 2) this.rmbHeld = true;
+  };
+
+  private readonly onMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) this.lmbHeld = false;
+    if (e.button === 2) this.rmbHeld = false;
+  };
+
+  private readonly onWheel = (e: WheelEvent) => {
+    this.zoomDelta += e.deltaY;
+  };
+
+  private readonly onBlur = () => {
+    this.keys.clear();
+    this.lmbHeld = false;
+    this.rmbHeld = false;
+  };
+
+  attach(): void {
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('wheel', this.onWheel, { passive: true });
+    window.addEventListener('blur', this.onBlur);
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  detach(): void {
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('mousemove', this.onMouseMove);
+    window.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('wheel', this.onWheel);
+    window.removeEventListener('blur', this.onBlur);
+  }
+
+  get isLooking(): boolean {
+    return this.rmbHeld;
+  }
+
+  /** Consume accumulated look/zoom deltas. */
+  takeLook(): { dx: number; dy: number; zoom: number } {
+    const out = { dx: this.lookDX, dy: this.lookDY, zoom: this.zoomDelta };
+    this.lookDX = 0;
+    this.lookDY = 0;
+    this.zoomDelta = 0;
+    return out;
+  }
+
+  /** Build the next command; consumes accumulated edge presses. */
+  buildCommand(camYaw: number, aimX: number, aimZ: number): InputCommand {
+    const fwd = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
+    const strafe = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
+    // forward = (sin yaw, cos yaw); screen-right = (-cos yaw, sin yaw)
+    const fx = Math.sin(camYaw);
+    const fz = Math.cos(camYaw);
+    let moveX = fx * fwd + -fz * strafe;
+    let moveZ = fz * fwd + fx * strafe;
+    const mag = Math.hypot(moveX, moveZ);
+    if (mag > 1) {
+      moveX /= mag;
+      moveZ /= mag;
+    }
+    const cmd: InputCommand = {
+      seq: this.seq++,
+      moveX,
+      moveZ,
+      yaw: camYaw,
+      aimX,
+      aimZ,
+      buttons: {
+        melee: this.lmbHeld,
+        roll: this.pendingEdges.has('roll'),
+        jump: this.pendingEdges.has('jump'),
+        interact: this.pendingEdges.has('interact'),
+      },
+      slotCasts: [...this.pendingSlots],
+    };
+    this.pendingEdges.clear();
+    this.pendingSlots.clear();
+    return cmd;
+  }
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claudestorm</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud">
+      <div id="topbar">
+        <span id="alive"></span>
+        <span id="storm-status"></span>
+        <span id="plunder"></span>
+      </div>
+      <div id="xp-row">
+        <span id="level-badge"></span>
+        <div id="xpbar"><div id="xpfill"></div></div>
+      </div>
+      <div id="center-msg"></div>
+      <div id="interact-prompt" class="hidden"></div>
+      <div id="channel-bar" class="hidden"><div id="channel-fill"></div></div>
+      <div id="end-screen" class="hidden">
+        <div id="end-title"></div>
+        <div id="end-sub"></div>
+        <button id="restart-btn">Play Again</button>
+      </div>
+      <div id="bottombar">
+        <div id="hpbar"><div id="hpfill"></div><div id="shieldfill"></div><span id="hptext"></span></div>
+        <div id="hotbar">
+          <div class="slot" data-slot="melee">
+            <span class="key">LMB</span><span class="name">Sword</span>
+            <div class="cd-overlay"></div><span class="cd-text"></span>
+          </div>
+          <div class="slot" data-slot="0">
+            <span class="key">Q</span><span class="name">—</span>
+            <div class="cd-overlay"></div><span class="cd-text"></span>
+          </div>
+          <div class="slot" data-slot="1">
+            <span class="key">E</span><span class="name">—</span>
+            <div class="cd-overlay"></div><span class="cd-text"></span>
+          </div>
+          <div class="slot" data-slot="2">
+            <span class="key">R</span><span class="name">—</span>
+            <div class="cd-overlay"></div><span class="cd-text"></span>
+          </div>
+          <div class="slot" data-slot="roll">
+            <span class="key">Shift</span><span class="name">Roll</span>
+            <div class="cd-overlay"></div><span class="cd-text"></span>
+          </div>
+        </div>
+        <div id="controls-hint">WASD move · hold RMB look · LMB sword · Q/E/R abilities · Space jump · Shift roll · F loot</div>
+      </div>
+      <div id="vignette"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

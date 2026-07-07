@@ -1,0 +1,1093 @@
+import {
+  CHEST_CHANNEL_SECONDS,
+  COIN_PICKUP_RADIUS,
+  DROP_START_Y,
+  DROP_TIMEOUT_SECONDS,
+  GLIDE_FALL_SPEED,
+  GLIDE_MOVE_SPEED,
+  GRAVITY,
+  INTERACT_RADIUS,
+  JUMP_VELOCITY,
+  LEVEL_HP_BONUS,
+  MAX_LEVEL,
+  MELEE_ARC_COS,
+  MELEE_COMBO_FINISHER_MULT,
+  MELEE_COMBO_WINDOW,
+  MELEE_DAMAGE,
+  MELEE_INTERVAL,
+  MELEE_RANGE,
+  MOB_AGGRO_RADIUS,
+  MOB_BITE_DAMAGE,
+  MOB_BITE_INTERVAL,
+  MOB_BITE_RANGE,
+  MOB_HP,
+  MOB_LEASH_RADIUS,
+  MOB_RADIUS,
+  MOB_SPEED,
+  PLAYER_BASE_HP,
+  PLAYER_RADIUS,
+  PLAYER_SPEED,
+  ROLL_COOLDOWN,
+  ROLL_DISTANCE,
+  ROLL_DURATION,
+  SCROLL_AUTO_PICKUP_RADIUS,
+  TICK_DT,
+  TICK_RATE,
+  XP_PER_CHEST,
+  XP_PER_COIN,
+  XP_PER_MOB,
+  XP_PER_PLAYER_KILL,
+  XP_THRESHOLDS,
+  levelDamageMult,
+} from '../constants.js';
+import { ARENA, type MapDef } from '../maps/arena.js';
+import { Rng } from '../math/rng.js';
+import { dist, lerp, norm, yawToward } from '../math/vec.js';
+import type {
+  GameEvent,
+  InputCommand,
+  MatchPhase,
+  PlayerSlots,
+  Rarity,
+  Snapshot,
+} from '../protocol/types.js';
+import {
+  ABILITIES,
+  OFFENSE_ABILITIES,
+  RARITY_MULT,
+  SLOT_COUNT,
+  UTILITY_ABILITIES,
+  slotCategory,
+} from './abilities.js';
+import { computeBotInput } from './bots.js';
+import type {
+  ChestEntity,
+  CoinEntity,
+  MobEntity,
+  PlayerEntity,
+  ProjectileEntity,
+  ScrollEntity,
+  ZoneEntity,
+} from './entities.js';
+import {
+  CHEST_COINS_MAX,
+  CHEST_COINS_MIN,
+  CHEST_SCROLLS_MAX,
+  CHEST_SCROLLS_MIN,
+  MOB_COINS_MAX,
+  MOB_COINS_MIN,
+  MOB_SCROLL_CHANCE,
+  rollAbility,
+  rollRarity,
+} from './loot.js';
+import { circleBlocked, resolveCollisions } from './movement.js';
+import { STORM_PHASES, STORM_START_RADIUS, type StormPhaseDef } from './storm.js';
+
+export interface PlayerSetup {
+  id: number;
+  name: string;
+  isBot: boolean;
+  /** Test hook: land at this position instead of dropping in. */
+  spawn?: { x: number; z: number };
+  /** Starting loadout (bots get a random one when omitted). */
+  loadout?: PlayerSlots;
+}
+
+export interface GameSimOptions {
+  seed: number;
+  players: PlayerSetup[];
+  map?: MapDef;
+  stormPhases?: StormPhaseDef[];
+  stormStartRadius?: number;
+  /** Test hook: skip the glide drop and start the match live on the ground. */
+  skipDrop?: boolean;
+}
+
+/**
+ * Headless, fixed-tick, server-authoritative game simulation.
+ * No DOM or rendering imports — this is exactly what a game server runs later.
+ */
+export class GameSim {
+  readonly map: MapDef;
+  readonly players = new Map<number, PlayerEntity>();
+  readonly mobs = new Map<number, MobEntity>();
+  readonly chests = new Map<number, ChestEntity>();
+  readonly scrolls = new Map<number, ScrollEntity>();
+  readonly coins = new Map<number, CoinEntity>();
+
+  private tick = 0;
+  private phase: MatchPhase;
+  private winnerId: number | null = null;
+  private readonly rng: Rng;
+
+  private projectiles: ProjectileEntity[] = [];
+  private zones: ZoneEntity[] = [];
+  private events: GameEvent[] = [];
+  private nextEntityId = 1000;
+
+  private readonly stormPhases: StormPhaseDef[];
+  private stormPhaseIndex = 0;
+  private stormPhaseTime = 0;
+  private stormRadius: number;
+  private stormRadiusAtPhaseStart: number;
+
+  constructor(opts: GameSimOptions) {
+    this.map = opts.map ?? ARENA;
+    this.rng = new Rng(opts.seed);
+    this.stormPhases = opts.stormPhases ?? STORM_PHASES;
+    this.stormRadius = opts.stormStartRadius ?? STORM_START_RADIUS;
+    this.stormRadiusAtPhaseStart = this.stormRadius;
+    this.phase = opts.skipDrop ? 'live' : 'drop';
+
+    const n = opts.players.length;
+    opts.players.forEach((setup, i) => {
+      const angle = (i / Math.max(1, n)) * Math.PI * 2;
+      const dropping = !opts.skipDrop && !setup.spawn;
+      const x = setup.spawn?.x ?? Math.cos(angle) * 6;
+      const z = setup.spawn?.z ?? Math.sin(angle) * 6;
+      const loadout: PlayerSlots =
+        setup.loadout ??
+        (setup.isBot ? this.randomBotLoadout() : { offense: [null, null], utility: [null] });
+      const landAngle = this.rng.range(0, Math.PI * 2);
+      const landR = this.rng.range(15, 65);
+      this.players.set(setup.id, {
+        id: setup.id,
+        name: setup.name,
+        isBot: setup.isBot,
+        x,
+        y: dropping ? DROP_START_Y : 0,
+        z,
+        vy: 0,
+        facing: yawToward(x, z, 0, 0),
+        hp: PLAYER_BASE_HP,
+        maxHp: PLAYER_BASE_HP,
+        alive: true,
+        moveX: 0,
+        moveZ: 0,
+        yaw: 0,
+        aimX: 0,
+        aimZ: 0,
+        meleeHeld: false,
+        pendingButtons: new Set(),
+        pendingSlotCasts: new Set(),
+        slotCds: [0, 0, 0],
+        meleeCdTicks: 0,
+        rollCdTicks: 0,
+        comboCount: 0,
+        comboExpireTick: 0,
+        gliding: dropping,
+        rollTicks: 0,
+        rollDirX: 0,
+        rollDirZ: 0,
+        rootTicks: 0,
+        slowTicks: 0,
+        slowFactor: 1,
+        shieldHp: 0,
+        shieldTicks: 0,
+        auraTicks: 0,
+        auraDps: 0,
+        auraRadius: 0,
+        leapTicks: 0,
+        leapTotalTicks: 0,
+        leapDirX: 0,
+        leapDirZ: 0,
+        leapSpeed: 0,
+        leapDamage: 0,
+        leapLandRadius: 0,
+        leapKnockback: 0,
+        kbTicks: 0,
+        kbVelX: 0,
+        kbVelZ: 0,
+        pullTicks: 0,
+        pullToX: 0,
+        pullToZ: 0,
+        channel: null,
+        damagedThisTick: false,
+        level: 1,
+        xp: 0,
+        plunder: 0,
+        slots: loadout,
+        bot: setup.isBot
+          ? {
+              landTargetX: Math.cos(landAngle) * landR,
+              landTargetZ: Math.sin(landAngle) * landR,
+              waypointX: x,
+              waypointZ: z,
+              strafeSign: 1,
+              nextDecisionTick: 0,
+            }
+          : null,
+      });
+    });
+
+    for (const p of this.map.chests) {
+      const id = this.nextEntityId++;
+      this.chests.set(id, { id, x: p.x, z: p.z, opened: false });
+    }
+    for (const p of this.map.mobs) {
+      const id = this.nextEntityId++;
+      this.mobs.set(id, {
+        id,
+        x: p.x,
+        z: p.z,
+        facing: 0,
+        hp: MOB_HP,
+        maxHp: MOB_HP,
+        homeX: p.x,
+        homeZ: p.z,
+        targetId: null,
+        wanderX: p.x,
+        wanderZ: p.z,
+        nextDecisionTick: 0,
+        biteCdTicks: 0,
+      });
+    }
+    for (const p of this.map.scrolls) {
+      this.spawnScroll(p.x, p.z, rollAbility(this.rng), rollRarity(this.rng));
+    }
+  }
+
+  private randomBotLoadout(): PlayerSlots {
+    const offense: PlayerSlots['offense'] = [null, null];
+    const utility: PlayerSlots['utility'] = [null];
+    const o1 = OFFENSE_ABILITIES[this.rng.int(0, OFFENSE_ABILITIES.length)]!;
+    offense[0] = { abilityId: o1, rarity: rollRarity(this.rng) };
+    if (this.rng.next() < 0.6) {
+      const rest = OFFENSE_ABILITIES.filter((a) => a !== o1);
+      offense[1] = { abilityId: rest[this.rng.int(0, rest.length)]!, rarity: rollRarity(this.rng) };
+    }
+    if (this.rng.next() < 0.7) {
+      utility[0] = {
+        abilityId: UTILITY_ABILITIES[this.rng.int(0, UTILITY_ABILITIES.length)]!,
+        rarity: rollRarity(this.rng),
+      };
+    }
+    return { offense, utility };
+  }
+
+  get currentTick(): number {
+    return this.tick;
+  }
+
+  get matchPhase(): MatchPhase {
+    return this.phase;
+  }
+
+  applyInput(playerId: number, cmd: InputCommand): void {
+    const p = this.players.get(playerId);
+    if (!p || !p.alive) return;
+    const mag = Math.hypot(cmd.moveX, cmd.moveZ);
+    if (mag > 1) {
+      p.moveX = cmd.moveX / mag;
+      p.moveZ = cmd.moveZ / mag;
+    } else {
+      p.moveX = cmd.moveX;
+      p.moveZ = cmd.moveZ;
+    }
+    p.yaw = cmd.yaw;
+    p.aimX = cmd.aimX;
+    p.aimZ = cmd.aimZ;
+    p.meleeHeld = cmd.buttons.melee;
+    if (cmd.buttons.roll) p.pendingButtons.add('roll');
+    if (cmd.buttons.jump) p.pendingButtons.add('jump');
+    if (cmd.buttons.interact) p.pendingButtons.add('interact');
+    for (const s of cmd.slotCasts) {
+      if (s >= 0 && s < SLOT_COUNT) p.pendingSlotCasts.add(s);
+    }
+  }
+
+  /** Advance one fixed tick and return the authoritative snapshot. */
+  step(): Snapshot {
+    this.tick++;
+    this.updatePhase();
+
+    const stormView = { x: 0, z: 0, radius: this.stormRadius };
+    for (const p of this.players.values()) {
+      if (p.isBot && p.alive) {
+        this.applyInput(
+          p.id,
+          computeBotInput(p, {
+            tick: this.tick,
+            rng: this.rng,
+            players: this.players.values(),
+            storm: stormView,
+          }),
+        );
+      }
+    }
+
+    for (const p of this.players.values()) {
+      if (!p.alive) {
+        p.pendingButtons.clear();
+        p.pendingSlotCasts.clear();
+        continue;
+      }
+      this.updatePlayer(p);
+    }
+
+    this.updateProjectiles();
+    this.updateZones();
+    this.updateMobs();
+    this.updatePickups();
+    this.updateStorm();
+    this.checkWin();
+    return this.makeSnapshot();
+  }
+
+  private updatePhase(): void {
+    if (this.phase !== 'drop') return;
+    let anyGliding = false;
+    for (const p of this.players.values()) {
+      if (p.alive && p.gliding) anyGliding = true;
+    }
+    if (!anyGliding) {
+      this.phase = 'live';
+    } else if (this.tick >= DROP_TIMEOUT_SECONDS * TICK_RATE) {
+      for (const p of this.players.values()) {
+        if (p.gliding) {
+          p.gliding = false;
+          p.y = 0;
+        }
+      }
+      this.phase = 'live';
+    }
+  }
+
+  private updatePlayer(p: PlayerEntity): void {
+    p.damagedThisTick = false;
+    p.facing = p.yaw;
+
+    for (let i = 0; i < SLOT_COUNT; i++) if (p.slotCds[i]! > 0) p.slotCds[i]!--;
+    if (p.meleeCdTicks > 0) p.meleeCdTicks--;
+    if (p.rollCdTicks > 0) p.rollCdTicks--;
+    if (p.slowTicks > 0) p.slowTicks--;
+    if (p.rootTicks > 0) p.rootTicks--;
+    if (p.shieldTicks > 0) {
+      p.shieldTicks--;
+      if (p.shieldTicks === 0) p.shieldHp = 0;
+    }
+    if (p.comboCount > 0 && this.tick > p.comboExpireTick) p.comboCount = 0;
+
+    if (p.auraTicks > 0) {
+      p.auraTicks--;
+      this.auraDamage(p);
+    }
+
+    // Buttons
+    const canAct = !p.gliding && this.phase === 'live';
+    if (p.pendingButtons.has('jump') && p.y === 0 && !p.gliding && p.leapTicks === 0) {
+      p.vy = JUMP_VELOCITY;
+    }
+    if (p.pendingButtons.has('roll') && !p.gliding && p.rollCdTicks === 0 && p.leapTicks === 0) {
+      const dir =
+        Math.hypot(p.moveX, p.moveZ) > 0.1
+          ? norm(p.moveX, p.moveZ)
+          : { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+      p.rollDirX = dir.x;
+      p.rollDirZ = dir.z;
+      p.rollTicks = Math.round(ROLL_DURATION * TICK_RATE);
+      p.rollCdTicks = Math.round(ROLL_COOLDOWN * TICK_RATE);
+      p.channel = null;
+    }
+    if (p.pendingButtons.has('interact') && !p.gliding) this.handleInteract(p);
+    if (canAct && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
+    if (canAct) {
+      for (const slot of p.pendingSlotCasts) this.tryCastSlot(p, slot);
+    }
+    p.pendingButtons.clear();
+    p.pendingSlotCasts.clear();
+
+    // Channel: cancelled by moving, acting, or taking damage.
+    if (p.channel) {
+      const moved = Math.hypot(p.moveX, p.moveZ) > 0.1;
+      if (moved || p.damagedThisTick || p.rollTicks > 0) {
+        p.channel = null;
+      } else {
+        p.channel.ticksLeft--;
+        if (p.channel.ticksLeft <= 0) {
+          const chest = this.chests.get(p.channel.chestId);
+          p.channel = null;
+          if (chest && !chest.opened) this.openChest(chest, p);
+        }
+      }
+    }
+
+    // Movement
+    let vx = 0;
+    let vz = 0;
+    if (p.gliding) {
+      vx = p.moveX * GLIDE_MOVE_SPEED;
+      vz = p.moveZ * GLIDE_MOVE_SPEED;
+      p.y -= GLIDE_FALL_SPEED * TICK_DT;
+      if (p.y <= 0) {
+        p.y = 0;
+        p.gliding = false;
+      }
+    } else if (p.pullTicks > 0) {
+      const remaining = p.pullTicks;
+      vx = (p.pullToX - p.x) / (remaining * TICK_DT);
+      vz = (p.pullToZ - p.z) / (remaining * TICK_DT);
+      p.pullTicks--;
+    } else if (p.kbTicks > 0) {
+      vx = p.kbVelX;
+      vz = p.kbVelZ;
+      p.kbTicks--;
+    } else if (p.leapTicks > 0) {
+      vx = p.leapDirX * p.leapSpeed;
+      vz = p.leapDirZ * p.leapSpeed;
+      p.leapTicks--;
+      const t = 1 - p.leapTicks / p.leapTotalTicks;
+      p.y = Math.max(0, 10 * t * (1 - t));
+      if (p.leapTicks === 0) {
+        p.y = 0;
+        this.leapLand(p);
+      }
+    } else if (p.rollTicks > 0) {
+      p.rollTicks--;
+      vx = p.rollDirX * (ROLL_DISTANCE / ROLL_DURATION);
+      vz = p.rollDirZ * (ROLL_DISTANCE / ROLL_DURATION);
+    } else if (p.rootTicks > 0) {
+      // rooted: no horizontal movement
+    } else {
+      const speed = PLAYER_SPEED * (p.slowTicks > 0 ? p.slowFactor : 1);
+      vx = p.moveX * speed;
+      vz = p.moveZ * speed;
+    }
+
+    // Jump physics (not while gliding or leaping — those own y).
+    if (!p.gliding && p.leapTicks === 0 && (p.y > 0 || p.vy !== 0)) {
+      p.vy -= GRAVITY * TICK_DT;
+      p.y += p.vy * TICK_DT;
+      if (p.y <= 0) {
+        p.y = 0;
+        p.vy = 0;
+      }
+    }
+
+    const resolved = resolveCollisions(p.x + vx * TICK_DT, p.z + vz * TICK_DT, PLAYER_RADIUS, this.map);
+    p.x = resolved.x;
+    p.z = resolved.z;
+  }
+
+  private meleeSwing(p: PlayerEntity): void {
+    p.meleeCdTicks = Math.round(MELEE_INTERVAL * TICK_RATE);
+    p.comboCount = p.comboCount >= 3 ? 1 : p.comboCount + 1;
+    p.comboExpireTick = this.tick + Math.round(MELEE_COMBO_WINDOW * TICK_RATE);
+    const mult = (p.comboCount === 3 ? MELEE_COMBO_FINISHER_MULT : 1) * levelDamageMult(p.level);
+    const damage = MELEE_DAMAGE * mult;
+    const fx = Math.sin(p.facing);
+    const fz = Math.cos(p.facing);
+    this.events.push({ type: 'melee', casterId: p.id, x: p.x, z: p.z, facing: p.facing, combo: p.comboCount });
+
+    for (const target of this.players.values()) {
+      if (!target.alive || target.id === p.id) continue;
+      if (!this.inMeleeArc(p.x, p.z, fx, fz, target.x, target.z, PLAYER_RADIUS)) continue;
+      this.damagePlayer(target, damage, p.id);
+    }
+    for (const mob of this.mobs.values()) {
+      if (!this.inMeleeArc(p.x, p.z, fx, fz, mob.x, mob.z, MOB_RADIUS)) continue;
+      this.damageMob(mob, damage, p.id);
+    }
+  }
+
+  private inMeleeArc(
+    x: number,
+    z: number,
+    fx: number,
+    fz: number,
+    tx: number,
+    tz: number,
+    targetRadius: number,
+  ): boolean {
+    const d = dist(x, z, tx, tz);
+    if (d > MELEE_RANGE + targetRadius) return false;
+    if (d < 0.01) return true;
+    const dot = ((tx - x) / d) * fx + ((tz - z) / d) * fz;
+    return dot > MELEE_ARC_COS;
+  }
+
+  private tryCastSlot(p: PlayerEntity, slotIndex: number): void {
+    const category = slotCategory(slotIndex);
+    const equipped =
+      category === 'offense' ? p.slots.offense[slotIndex] : p.slots.utility[slotIndex - 2];
+    if (!equipped || p.slotCds[slotIndex]! > 0) return;
+    const def = ABILITIES[equipped.abilityId];
+    const scale = RARITY_MULT[equipped.rarity] * levelDamageMult(p.level);
+    p.slotCds[slotIndex] = Math.round(def.cooldown * TICK_RATE);
+    p.channel = null;
+    this.events.push({ type: 'cast', casterId: p.id, abilityId: def.id, x: p.x, z: p.z });
+
+    switch (def.behavior) {
+      case 'projectile': {
+        let dir = norm(p.aimX - p.x, p.aimZ - p.z);
+        if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+        const spawnDist = PLAYER_RADIUS + def.projectileRadius! + 0.1;
+        this.projectiles.push({
+          id: this.nextEntityId++,
+          abilityId: def.id,
+          ownerId: p.id,
+          x: p.x + dir.x * spawnDist,
+          z: p.z + dir.z * spawnDist,
+          dirX: dir.x,
+          dirZ: dir.z,
+          speed: def.projectileSpeed!,
+          radius: def.projectileRadius!,
+          damage: def.damage * scale,
+          ticksLeft: Math.round(def.projectileLifetime! * TICK_RATE),
+          scale,
+        });
+        break;
+      }
+      case 'groundAoE': {
+        let tx = p.aimX;
+        let tz = p.aimZ;
+        const d = dist(p.x, p.z, tx, tz);
+        if (d > def.castRange!) {
+          tx = p.x + ((tx - p.x) / d) * def.castRange!;
+          tz = p.z + ((tz - p.z) / d) * def.castRange!;
+        }
+        this.zones.push({
+          id: this.nextEntityId++,
+          abilityId: def.id,
+          ownerId: p.id,
+          kind: 'telegraph',
+          x: tx,
+          z: tz,
+          radius: def.aoeRadius!,
+          damage: def.damage * scale,
+          endTick: this.tick + Math.round(def.telegraph! * TICK_RATE),
+          dps: 0,
+        });
+        break;
+      }
+      case 'selfAura': {
+        p.auraTicks = Math.round(def.auraDuration! * TICK_RATE);
+        p.auraDps = def.damage * scale;
+        p.auraRadius = def.auraRadius!;
+        break;
+      }
+      case 'leap': {
+        let dir = norm(p.moveX, p.moveZ);
+        if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+        p.leapDirX = dir.x;
+        p.leapDirZ = dir.z;
+        p.leapTotalTicks = Math.round(def.leapDuration! * TICK_RATE);
+        p.leapTicks = p.leapTotalTicks;
+        p.leapSpeed = def.leapRange! / def.leapDuration!;
+        p.leapDamage = def.damage * scale;
+        p.leapLandRadius = def.landRadius!;
+        p.leapKnockback = def.knockbackDistance!;
+        break;
+      }
+      case 'shield': {
+        p.shieldHp = def.shieldAmount! * scale;
+        p.shieldTicks = Math.round(def.shieldDuration! * TICK_RATE);
+        break;
+      }
+    }
+  }
+
+  private leapLand(p: PlayerEntity): void {
+    this.events.push({ type: 'detonate', x: p.x, z: p.z, radius: p.leapLandRadius, abilityId: 'gustLeap' });
+    for (const target of this.players.values()) {
+      if (!target.alive || target.id === p.id) continue;
+      const d = dist(p.x, p.z, target.x, target.z);
+      if (d > p.leapLandRadius) continue;
+      this.damagePlayer(target, p.leapDamage, p.id);
+      if (target.alive) {
+        const dir = d > 0.01 ? norm(target.x - p.x, target.z - p.z) : { x: 1, z: 0 };
+        target.kbTicks = 4;
+        target.kbVelX = dir.x * p.leapKnockback * 5;
+        target.kbVelZ = dir.z * p.leapKnockback * 5;
+      }
+    }
+    for (const mob of this.mobs.values()) {
+      if (dist(p.x, p.z, mob.x, mob.z) <= p.leapLandRadius) {
+        this.damageMob(mob, p.leapDamage, p.id);
+      }
+    }
+  }
+
+  private auraDamage(p: PlayerEntity): void {
+    for (const target of this.players.values()) {
+      if (!target.alive || target.id === p.id) continue;
+      if (dist(p.x, p.z, target.x, target.z) <= p.auraRadius + PLAYER_RADIUS) {
+        this.damagePlayer(target, p.auraDps * TICK_DT, p.id);
+      }
+    }
+    for (const mob of this.mobs.values()) {
+      if (dist(p.x, p.z, mob.x, mob.z) <= p.auraRadius + MOB_RADIUS) {
+        this.damageMob(mob, p.auraDps * TICK_DT, p.id);
+      }
+    }
+  }
+
+  private handleInteract(p: PlayerEntity): void {
+    let bestScroll: ScrollEntity | null = null;
+    let bestScrollDist = INTERACT_RADIUS;
+    for (const s of this.scrolls.values()) {
+      const d = dist(p.x, p.z, s.x, s.z);
+      if (d < bestScrollDist) {
+        bestScrollDist = d;
+        bestScroll = s;
+      }
+    }
+    if (bestScroll) {
+      this.equipScroll(p, bestScroll, true);
+      return;
+    }
+    let bestChest: ChestEntity | null = null;
+    let bestChestDist = INTERACT_RADIUS;
+    for (const c of this.chests.values()) {
+      if (c.opened) continue;
+      const d = dist(p.x, p.z, c.x, c.z);
+      if (d < bestChestDist) {
+        bestChestDist = d;
+        bestChest = c;
+      }
+    }
+    if (bestChest && !p.channel) {
+      const total = Math.round(CHEST_CHANNEL_SECONDS * TICK_RATE);
+      p.channel = { chestId: bestChest.id, ticksLeft: total, totalTicks: total };
+    }
+  }
+
+  private equipScroll(p: PlayerEntity, scroll: ScrollEntity, force: boolean): boolean {
+    const def = ABILITIES[scroll.abilityId];
+    const arr = def.category === 'offense' ? p.slots.offense : p.slots.utility;
+    let idx = arr.findIndex((s) => s === null);
+    if (idx === -1) {
+      if (!force) return false;
+      idx = 0;
+      const old = arr[0]!;
+      this.spawnScroll(p.x, p.z, old.abilityId, old.rarity);
+    }
+    arr[idx] = { abilityId: scroll.abilityId, rarity: scroll.rarity };
+    this.scrolls.delete(scroll.id);
+    this.events.push({ type: 'equip', playerId: p.id, abilityId: scroll.abilityId, rarity: scroll.rarity });
+    return true;
+  }
+
+  private openChest(chest: ChestEntity, opener: PlayerEntity): void {
+    chest.opened = true;
+    this.events.push({ type: 'chestOpened', x: chest.x, z: chest.z });
+    const coins = this.rng.int(CHEST_COINS_MIN, CHEST_COINS_MAX + 1);
+    for (let i = 0; i < coins; i++) this.spawnCoin(chest.x, chest.z);
+    const scrolls = this.rng.int(CHEST_SCROLLS_MIN, CHEST_SCROLLS_MAX + 1);
+    for (let i = 0; i < scrolls; i++) {
+      const angle = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(0.8, 1.8);
+      this.spawnScroll(
+        chest.x + Math.cos(angle) * r,
+        chest.z + Math.sin(angle) * r,
+        rollAbility(this.rng),
+        rollRarity(this.rng),
+      );
+    }
+    this.awardXp(opener, XP_PER_CHEST);
+  }
+
+  private spawnScroll(x: number, z: number, abilityId: ScrollEntity['abilityId'], rarity: Rarity): void {
+    const id = this.nextEntityId++;
+    this.scrolls.set(id, { id, x, z, abilityId, rarity });
+  }
+
+  private spawnCoin(x: number, z: number): void {
+    const id = this.nextEntityId++;
+    const angle = this.rng.range(0, Math.PI * 2);
+    const r = this.rng.range(0.3, 1.6);
+    this.coins.set(id, { id, x: x + Math.cos(angle) * r, z: z + Math.sin(angle) * r });
+  }
+
+  private updateProjectiles(): void {
+    const survivors: ProjectileEntity[] = [];
+    for (const proj of this.projectiles) {
+      proj.x += proj.dirX * proj.speed * TICK_DT;
+      proj.z += proj.dirZ * proj.speed * TICK_DT;
+      proj.ticksLeft--;
+      const def = ABILITIES[proj.abilityId];
+
+      let gone = false;
+      let expired = false;
+      if (circleBlocked(proj.x, proj.z, proj.radius, this.map)) {
+        gone = true;
+        expired = true;
+      } else if (proj.ticksLeft <= 0) {
+        gone = true;
+        expired = true;
+      } else {
+        for (const target of this.players.values()) {
+          if (!target.alive || target.id === proj.ownerId) continue;
+          if (target.rollTicks > 0) continue; // barrel roll dodges projectiles
+          if (dist(proj.x, proj.z, target.x, target.z) < proj.radius + PLAYER_RADIUS) {
+            this.damagePlayer(target, proj.damage, proj.ownerId);
+            if (def.slowDuration && target.alive) {
+              target.slowTicks = Math.round(def.slowDuration * TICK_RATE);
+              target.slowFactor = def.slowFactor ?? 1;
+            }
+            if (def.pull && target.alive) this.pullTarget(proj.ownerId, target, def.rootDuration ?? 0);
+            gone = true;
+            break;
+          }
+        }
+        if (!gone) {
+          for (const mob of this.mobs.values()) {
+            if (dist(proj.x, proj.z, mob.x, mob.z) < proj.radius + MOB_RADIUS) {
+              this.damageMob(mob, proj.damage, proj.ownerId);
+              gone = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (gone) {
+        if (def.poolRadius) {
+          this.zones.push({
+            id: this.nextEntityId++,
+            abilityId: proj.abilityId,
+            ownerId: proj.ownerId,
+            kind: 'pool',
+            x: proj.x,
+            z: proj.z,
+            radius: def.poolRadius,
+            damage: 0,
+            endTick: this.tick + Math.round(def.poolDuration! * TICK_RATE),
+            dps: def.poolDps! * proj.scale,
+          });
+        }
+        this.events.push({ type: 'projectileGone', id: proj.id, x: proj.x, z: proj.z });
+        void expired;
+      } else {
+        survivors.push(proj);
+      }
+    }
+    this.projectiles = survivors;
+  }
+
+  private pullTarget(casterId: number, target: PlayerEntity, rootDuration: number): void {
+    const caster = this.players.get(casterId);
+    if (!caster || !caster.alive) return;
+    const dir = norm(target.x - caster.x, target.z - caster.z);
+    target.pullToX = caster.x + dir.x * 1.5;
+    target.pullToZ = caster.z + dir.z * 1.5;
+    target.pullTicks = 4;
+    target.rootTicks = Math.round(rootDuration * TICK_RATE) + 4;
+    this.events.push({ type: 'pull', casterId, targetId: target.id });
+  }
+
+  private updateZones(): void {
+    const survivors: ZoneEntity[] = [];
+    for (const zone of this.zones) {
+      if (zone.kind === 'telegraph') {
+        if (this.tick < zone.endTick) {
+          survivors.push(zone);
+          continue;
+        }
+        this.events.push({ type: 'detonate', x: zone.x, z: zone.z, radius: zone.radius, abilityId: zone.abilityId });
+        for (const target of this.players.values()) {
+          if (!target.alive || target.id === zone.ownerId) continue;
+          if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
+            this.damagePlayer(target, zone.damage, zone.ownerId);
+          }
+        }
+        for (const mob of this.mobs.values()) {
+          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + MOB_RADIUS) {
+            this.damageMob(mob, zone.damage, zone.ownerId);
+          }
+        }
+      } else {
+        // Damaging pool
+        if (this.tick >= zone.endTick) continue;
+        for (const target of this.players.values()) {
+          if (!target.alive || target.id === zone.ownerId) continue;
+          if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
+            this.damagePlayer(target, zone.dps * TICK_DT, zone.ownerId);
+          }
+        }
+        for (const mob of this.mobs.values()) {
+          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + MOB_RADIUS) {
+            this.damageMob(mob, zone.dps * TICK_DT, zone.ownerId);
+          }
+        }
+        survivors.push(zone);
+      }
+    }
+    this.zones = survivors;
+  }
+
+  private updateMobs(): void {
+    for (const mob of this.mobs.values()) {
+      if (mob.biteCdTicks > 0) mob.biteCdTicks--;
+
+      // Acquire / validate target
+      let target: PlayerEntity | null = mob.targetId !== null ? (this.players.get(mob.targetId) ?? null) : null;
+      if (target && (!target.alive || target.gliding || dist(mob.homeX, mob.homeZ, mob.x, mob.z) > MOB_LEASH_RADIUS)) {
+        target = null;
+        mob.targetId = null;
+      }
+      if (!target) {
+        let best = MOB_AGGRO_RADIUS;
+        for (const p of this.players.values()) {
+          if (!p.alive || p.gliding) continue;
+          const d = dist(mob.x, mob.z, p.x, p.z);
+          if (d < best) {
+            best = d;
+            target = p;
+          }
+        }
+        mob.targetId = target?.id ?? null;
+      }
+
+      let vx = 0;
+      let vz = 0;
+      if (target) {
+        const d = dist(mob.x, mob.z, target.x, target.z);
+        mob.facing = yawToward(mob.x, mob.z, target.x, target.z);
+        if (d > MOB_BITE_RANGE) {
+          const dir = norm(target.x - mob.x, target.z - mob.z);
+          vx = dir.x * MOB_SPEED;
+          vz = dir.z * MOB_SPEED;
+        } else if (mob.biteCdTicks === 0 && this.phase === 'live') {
+          mob.biteCdTicks = Math.round(MOB_BITE_INTERVAL * TICK_RATE);
+          this.damagePlayer(target, MOB_BITE_DAMAGE, mob.id);
+        }
+      } else {
+        if (dist(mob.x, mob.z, mob.wanderX, mob.wanderZ) < 1 || this.tick >= mob.nextDecisionTick) {
+          const angle = this.rng.range(0, Math.PI * 2);
+          const r = this.rng.range(0, 6);
+          mob.wanderX = mob.homeX + Math.cos(angle) * r;
+          mob.wanderZ = mob.homeZ + Math.sin(angle) * r;
+          mob.nextDecisionTick = this.tick + this.rng.int(40, 160);
+        }
+        const dir = norm(mob.wanderX - mob.x, mob.wanderZ - mob.z);
+        vx = dir.x * MOB_SPEED * 0.5;
+        vz = dir.z * MOB_SPEED * 0.5;
+        if (Math.abs(vx) + Math.abs(vz) > 0.01) {
+          mob.facing = Math.atan2(vx, vz);
+        }
+      }
+      const resolved = resolveCollisions(mob.x + vx * TICK_DT, mob.z + vz * TICK_DT, MOB_RADIUS, this.map);
+      mob.x = resolved.x;
+      mob.z = resolved.z;
+    }
+  }
+
+  private updatePickups(): void {
+    for (const p of this.players.values()) {
+      if (!p.alive || p.gliding) continue;
+      for (const coin of this.coins.values()) {
+        if (dist(p.x, p.z, coin.x, coin.z) < COIN_PICKUP_RADIUS) {
+          this.coins.delete(coin.id);
+          p.plunder++;
+          this.events.push({ type: 'coin', playerId: p.id });
+          this.awardXp(p, XP_PER_COIN);
+        }
+      }
+      for (const scroll of this.scrolls.values()) {
+        if (dist(p.x, p.z, scroll.x, scroll.z) < SCROLL_AUTO_PICKUP_RADIUS) {
+          this.equipScroll(p, scroll, false); // auto-pickup only fills empty slots
+        }
+      }
+    }
+  }
+
+  private awardXp(p: PlayerEntity, amount: number): void {
+    if (!p.alive) return;
+    p.xp += amount;
+    while (p.level < MAX_LEVEL && p.xp >= XP_THRESHOLDS[p.level]!) {
+      p.level++;
+      p.maxHp += LEVEL_HP_BONUS;
+      p.hp = Math.min(p.maxHp, p.hp + LEVEL_HP_BONUS);
+      this.events.push({ type: 'levelUp', playerId: p.id, level: p.level });
+    }
+  }
+
+  private updateStorm(): void {
+    if (this.phase !== 'live') return;
+    const phase = this.stormPhases[this.stormPhaseIndex];
+    if (!phase) return;
+
+    this.stormPhaseTime += TICK_DT;
+    if (this.stormPhaseTime <= phase.hold) {
+      // holding
+    } else if (this.stormPhaseTime <= phase.hold + phase.shrink) {
+      const t = (this.stormPhaseTime - phase.hold) / phase.shrink;
+      this.stormRadius = lerp(this.stormRadiusAtPhaseStart, phase.targetRadius, t);
+    } else {
+      this.stormRadius = phase.targetRadius;
+      if (this.stormPhaseIndex < this.stormPhases.length - 1) {
+        this.stormPhaseIndex++;
+        this.stormPhaseTime = 0;
+        this.stormRadiusAtPhaseStart = this.stormRadius;
+      }
+    }
+
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      if (dist(p.x, p.z, 0, 0) > this.stormRadius) {
+        this.damagePlayer(p, phase.dps * TICK_DT, null);
+      }
+    }
+    for (const mob of this.mobs.values()) {
+      if (dist(mob.x, mob.z, 0, 0) > this.stormRadius) {
+        this.damageMob(mob, phase.dps * TICK_DT, null);
+      }
+    }
+  }
+
+  private damagePlayer(target: PlayerEntity, amount: number, sourceId: number | null): void {
+    if (this.phase !== 'live' || !target.alive) return;
+    let remaining = amount;
+    if (target.shieldHp > 0) {
+      const absorbed = Math.min(target.shieldHp, remaining);
+      target.shieldHp -= absorbed;
+      remaining -= absorbed;
+    }
+    target.hp -= remaining;
+    target.damagedThisTick = true;
+    this.events.push({ type: 'hit', targetId: target.id, sourceId, amount, x: target.x, z: target.z });
+    if (target.hp <= 0) {
+      target.hp = 0;
+      target.alive = false;
+      target.channel = null;
+      this.events.push({ type: 'death', id: target.id, killerId: sourceId, x: target.x, z: target.z });
+      const killer = sourceId !== null ? this.players.get(sourceId) : undefined;
+      if (killer && killer.alive) this.awardXp(killer, XP_PER_PLAYER_KILL);
+    }
+  }
+
+  private damageMob(mob: MobEntity, amount: number, sourceId: number | null): void {
+    if (this.phase !== 'live' || mob.hp <= 0) return;
+    mob.hp -= amount;
+    this.events.push({ type: 'hit', targetId: mob.id, sourceId, amount, x: mob.x, z: mob.z });
+    if (mob.hp <= 0) {
+      this.mobs.delete(mob.id);
+      this.events.push({ type: 'mobDeath', x: mob.x, z: mob.z });
+      const coins = this.rng.int(MOB_COINS_MIN, MOB_COINS_MAX + 1);
+      for (let i = 0; i < coins; i++) this.spawnCoin(mob.x, mob.z);
+      if (this.rng.next() < MOB_SCROLL_CHANCE) {
+        this.spawnScroll(mob.x, mob.z, rollAbility(this.rng), rollRarity(this.rng));
+      }
+      const killer = sourceId !== null ? this.players.get(sourceId) : undefined;
+      if (killer && killer.alive) this.awardXp(killer, XP_PER_MOB);
+    }
+  }
+
+  private checkWin(): void {
+    if (this.phase !== 'live') return;
+    // A solo sandbox (tests, practice) never auto-ends.
+    if (this.players.size <= 1) return;
+    let aliveCount = 0;
+    let lastAlive: PlayerEntity | null = null;
+    for (const p of this.players.values()) {
+      if (p.alive) {
+        aliveCount++;
+        lastAlive = p;
+      }
+    }
+    if (aliveCount <= 1) {
+      this.phase = 'ended';
+      this.winnerId = lastAlive?.id ?? null;
+    }
+  }
+
+  private makeSnapshot(): Snapshot {
+    const phaseDef = this.stormPhases[this.stormPhaseIndex];
+    const shrinking =
+      this.phase === 'live' &&
+      phaseDef !== undefined &&
+      this.stormPhaseTime > phaseDef.hold &&
+      this.stormPhaseTime <= phaseDef.hold + phaseDef.shrink;
+
+    let aliveCount = 0;
+    for (const p of this.players.values()) if (p.alive) aliveCount++;
+
+    const snapshot: Snapshot = {
+      tick: this.tick,
+      time: this.tick * TICK_DT,
+      phase: this.phase,
+      winnerId: this.winnerId,
+      aliveCount,
+      storm: {
+        x: 0,
+        z: 0,
+        radius: this.stormRadius,
+        targetRadius: phaseDef?.targetRadius ?? this.stormRadius,
+        shrinking,
+        dps: phaseDef?.dps ?? 0,
+        nextShrinkIn:
+          this.phase === 'live' && phaseDef && this.stormPhaseTime <= phaseDef.hold
+            ? phaseDef.hold - this.stormPhaseTime
+            : 0,
+      },
+      players: [...this.players.values()].map((p) => ({
+        id: p.id,
+        name: p.name,
+        isBot: p.isBot,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        facing: p.facing,
+        hp: p.hp,
+        maxHp: p.maxHp,
+        alive: p.alive,
+        level: p.level,
+        xp: p.xp,
+        xpToNext: p.level < MAX_LEVEL ? XP_THRESHOLDS[p.level]! - p.xp : 0,
+        plunder: p.plunder,
+        shieldHp: p.shieldHp,
+        gliding: p.gliding,
+        rolling: p.rollTicks > 0,
+        rooted: p.rootTicks > 0,
+        slowed: p.slowTicks > 0,
+        auraActive: p.auraTicks > 0,
+        channeling: p.channel ? 1 - p.channel.ticksLeft / p.channel.totalTicks : -1,
+        slots: {
+          offense: p.slots.offense.map((s) => (s ? { ...s } : null)),
+          utility: p.slots.utility.map((s) => (s ? { ...s } : null)),
+        },
+        slotCds: p.slotCds.map((t) => t * TICK_DT),
+        meleeCd: p.meleeCdTicks * TICK_DT,
+        rollCd: p.rollCdTicks * TICK_DT,
+      })),
+      mobs: [...this.mobs.values()].map((m) => ({
+        id: m.id,
+        x: m.x,
+        z: m.z,
+        facing: m.facing,
+        hp: m.hp,
+        maxHp: m.maxHp,
+      })),
+      chests: [...this.chests.values()].map((c) => ({ id: c.id, x: c.x, z: c.z, opened: c.opened })),
+      scrolls: [...this.scrolls.values()].map((s) => ({
+        id: s.id,
+        x: s.x,
+        z: s.z,
+        abilityId: s.abilityId,
+        rarity: s.rarity,
+      })),
+      coins: [...this.coins.values()].map((c) => ({ id: c.id, x: c.x, z: c.z })),
+      projectiles: this.projectiles.map((proj) => ({
+        id: proj.id,
+        x: proj.x,
+        z: proj.z,
+        dirX: proj.dirX,
+        dirZ: proj.dirZ,
+        abilityId: proj.abilityId,
+      })),
+      zones: this.zones.map((zone) => ({
+        id: zone.id,
+        x: zone.x,
+        z: zone.z,
+        radius: zone.radius,
+        kind: zone.kind,
+        endsIn: (zone.endTick - this.tick) * TICK_DT,
+        abilityId: zone.abilityId,
+      })),
+      events: this.events,
+    };
+    this.events = [];
+    return snapshot;
+  }
+}

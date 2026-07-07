@@ -1,0 +1,15 @@
+{
+  "name": "claudestorm",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @claudestorm/client",
+    "build": "npm run build -w @claudestorm/client",
+    "preview": "npm run preview -w @claudestorm/client",
+    "test": "npm run test -w @claudestorm/shared",
+    "typecheck": "tsc --noEmit -p packages/shared && tsc --noEmit -p packages/client"
+  }
+}
