@@ -3,7 +3,14 @@ import type { MapDef } from '../src/maps/arena.js';
 import type { StormPhaseDef } from '../src/sim/storm.js';
 import type { AbilityId, InputCommand, PlayerSlots, Rarity } from '../src/protocol/types.js';
 
-export const FLAT_MAP: MapDef = { size: 100, obstacles: [], chests: [], mobs: [], scrolls: [] };
+export const FLAT_MAP: MapDef = {
+  size: 100,
+  obstacles: [],
+  chests: [],
+  mobs: [],
+  elites: [],
+  scrolls: [],
+};
 
 /** Storm that never threatens anyone — for tests that aren't about the storm. */
 export const CALM_STORM: StormPhaseDef[] = [

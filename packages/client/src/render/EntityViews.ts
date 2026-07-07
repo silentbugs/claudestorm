@@ -14,6 +14,7 @@ const BOT_COLOR = 0xd9534f;
 const DEAD_COLOR = 0x50505a;
 const SLOW_COLOR = 0x9fd8ff;
 const MOB_COLOR = 0x8a6b3d;
+const ELITE_COLOR = 0x9c3f3f;
 
 export const RARITY_COLORS: Record<Rarity, number> = {
   common: 0xb8b5a5,
@@ -195,36 +196,51 @@ class MobView {
   readonly group = new THREE.Group();
   private readonly hpFill: THREE.Mesh;
   private readonly hpGroup: THREE.Group;
+  private readonly barWidth: number;
+  private readonly elite: boolean;
 
-  constructor() {
+  constructor(elite: boolean) {
+    this.elite = elite;
+    const beast = new THREE.Group();
     const body = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.45, 0.5, 4, 10),
-      new THREE.MeshStandardMaterial({ color: MOB_COLOR, roughness: 0.85 }),
+      new THREE.MeshStandardMaterial({ color: elite ? ELITE_COLOR : MOB_COLOR, roughness: 0.85 }),
     );
     body.rotation.x = Math.PI / 2;
     body.position.y = 0.5;
     body.castShadow = true;
-    this.group.add(body);
+    beast.add(body);
     const snout = new THREE.Mesh(
       new THREE.ConeGeometry(0.18, 0.4, 8),
       new THREE.MeshStandardMaterial({ color: 0x6e5430, roughness: 0.8 }),
     );
     snout.rotation.x = Math.PI / 2;
     snout.position.set(0, 0.45, 0.75);
-    this.group.add(snout);
+    beast.add(snout);
+    if (elite) {
+      beast.scale.setScalar(1.55);
+      const crown = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.3, 0.22, 6),
+        new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.3 }),
+      );
+      crown.position.set(0, 0.85, 0.55);
+      beast.add(crown);
+    }
+    this.group.add(beast);
 
-    const bar = makeBar(0.9);
+    this.barWidth = elite ? 1.4 : 0.9;
+    const bar = makeBar(this.barWidth);
     this.hpGroup = bar.group;
     this.hpFill = bar.fill;
-    this.hpGroup.position.y = 1.4;
+    this.hpGroup.position.y = elite ? 2.1 : 1.4;
     this.group.add(this.hpGroup);
   }
 
   update(x: number, z: number, facing: number, hpFrac: number, camera: THREE.Camera): void {
     this.group.position.set(x, 0, z);
     this.group.rotation.y = facing;
-    this.hpGroup.visible = hpFrac < 1;
-    setBar(this.hpFill, hpFrac, 0.9);
+    this.hpGroup.visible = this.elite || hpFrac < 1;
+    setBar(this.hpFill, hpFrac, this.barWidth);
     this.hpGroup.quaternion.copy(camera.quaternion);
   }
 }
@@ -336,7 +352,7 @@ export class EntityViews {
       liveMobs.add(m.id);
       let view = this.mobs.get(m.id);
       if (!view) {
-        view = new MobView();
+        view = new MobView(m.elite);
         this.mobs.set(m.id, view);
         this.scene.add(view.group);
       }
@@ -511,7 +527,7 @@ export class EntityViews {
           sfx.death(ev.id === selfId);
           break;
         case 'mobDeath':
-          this.spawnBurst(ev.x, ev.z, 1.4, 0x8a6b3d, 0.4);
+          this.spawnBurst(ev.x, ev.z, ev.elite ? 2.6 : 1.4, ev.elite ? 0xd4af37 : 0x8a6b3d, ev.elite ? 0.6 : 0.4);
           break;
         case 'chestOpened':
           this.spawnFlash(ev.x, ev.z, 1.4, 0xffd75e, 0.4);

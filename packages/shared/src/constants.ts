@@ -60,6 +60,16 @@ export const MOB_BITE_DAMAGE = 6;
 export const MOB_BITE_INTERVAL = 1.0;
 export const MOB_RADIUS = 0.55;
 
+/** Elite minions: tougher POI guardians that always drop an ability scroll. */
+export const ELITE_HP = 130;
+export const ELITE_SPEED = 6;
+export const ELITE_AGGRO_RADIUS = 11;
+export const ELITE_LEASH_RADIUS = 26;
+export const ELITE_BITE_RANGE = 2.0;
+export const ELITE_BITE_DAMAGE = 11;
+export const ELITE_RADIUS = 0.9;
+export const XP_PER_ELITE = 80;
+
 export function levelDamageMult(level: number): number {
   return 1 + LEVEL_DAMAGE_BONUS * (level - 1);
 }

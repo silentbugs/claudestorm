@@ -93,11 +93,19 @@ export interface PlayerEntity {
 
 export interface MobEntity {
   id: number;
+  elite: boolean;
   x: number;
   z: number;
   facing: number;
   hp: number;
   maxHp: number;
+  /** Stats baked at spawn so elites and normal mobs share the update code. */
+  radius: number;
+  speed: number;
+  aggroRadius: number;
+  leashRadius: number;
+  biteRange: number;
+  biteDamage: number;
   homeX: number;
   homeZ: number;
   targetId: number | null;

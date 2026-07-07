@@ -4,6 +4,13 @@ import {
   DROP_START_Y,
   DROP_TIMEOUT_SECONDS,
   GLIDE_FALL_SPEED,
+  ELITE_AGGRO_RADIUS,
+  ELITE_BITE_DAMAGE,
+  ELITE_BITE_RANGE,
+  ELITE_HP,
+  ELITE_LEASH_RADIUS,
+  ELITE_RADIUS,
+  ELITE_SPEED,
   GLIDE_MOVE_SPEED,
   GRAVITY,
   HEAL_AMOUNT,
@@ -37,6 +44,7 @@ import {
   TICK_RATE,
   XP_PER_CHEST,
   XP_PER_COIN,
+  XP_PER_ELITE,
   XP_PER_MOB,
   XP_PER_PLAYER_KILL,
   XP_THRESHOLDS,
@@ -76,10 +84,13 @@ import {
   CHEST_COINS_MIN,
   CHEST_SCROLLS_MAX,
   CHEST_SCROLLS_MIN,
+  ELITE_COINS_MAX,
+  ELITE_COINS_MIN,
   MOB_COINS_MAX,
   MOB_COINS_MIN,
   MOB_SCROLL_CHANCE,
   rollAbility,
+  rollEliteRarity,
   rollRarity,
 } from './loot.js';
 import { circleBlocked, resolveCollisions } from './movement.js';
@@ -227,27 +238,37 @@ export class GameSim {
       const id = this.nextEntityId++;
       this.chests.set(id, { id, x: p.x, z: p.z, opened: false });
     }
-    for (const p of this.map.mobs) {
-      const id = this.nextEntityId++;
-      this.mobs.set(id, {
-        id,
-        x: p.x,
-        z: p.z,
-        facing: 0,
-        hp: MOB_HP,
-        maxHp: MOB_HP,
-        homeX: p.x,
-        homeZ: p.z,
-        targetId: null,
-        wanderX: p.x,
-        wanderZ: p.z,
-        nextDecisionTick: 0,
-        biteCdTicks: 0,
-      });
-    }
+    for (const p of this.map.mobs) this.spawnMob(p.x, p.z, false);
+    for (const p of this.map.elites) this.spawnMob(p.x, p.z, true);
     for (const p of this.map.scrolls) {
       this.spawnScroll(p.x, p.z, rollAbility(this.rng), rollRarity(this.rng));
     }
+  }
+
+  private spawnMob(x: number, z: number, elite: boolean): void {
+    const id = this.nextEntityId++;
+    this.mobs.set(id, {
+      id,
+      elite,
+      x,
+      z,
+      facing: 0,
+      hp: elite ? ELITE_HP : MOB_HP,
+      maxHp: elite ? ELITE_HP : MOB_HP,
+      radius: elite ? ELITE_RADIUS : MOB_RADIUS,
+      speed: elite ? ELITE_SPEED : MOB_SPEED,
+      aggroRadius: elite ? ELITE_AGGRO_RADIUS : MOB_AGGRO_RADIUS,
+      leashRadius: elite ? ELITE_LEASH_RADIUS : MOB_LEASH_RADIUS,
+      biteRange: elite ? ELITE_BITE_RANGE : MOB_BITE_RANGE,
+      biteDamage: elite ? ELITE_BITE_DAMAGE : MOB_BITE_DAMAGE,
+      homeX: x,
+      homeZ: z,
+      targetId: null,
+      wanderX: x,
+      wanderZ: z,
+      nextDecisionTick: 0,
+      biteCdTicks: 0,
+    });
   }
 
   private randomBotLoadout(): PlayerSlots {
@@ -496,7 +517,7 @@ export class GameSim {
       this.damagePlayer(target, damage, p.id);
     }
     for (const mob of this.mobs.values()) {
-      if (!this.inMeleeArc(p.x, p.z, fx, fz, mob.x, mob.z, MOB_RADIUS)) continue;
+      if (!this.inMeleeArc(p.x, p.z, fx, fz, mob.x, mob.z, mob.radius)) continue;
       this.damageMob(mob, damage, p.id);
     }
   }
@@ -627,7 +648,7 @@ export class GameSim {
       }
     }
     for (const mob of this.mobs.values()) {
-      if (dist(p.x, p.z, mob.x, mob.z) <= p.auraRadius + MOB_RADIUS) {
+      if (dist(p.x, p.z, mob.x, mob.z) <= p.auraRadius + mob.radius) {
         this.damageMob(mob, p.auraDps * TICK_DT, p.id);
       }
     }
@@ -743,7 +764,7 @@ export class GameSim {
         }
         if (!gone) {
           for (const mob of this.mobs.values()) {
-            if (dist(proj.x, proj.z, mob.x, mob.z) < proj.radius + MOB_RADIUS) {
+            if (dist(proj.x, proj.z, mob.x, mob.z) < proj.radius + mob.radius) {
               this.damageMob(mob, proj.damage, proj.ownerId);
               gone = true;
               break;
@@ -803,7 +824,7 @@ export class GameSim {
           }
         }
         for (const mob of this.mobs.values()) {
-          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + MOB_RADIUS) {
+          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + mob.radius) {
             this.damageMob(mob, zone.damage, zone.ownerId);
           }
         }
@@ -817,7 +838,7 @@ export class GameSim {
           }
         }
         for (const mob of this.mobs.values()) {
-          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + MOB_RADIUS) {
+          if (dist(zone.x, zone.z, mob.x, mob.z) <= zone.radius + mob.radius) {
             this.damageMob(mob, zone.dps * TICK_DT, zone.ownerId);
           }
         }
@@ -833,12 +854,12 @@ export class GameSim {
 
       // Acquire / validate target
       let target: PlayerEntity | null = mob.targetId !== null ? (this.players.get(mob.targetId) ?? null) : null;
-      if (target && (!target.alive || target.gliding || dist(mob.homeX, mob.homeZ, mob.x, mob.z) > MOB_LEASH_RADIUS)) {
+      if (target && (!target.alive || target.gliding || dist(mob.homeX, mob.homeZ, mob.x, mob.z) > mob.leashRadius)) {
         target = null;
         mob.targetId = null;
       }
       if (!target) {
-        let best = MOB_AGGRO_RADIUS;
+        let best = mob.aggroRadius;
         for (const p of this.players.values()) {
           if (!p.alive || p.gliding) continue;
           const d = dist(mob.x, mob.z, p.x, p.z);
@@ -855,13 +876,13 @@ export class GameSim {
       if (target) {
         const d = dist(mob.x, mob.z, target.x, target.z);
         mob.facing = yawToward(mob.x, mob.z, target.x, target.z);
-        if (d > MOB_BITE_RANGE) {
+        if (d > mob.biteRange) {
           const dir = norm(target.x - mob.x, target.z - mob.z);
-          vx = dir.x * MOB_SPEED;
-          vz = dir.z * MOB_SPEED;
+          vx = dir.x * mob.speed;
+          vz = dir.z * mob.speed;
         } else if (mob.biteCdTicks === 0 && this.phase === 'live') {
           mob.biteCdTicks = Math.round(MOB_BITE_INTERVAL * TICK_RATE);
-          this.damagePlayer(target, MOB_BITE_DAMAGE, mob.id);
+          this.damagePlayer(target, mob.biteDamage, mob.id);
         }
       } else {
         if (dist(mob.x, mob.z, mob.wanderX, mob.wanderZ) < 1 || this.tick >= mob.nextDecisionTick) {
@@ -872,13 +893,13 @@ export class GameSim {
           mob.nextDecisionTick = this.tick + this.rng.int(40, 160);
         }
         const dir = norm(mob.wanderX - mob.x, mob.wanderZ - mob.z);
-        vx = dir.x * MOB_SPEED * 0.5;
-        vz = dir.z * MOB_SPEED * 0.5;
+        vx = dir.x * mob.speed * 0.5;
+        vz = dir.z * mob.speed * 0.5;
         if (Math.abs(vx) + Math.abs(vz) > 0.01) {
           mob.facing = Math.atan2(vx, vz);
         }
       }
-      const resolved = resolveCollisions(mob.x + vx * TICK_DT, mob.z + vz * TICK_DT, MOB_RADIUS, this.map);
+      const resolved = resolveCollisions(mob.x + vx * TICK_DT, mob.z + vz * TICK_DT, mob.radius, this.map);
       mob.x = resolved.x;
       mob.z = resolved.z;
     }
@@ -974,14 +995,19 @@ export class GameSim {
     this.events.push({ type: 'hit', targetId: mob.id, sourceId, amount, x: mob.x, z: mob.z });
     if (mob.hp <= 0) {
       this.mobs.delete(mob.id);
-      this.events.push({ type: 'mobDeath', x: mob.x, z: mob.z });
-      const coins = this.rng.int(MOB_COINS_MIN, MOB_COINS_MAX + 1);
+      this.events.push({ type: 'mobDeath', x: mob.x, z: mob.z, elite: mob.elite });
+      const coins = mob.elite
+        ? this.rng.int(ELITE_COINS_MIN, ELITE_COINS_MAX + 1)
+        : this.rng.int(MOB_COINS_MIN, MOB_COINS_MAX + 1);
       for (let i = 0; i < coins; i++) this.spawnCoin(mob.x, mob.z);
-      if (this.rng.next() < MOB_SCROLL_CHANCE) {
+      if (mob.elite) {
+        // Elites always drop a skill, and a good one.
+        this.spawnScroll(mob.x, mob.z, rollAbility(this.rng), rollEliteRarity(this.rng));
+      } else if (this.rng.next() < MOB_SCROLL_CHANCE) {
         this.spawnScroll(mob.x, mob.z, rollAbility(this.rng), rollRarity(this.rng));
       }
       const killer = sourceId !== null ? this.players.get(sourceId) : undefined;
-      if (killer && killer.alive) this.awardXp(killer, XP_PER_MOB);
+      if (killer && killer.alive) this.awardXp(killer, mob.elite ? XP_PER_ELITE : XP_PER_MOB);
     }
   }
 
@@ -1065,6 +1091,7 @@ export class GameSim {
       })),
       mobs: [...this.mobs.values()].map((m) => ({
         id: m.id,
+        elite: m.elite,
         x: m.x,
         z: m.z,
         facing: m.facing,

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHEST_CHANNEL_SECONDS,
+  ELITE_HP,
   PLAYER_BASE_HP,
   LEVEL_HP_BONUS,
   TICK_RATE,
   XP_PER_CHEST,
+  XP_PER_ELITE,
 } from '../src/constants.js';
 import { cmd, loadout, makeSim, player, FLAT_MAP } from './helpers.js';
 
@@ -72,6 +74,24 @@ describe('mobs and leveling', () => {
     expect(p.level).toBeGreaterThanOrEqual(2); // 30 mob XP + coin XP crosses 40
     expect(p.maxHp).toBe(PLAYER_BASE_HP + LEVEL_HP_BONUS * (p.level - 1));
     expect(p.plunder).toBeGreaterThanOrEqual(3);
+  });
+
+  it('elites always drop a rare-or-better skill scroll and extra coins', () => {
+    const full = loadout(['frostArrow', 'stormCall'], ['gustLeap']); // block auto-equip
+    const map = { ...FLAT_MAP, elites: [{ x: 2, z: 0 }] };
+    const sim = makeSim([player(1, 0, 0, { loadout: full })], { map });
+    const elite = [...sim.mobs.values()][0]!;
+    expect(elite.elite).toBe(true);
+    expect(elite.maxHp).toBe(ELITE_HP);
+    elite.hp = 1; // skip the grind; the drop is what's under test
+    sim.applyInput(1, cmd({ yaw: Math.PI / 2, buttons: HOLD_MELEE }));
+    let snap = sim.step();
+    expect(snap.events.some((e) => e.type === 'mobDeath' && e.elite)).toBe(true);
+    expect(snap.scrolls).toHaveLength(1);
+    expect(['rare', 'epic']).toContain(snap.scrolls[0]!.rarity);
+    for (let i = 0; i < TICK_RATE; i++) snap = sim.step(); // collect coins
+    expect(sim.players.get(1)!.plunder).toBeGreaterThanOrEqual(4);
+    expect(sim.players.get(1)!.xp).toBeGreaterThanOrEqual(XP_PER_ELITE);
   });
 
   it('mobs aggro and bite a player in range', () => {

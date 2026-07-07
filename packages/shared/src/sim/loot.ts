@@ -31,3 +31,11 @@ export const CHEST_SCROLLS_MAX = 2;
 export const MOB_COINS_MIN = 3;
 export const MOB_COINS_MAX = 5;
 export const MOB_SCROLL_CHANCE = 0.25;
+
+export const ELITE_COINS_MIN = 6;
+export const ELITE_COINS_MAX = 9;
+
+/** Elites always drop a skill, skewed toward the top rarities. */
+export function rollEliteRarity(rng: Rng): Rarity {
+  return rng.next() < 0.65 ? 'rare' : 'epic';
+}

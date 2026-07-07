@@ -82,6 +82,7 @@ export interface PlayerSnapshot {
 
 export interface MobSnapshot {
   id: number;
+  elite: boolean;
   x: number;
   z: number;
   facing: number;
@@ -148,7 +149,7 @@ export type GameEvent =
   | { type: 'projectileGone'; id: number; x: number; z: number }
   | { type: 'melee'; casterId: number; x: number; z: number; facing: number; combo: number }
   | { type: 'chestOpened'; x: number; z: number }
-  | { type: 'mobDeath'; x: number; z: number }
+  | { type: 'mobDeath'; x: number; z: number; elite: boolean }
   | { type: 'levelUp'; playerId: number; level: number }
   | { type: 'equip'; playerId: number; abilityId: AbilityId; rarity: Rarity }
   | { type: 'pull'; casterId: number; targetId: number }

@@ -29,6 +29,8 @@ export interface MapDef {
   obstacles: Obstacle[];
   chests: Point[];
   mobs: Point[];
+  /** Elite minions: tougher, guard POIs, always drop an ability scroll. */
+  elites: Point[];
   /** Loose ability scrolls lying in the world. */
   scrolls: Point[];
 }
@@ -110,6 +112,15 @@ export const ARENA: MapDef = {
     { x: 0, z: 46 }, { x: 4, z: 50 }, { x: -8, z: -44 }, { x: -4, z: -48 },
     { x: 66, z: 10 }, { x: -66, z: 6 }, { x: 30, z: 60 }, { x: -30, z: 58 },
     { x: 44, z: -60 }, { x: -44, z: -62 },
+  ],
+  elites: [
+    { x: 4, z: 14 },      // center ruins
+    { x: -57, z: -42 },   // NW farm
+    { x: 53, z: -44 },    // NE camp
+    { x: -57, z: 50 },    // SW docks
+    { x: 52, z: 52 },     // SE quarry
+    { x: 6, z: -70 },     // N watchtower
+    { x: -3, z: 71 },     // S grove
   ],
   scrolls: [
     { x: 3, z: 4 }, { x: -51, z: -48 }, { x: 58, z: -50 },
