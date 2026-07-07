@@ -14,19 +14,21 @@ npm run dev     # open http://localhost:5173
 - **Left mouse** — sword auto-attack (3-hit combo, big finisher)
 - **Q / E** — offense ability slots (looted)
 - **R** — utility ability slot (looted)
+- **H** — heal (builtin, 20s cooldown)
 - **Space** — jump
 - **Shift** — barrel roll (dodges projectiles)
 - **F** — open chests / take scrolls
+- **T** — skills compendium (every ability with stats)
 - **Wheel** — zoom
 
 ## The match
 
-1. **Drop in** — steer your glide to a landing spot; points of interest hold the loot.
-2. **Loot** — chests (channel to open), creatures, and loose scrolls give ability scrolls in four rarities (common → epic; rarity scales power) plus plunder coins.
+1. **Drop in** — steer your glide to a landing spot; seven points of interest on a 200×200 island hold the loot.
+2. **Loot** — chests (channel to open), creatures, and loose scrolls give ability scrolls in four rarities (common → epic; rarity scales power) plus plunder coins. Each POI is guarded by a crowned **elite** that always drops a rare-or-epic skill.
 3. **Level** — coins, kills, and chests grant XP; each level adds max HP and damage.
 4. **Survive** — the storm shrinks in phases; last player standing wins.
 
-Ability roster: Frost Arrow (skillshot + slow), Flame Cyclone (spin AoE while moving), Storm Call (telegraphed ground AoE), Venom Orb (lobbed, leaves a poison pool), Gust Leap (leap + landing knockback), Grasping Chains (pull + root), Stone Shield (absorb).
+Ability roster (10): Frost Arrow (skillshot + slow), Flame Cyclone (spin AoE while moving), Storm Call (telegraphed lightning), Venom Orb (lobbed, leaves a poison pool), Frost Nova (self-centered burst + root), Shadow Lance (heavy skillshot), Gust Leap (leap + landing knockback), Grasping Chains (pull + root), Stone Shield (absorb), Wind Rush (escape dash). Press **T** in game for the full compendium.
 
 ## Scripts
 
