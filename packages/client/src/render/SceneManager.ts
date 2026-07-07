@@ -20,11 +20,11 @@ export class SceneManager {
       55,
       window.innerWidth / window.innerHeight,
       0.1,
-      600,
+      700,
     );
 
     this.scene.background = new THREE.Color(0x121627);
-    this.scene.fog = new THREE.Fog(0x121627, 130, 340);
+    this.scene.fog = new THREE.Fog(0x121627, 150, 420);
 
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.9);
     this.scene.add(hemi);
@@ -32,11 +32,11 @@ export class SceneManager {
     sun.position.set(40, 70, 25);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -90;
-    sun.shadow.camera.right = 90;
-    sun.shadow.camera.top = 90;
-    sun.shadow.camera.bottom = -90;
-    sun.shadow.camera.far = 260;
+    sun.shadow.camera.left = -110;
+    sun.shadow.camera.right = 110;
+    sun.shadow.camera.top = 110;
+    sun.shadow.camera.bottom = -110;
+    sun.shadow.camera.far = 300;
     this.scene.add(sun);
 
     const ground = new THREE.Mesh(
@@ -47,7 +47,7 @@ export class SceneManager {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    const grid = new THREE.GridHelper(ARENA.size, 40, 0x466a4e, 0x3d5c44);
+    const grid = new THREE.GridHelper(ARENA.size, 50, 0x466a4e, 0x3d5c44);
     grid.position.y = 0.02;
     this.scene.add(grid);
 

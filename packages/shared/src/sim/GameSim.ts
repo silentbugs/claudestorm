@@ -151,7 +151,7 @@ export class GameSim {
         setup.loadout ??
         (setup.isBot ? this.randomBotLoadout() : { offense: [null, null], utility: [null] });
       const landAngle = this.rng.range(0, Math.PI * 2);
-      const landR = this.rng.range(15, 65);
+      const landR = this.rng.range(15, this.map.size * 0.4);
       this.players.set(setup.id, {
         id: setup.id,
         name: setup.name,

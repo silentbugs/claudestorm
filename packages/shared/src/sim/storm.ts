@@ -8,11 +8,11 @@ export interface StormPhaseDef {
   dps: number;
 }
 
-export const STORM_START_RADIUS = 115;
+export const STORM_START_RADIUS = 142;
 
 export const STORM_PHASES: StormPhaseDef[] = [
-  { hold: 20, shrink: 22, targetRadius: 62, dps: 5 },
-  { hold: 12, shrink: 18, targetRadius: 34, dps: 10 },
-  { hold: 10, shrink: 14, targetRadius: 15, dps: 18 },
+  { hold: 22, shrink: 24, targetRadius: 78, dps: 5 },
+  { hold: 14, shrink: 20, targetRadius: 42, dps: 10 },
+  { hold: 10, shrink: 15, targetRadius: 18, dps: 18 },
   { hold: 8, shrink: 10, targetRadius: 4, dps: 30 },
 ];
