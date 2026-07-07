@@ -817,10 +817,17 @@ export class GameSim {
           continue;
         }
         this.events.push({ type: 'detonate', x: zone.x, z: zone.z, radius: zone.radius, abilityId: zone.abilityId });
+        const zoneDef = ABILITIES[zone.abilityId];
         for (const target of this.players.values()) {
           if (!target.alive || target.id === zone.ownerId) continue;
           if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
             this.damagePlayer(target, zone.damage, zone.ownerId);
+            if (zoneDef.rootDuration && target.alive) {
+              target.rootTicks = Math.max(
+                target.rootTicks,
+                Math.round(zoneDef.rootDuration * TICK_RATE),
+              );
+            }
           }
         }
         for (const mob of this.mobs.values()) {

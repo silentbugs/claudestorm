@@ -18,6 +18,10 @@ export const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic'];
 export interface AbilityDef {
   id: AbilityId;
   name: string;
+  /** Hotbar / compendium icon (emoji placeholder art). */
+  icon: string;
+  /** One-line description for the skills compendium. */
+  description: string;
   category: SlotCategory;
   behavior: AbilityBehavior;
   cooldown: number;
@@ -56,6 +60,8 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   frostArrow: {
     id: 'frostArrow',
     name: 'Frost Arrow',
+    icon: '🏹',
+    description: 'Fires a fast icy bolt that damages the first enemy hit and slows them briefly.',
     category: 'offense',
     behavior: 'projectile',
     cooldown: 2,
@@ -69,6 +75,8 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   flameCyclone: {
     id: 'flameCyclone',
     name: 'Flame Cyclone',
+    icon: '🔥',
+    description: 'Wreathes you in fire for 3s, burning everything nearby while you keep moving.',
     category: 'offense',
     behavior: 'selfAura',
     cooldown: 8,
@@ -79,6 +87,8 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   stormCall: {
     id: 'stormCall',
     name: 'Storm Call',
+    icon: '⚡',
+    description: 'Calls a lightning strike onto the aimed spot after a short telegraph.',
     category: 'offense',
     behavior: 'groundAoE',
     cooldown: 6,
@@ -90,6 +100,8 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   venomOrb: {
     id: 'venomOrb',
     name: 'Venom Orb',
+    icon: '☠️',
+    description: 'Lobs a toxic orb that bursts into a lingering poison pool.',
     category: 'offense',
     behavior: 'projectile',
     cooldown: 7,
@@ -101,9 +113,38 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
     poolDuration: 4,
     poolDps: 12,
   },
+  frostNova: {
+    id: 'frostNova',
+    name: 'Frost Nova',
+    icon: '❄️',
+    description: 'After a heartbeat, ice erupts around you, damaging and rooting nearby enemies.',
+    category: 'offense',
+    behavior: 'groundAoE',
+    cooldown: 9,
+    damage: 24,
+    castRange: 0, // always centered on the caster
+    telegraph: 0.45,
+    aoeRadius: 4.5,
+    rootDuration: 1.0,
+  },
+  shadowLance: {
+    id: 'shadowLance',
+    name: 'Shadow Lance',
+    icon: '🔮',
+    description: 'Hurls a piercing dark lance — slow to ready, but it hits like a truck.',
+    category: 'offense',
+    behavior: 'projectile',
+    cooldown: 5,
+    damage: 28,
+    projectileSpeed: 38,
+    projectileRadius: 0.45,
+    projectileLifetime: 0.9,
+  },
   gustLeap: {
     id: 'gustLeap',
     name: 'Gust Leap',
+    icon: '💨',
+    description: 'Leap forward and slam down, damaging and knocking back enemies where you land.',
     category: 'utility',
     behavior: 'leap',
     cooldown: 9,
@@ -116,6 +157,8 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   graspingChains: {
     id: 'graspingChains',
     name: 'Grasping Chains',
+    icon: '⛓️',
+    description: 'Skillshot chain that drags the struck enemy to you and roots them.',
     category: 'utility',
     behavior: 'projectile',
     cooldown: 10,
@@ -129,12 +172,28 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   stoneShield: {
     id: 'stoneShield',
     name: 'Stone Shield',
+    icon: '🛡️',
+    description: 'Encases you in stone, absorbing damage before your health for 4s.',
     category: 'utility',
     behavior: 'shield',
     cooldown: 12,
     damage: 0,
     shieldAmount: 40,
     shieldDuration: 4,
+  },
+  windRush: {
+    id: 'windRush',
+    name: 'Wind Rush',
+    icon: '🌪️',
+    description: 'A long, fast dash on a short cooldown. Pure escape — or pure chase.',
+    category: 'utility',
+    behavior: 'leap',
+    cooldown: 6,
+    damage: 0,
+    leapRange: 12,
+    leapDuration: 0.35,
+    landRadius: 0,
+    knockbackDistance: 0,
   },
 };
 

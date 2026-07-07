@@ -56,6 +56,15 @@ class Sfx {
       case 'stoneShield':
         this.tone(220, 0.3, 'triangle', 0.12, 330);
         break;
+      case 'frostNova':
+        this.tone(980, 0.2, 'triangle', 0.1, 520);
+        break;
+      case 'shadowLance':
+        this.tone(240, 0.16, 'sawtooth', 0.09, 90);
+        break;
+      case 'windRush':
+        this.tone(300, 0.2, 'sine', 0.11, 900);
+        break;
     }
   }
 

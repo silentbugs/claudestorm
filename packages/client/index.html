@@ -22,6 +22,13 @@
       <div id="center-msg"></div>
       <div id="interact-prompt" class="hidden"></div>
       <div id="channel-bar" class="hidden"><div id="channel-fill"></div></div>
+      <div id="skills-overlay" class="hidden">
+        <div id="skills-panel">
+          <h1>Skills Compendium</h1>
+          <div id="skills-list"></div>
+          <div id="skills-close-hint">Press <span class="kb">T</span> to close</div>
+        </div>
+      </div>
       <div id="end-screen" class="hidden">
         <div id="end-title"></div>
         <div id="end-sub"></div>
@@ -31,31 +38,31 @@
         <div id="hpbar"><div id="hpfill"></div><div id="shieldfill"></div><span id="hptext"></span></div>
         <div id="hotbar">
           <div class="slot" data-slot="melee">
-            <span class="key">LMB</span><span class="name">Sword</span>
+            <span class="key">LMB</span><span class="icon">⚔️</span><span class="name">Sword</span>
             <div class="cd-overlay"></div><span class="cd-text"></span>
           </div>
           <div class="slot" data-slot="0">
-            <span class="key">Q</span><span class="name">—</span>
+            <span class="key">Q</span><span class="icon"></span><span class="name">—</span>
             <div class="cd-overlay"></div><span class="cd-text"></span>
           </div>
           <div class="slot" data-slot="1">
-            <span class="key">E</span><span class="name">—</span>
+            <span class="key">E</span><span class="icon"></span><span class="name">—</span>
             <div class="cd-overlay"></div><span class="cd-text"></span>
           </div>
           <div class="slot" data-slot="2">
-            <span class="key">R</span><span class="name">—</span>
+            <span class="key">R</span><span class="icon"></span><span class="name">—</span>
             <div class="cd-overlay"></div><span class="cd-text"></span>
           </div>
           <div class="slot" data-slot="heal">
-            <span class="key">H</span><span class="name">Heal</span>
+            <span class="key">H</span><span class="icon">💚</span><span class="name">Heal</span>
             <div class="cd-overlay"></div><span class="cd-text"></span>
           </div>
           <div class="slot" data-slot="roll">
-            <span class="key">Shift</span><span class="name">Roll</span>
+            <span class="key">Shift</span><span class="icon">🤸</span><span class="name">Roll</span>
             <div class="cd-overlay"></div><span class="cd-text"></span>
           </div>
         </div>
-        <div id="controls-hint">WASD move · hold RMB look · LMB sword · Q/E/R abilities · H heal · Space jump · Shift roll · F loot</div>
+        <div id="controls-hint">WASD move · hold RMB look · LMB sword · Q/E/R abilities · H heal · Space jump · Shift roll · F loot · T skills</div>
       </div>
       <div id="vignette"></div>
     </div>

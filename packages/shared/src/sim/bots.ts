@@ -88,7 +88,7 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
         def.behavior === 'selfAura'
           ? targetDist < (def.auraRadius ?? 3) + 1.5
           : def.behavior === 'groundAoE'
-            ? targetDist < (def.castRange ?? 20)
+            ? targetDist < Math.max(def.castRange ?? 20, (def.aoeRadius ?? 0) + 1)
             : targetDist < 26;
       if (inRange && rng.next() < 0.45) slotCasts.push(i);
     }

@@ -27,6 +27,7 @@ const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
   frostArrow: 0x7fd4ff,
   venomOrb: 0x6fd44a,
   graspingChains: 0xd8d8e8,
+  shadowLance: 0xb05df0,
 };
 
 function lerpAngle(a: number, b: number, t: number): number {

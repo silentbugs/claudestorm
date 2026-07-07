@@ -1,8 +1,13 @@
 import {
   ABILITIES,
+  HEAL_AMOUNT,
   HEAL_COOLDOWN,
+  MELEE_COMBO_FINISHER_MULT,
+  MELEE_DAMAGE,
   MELEE_INTERVAL,
   ROLL_COOLDOWN,
+  ROLL_DISTANCE,
+  type AbilityDef,
   type PlayerSnapshot,
   type Rarity,
   type Snapshot,
@@ -17,6 +22,7 @@ const RARITY_CSS: Record<Rarity, string> = {
 
 interface SlotEls {
   root: HTMLElement;
+  icon: HTMLElement;
   name: HTMLElement;
   overlay: HTMLElement;
   text: HTMLElement;
@@ -43,16 +49,89 @@ export class Hud {
   private readonly slotEls = new Map<string, SlotEls>();
   private vignetteStrength = 0;
 
+  private readonly skillsOverlay = document.getElementById('skills-overlay')!;
+
   constructor(onRestart: () => void) {
     document.getElementById('restart-btn')!.addEventListener('click', onRestart);
     for (const el of document.querySelectorAll<HTMLElement>('.slot')) {
       this.slotEls.set(el.dataset.slot!, {
         root: el,
+        icon: el.querySelector<HTMLElement>('.icon')!,
         name: el.querySelector<HTMLElement>('.name')!,
         overlay: el.querySelector<HTMLElement>('.cd-overlay')!,
         text: el.querySelector<HTMLElement>('.cd-text')!,
       });
     }
+    this.buildSkillsList();
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyT') this.skillsOverlay.classList.toggle('hidden');
+      else if (e.code === 'Escape') this.skillsOverlay.classList.add('hidden');
+    });
+  }
+
+  /** The skills compendium: builtins plus every lootable ability, straight from the sim's data. */
+  private buildSkillsList(): void {
+    const list = document.getElementById('skills-list')!;
+    const row = (
+      icon: string,
+      name: string,
+      key: string,
+      tag: string,
+      stats: string,
+      description: string,
+    ) => `
+      <div class="skill-row">
+        <span class="skill-icon">${icon}</span>
+        <div class="skill-body">
+          <div class="skill-head">
+            <span class="skill-name">${name}</span>
+            <span class="skill-key">${key}</span>
+            <span class="skill-tag ${tag.toLowerCase()}">${tag}</span>
+          </div>
+          <div class="skill-desc">${description}</div>
+          <div class="skill-stats">${stats}</div>
+        </div>
+      </div>`;
+
+    const abilityStats = (def: AbilityDef): string => {
+      const parts: string[] = [];
+      if (def.damage > 0) parts.push(`${def.behavior === 'selfAura' ? `${def.damage}/s` : def.damage} damage`);
+      parts.push(`${def.cooldown}s cooldown`);
+      if (def.slowDuration) parts.push('slows');
+      if (def.rootDuration) parts.push('roots');
+      if (def.pull) parts.push('pulls');
+      if (def.poolDps) parts.push(`${def.poolDps}/s pool`);
+      if (def.shieldAmount) parts.push(`${def.shieldAmount} absorb`);
+      if (def.knockbackDistance) parts.push('knockback');
+      return parts.join(' · ');
+    };
+
+    const builtins = [
+      row('⚔️', 'Sword', 'LMB', 'Builtin',
+        `${MELEE_DAMAGE} damage · ${MELEE_INTERVAL}s swing · 3rd hit ×${MELEE_COMBO_FINISHER_MULT}`,
+        'Auto-attack combo in a front arc. The third hit in a row is a finisher.'),
+      row('💚', 'Heal', 'H', 'Builtin', `${HEAL_AMOUNT} healing · ${HEAL_COOLDOWN}s cooldown`,
+        'Instantly restore health. Everyone carries this — use it before it is too late.'),
+      row('🤸', 'Barrel Roll', 'Shift', 'Builtin', `${ROLL_DISTANCE}m · ${ROLL_COOLDOWN}s cooldown`,
+        'Quick dodge roll. You are immune to projectiles while rolling.'),
+    ].join('');
+
+    const abilities = Object.values(ABILITIES)
+      .map((def) =>
+        row(
+          def.icon,
+          def.name,
+          def.category === 'offense' ? 'Q / E' : 'R',
+          def.category === 'offense' ? 'Offense' : 'Utility',
+          abilityStats(def),
+          def.description,
+        ),
+      )
+      .join('');
+
+    list.innerHTML =
+      `<div class="skill-section">Builtins — always on your bar</div>${builtins}` +
+      `<div class="skill-section">Lootable abilities — find scrolls in chests, on elites, and in the world</div>${abilities}`;
   }
 
   update(snap: Snapshot, selfId: number): void {
@@ -93,12 +172,12 @@ export class Hud {
         ? `${Math.ceil(self.hp)} +${Math.ceil(self.shieldHp)} / ${self.maxHp}`
         : `${Math.ceil(self.hp)} / ${self.maxHp}`;
 
-    this.updateSlot('melee', 'Sword', null, self.meleeCd, MELEE_INTERVAL, false);
+    this.updateSlot('melee', 'Sword', '⚔️', null, self.meleeCd, MELEE_INTERVAL, false);
     this.updateAbilitySlot('0', self, 0);
     this.updateAbilitySlot('1', self, 1);
     this.updateAbilitySlot('2', self, 2);
-    this.updateSlot('heal', 'Heal', null, self.healCd, HEAL_COOLDOWN, false);
-    this.updateSlot('roll', 'Roll', null, self.rollCd, ROLL_COOLDOWN, false);
+    this.updateSlot('heal', 'Heal', '💚', null, self.healCd, HEAL_COOLDOWN, false);
+    this.updateSlot('roll', 'Roll', '🤸', null, self.rollCd, ROLL_COOLDOWN, false);
 
     if (self.channeling >= 0) {
       this.channelBar.classList.remove('hidden');
@@ -112,16 +191,17 @@ export class Hud {
     const equipped =
       slotIndex < 2 ? self.slots.offense[slotIndex] : self.slots.utility[slotIndex - 2];
     if (!equipped) {
-      this.updateSlot(key, '—', null, 0, 1, true);
+      this.updateSlot(key, '—', '', null, 0, 1, true);
       return;
     }
     const def = ABILITIES[equipped.abilityId];
-    this.updateSlot(key, def.name, equipped.rarity, self.slotCds[slotIndex] ?? 0, def.cooldown, false);
+    this.updateSlot(key, def.name, def.icon, equipped.rarity, self.slotCds[slotIndex] ?? 0, def.cooldown, false);
   }
 
   private updateSlot(
     key: string,
     name: string,
+    icon: string,
     rarity: Rarity | null,
     cd: number,
     cdTotal: number,
@@ -129,6 +209,7 @@ export class Hud {
   ): void {
     const els = this.slotEls.get(key);
     if (!els) return;
+    if (els.icon.textContent !== icon) els.icon.textContent = icon;
     els.name.textContent = name;
     els.root.classList.toggle('empty', empty);
     els.root.style.borderColor = rarity ? RARITY_CSS[rarity] : '#444a63';

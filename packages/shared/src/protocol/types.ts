@@ -3,9 +3,12 @@ export type AbilityId =
   | 'flameCyclone'
   | 'stormCall'
   | 'venomOrb'
+  | 'frostNova'
+  | 'shadowLance'
   | 'gustLeap'
   | 'graspingChains'
-  | 'stoneShield';
+  | 'stoneShield'
+  | 'windRush';
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic';
 export type SlotCategory = 'offense' | 'utility';

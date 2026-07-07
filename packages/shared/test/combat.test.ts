@@ -198,6 +198,48 @@ describe('gust leap', () => {
   });
 });
 
+describe('frost nova', () => {
+  it('erupts around the caster regardless of aim, damaging and rooting', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { loadout: loadout(['frostNova']) }),
+      player(2, 3, 0), // inside the nova
+      player(3, 30, 30), // far away
+    ]);
+    sim.applyInput(1, castCmd(0, 50, 50)); // aim far — nova still centers on caster
+    const telegraphTicks = Math.round(ABILITIES.frostNova.telegraph! * TICK_RATE);
+    for (let i = 0; i < telegraphTicks + 2; i++) sim.step();
+    const b = sim.players.get(2)!;
+    expect(b.hp).toBeCloseTo(PLAYER_BASE_HP - ABILITIES.frostNova.damage, 5);
+    expect(b.rootTicks).toBeGreaterThan(0);
+    expect(sim.players.get(3)!.hp).toBe(PLAYER_BASE_HP);
+  });
+});
+
+describe('shadow lance', () => {
+  it('deals heavy single-target damage', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { loadout: loadout(['shadowLance']) }),
+      player(2, 12, 0),
+    ]);
+    sim.applyInput(1, castCmd(0, 12, 0));
+    for (let i = 0; i < 12; i++) sim.step();
+    expect(sim.players.get(2)!.hp).toBeCloseTo(PLAYER_BASE_HP - ABILITIES.shadowLance.damage, 5);
+  });
+});
+
+describe('wind rush', () => {
+  it('dashes the caster forward without damaging anyone', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { loadout: loadout([null, null], ['windRush']) }),
+      player(2, 12, 0),
+    ]);
+    sim.applyInput(1, cmd({ moveX: 1, slotCasts: [2] }));
+    for (let i = 0; i < 12; i++) sim.step();
+    expect(sim.players.get(1)!.x).toBeGreaterThan(ABILITIES.windRush.leapRange! - 1);
+    expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+  });
+});
+
 describe('stone shield', () => {
   it('absorbs incoming damage before health', () => {
     const sim = makeSim([
