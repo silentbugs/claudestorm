@@ -41,7 +41,7 @@ export interface InputCommand {
   aimX: number;
   aimZ: number;
   buttons: InputButtons;
-  /** Ability slot presses this tick: 0/1 = offense, 2 = utility. */
+  /** Ability slot presses this tick: 0/1 = offense, 2/3 = utility. */
   slotCasts: number[];
 }
 
@@ -76,7 +76,7 @@ export interface PlayerSnapshot {
   /** Chest-open progress 0..1, or -1 when not channeling. */
   channeling: number;
   slots: PlayerSlots;
-  /** Seconds remaining: [offense0, offense1, utility0]. */
+  /** Seconds remaining: [offense0, offense1, utility0, utility1]. */
   slotCds: number[];
   meleeCd: number;
   rollCd: number;
@@ -155,6 +155,7 @@ export type GameEvent =
   | { type: 'mobDeath'; x: number; z: number; elite: boolean }
   | { type: 'levelUp'; playerId: number; level: number }
   | { type: 'equip'; playerId: number; abilityId: AbilityId; rarity: Rarity }
+  | { type: 'upgrade'; playerId: number; abilityId: AbilityId; rarity: Rarity }
   | { type: 'pull'; casterId: number; targetId: number }
   | { type: 'coin'; playerId: number }
   | { type: 'heal'; playerId: number; amount: number; x: number; z: number };

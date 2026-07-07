@@ -201,8 +201,16 @@ export const ABILITY_IDS = Object.keys(ABILITIES) as AbilityId[];
 export const OFFENSE_ABILITIES = ABILITY_IDS.filter((id) => ABILITIES[id].category === 'offense');
 export const UTILITY_ABILITIES = ABILITY_IDS.filter((id) => ABILITIES[id].category === 'utility');
 
-/** Slot layout: indices 0/1 are offense, 2 is utility. */
-export const SLOT_COUNT = 3;
+/** Plunderstorm action bar: slots 0/1 are offense, 2/3 are utility. */
+export const SLOT_COUNT = 4;
 export function slotCategory(slotIndex: number): SlotCategory {
   return slotIndex < 2 ? 'offense' : 'utility';
+}
+
+/** Next rank when stacking a duplicate scroll: max(current+1, scroll's own rank), capped at epic. */
+export function stackedRarity(current: Rarity, pickup: Rarity): Rarity | null {
+  const cur = RARITY_ORDER.indexOf(current);
+  const target = Math.max(cur + 1, RARITY_ORDER.indexOf(pickup));
+  if (cur >= RARITY_ORDER.length - 1) return null; // already epic
+  return RARITY_ORDER[Math.min(target, RARITY_ORDER.length - 1)]!;
 }

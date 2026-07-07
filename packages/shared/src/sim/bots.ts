@@ -93,12 +93,13 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       if (inRange && rng.next() < 0.45) slotCasts.push(i);
     }
     // Utility: chains at mid range, leap/shield when hurt.
-    const utility = bot.slots.utility[0];
-    if (utility && bot.slotCds[2] === 0) {
+    for (const slot of [2, 3]) {
+      const utility = bot.slots.utility[slot - 2];
+      if (!utility || bot.slotCds[slot]! > 0) continue;
       const def = ABILITIES[utility.abilityId];
-      if (def.pull && targetDist > 7 && targetDist < 16 && rng.next() < 0.4) slotCasts.push(2);
-      else if (def.behavior === 'shield' && bot.hp < 45 && rng.next() < 0.5) slotCasts.push(2);
-      else if (def.behavior === 'leap' && bot.hp < 35 && rng.next() < 0.35) slotCasts.push(2);
+      if (def.pull && targetDist > 7 && targetDist < 16 && rng.next() < 0.4) slotCasts.push(slot);
+      else if (def.behavior === 'shield' && bot.hp < 45 && rng.next() < 0.5) slotCasts.push(slot);
+      else if (def.behavior === 'leap' && bot.hp < 35 && rng.next() < 0.35) slotCasts.push(slot);
     }
     if (bot.rollCdTicks === 0 && rng.next() < 0.02) buttons.roll = true;
 

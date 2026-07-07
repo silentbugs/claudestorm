@@ -121,7 +121,7 @@ export class Hud {
         row(
           def.icon,
           def.name,
-          def.category === 'offense' ? 'Q / E' : 'R',
+          def.category === 'offense' ? '1 / 2' : '3 / 4',
           def.category === 'offense' ? 'Offense' : 'Utility',
           abilityStats(def),
           def.description,
@@ -176,6 +176,7 @@ export class Hud {
     this.updateAbilitySlot('0', self, 0);
     this.updateAbilitySlot('1', self, 1);
     this.updateAbilitySlot('2', self, 2);
+    this.updateAbilitySlot('3', self, 3);
     this.updateSlot('heal', 'Heal', '💚', null, self.healCd, HEAL_COOLDOWN, false);
     this.updateSlot('roll', 'Roll', '🤸', null, self.rollCd, ROLL_COOLDOWN, false);
 

@@ -39,14 +39,17 @@ export class InputManager {
       case 'KeyH':
         this.pendingEdges.add('heal');
         break;
-      case 'KeyQ':
+      case 'Digit1':
         this.pendingSlots.add(0);
         break;
-      case 'KeyE':
+      case 'Digit2':
         this.pendingSlots.add(1);
         break;
-      case 'KeyR':
+      case 'Digit3':
         this.pendingSlots.add(2);
+        break;
+      case 'Digit4':
+        this.pendingSlots.add(3);
         break;
     }
   };

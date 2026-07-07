@@ -58,6 +58,40 @@ describe('scrolls', () => {
   });
 });
 
+describe('ability rank-ups', () => {
+  it('picking up a duplicate scroll upgrades the equipped rank', () => {
+    const map = { ...FLAT_MAP, scrolls: [{ x: 1, z: 0 }] };
+    const sim = makeSim([player(1, 0, 0, { loadout: loadout(['frostArrow']) })], { map });
+    // Force the world scroll to be a common duplicate of the equipped ability.
+    const scroll = [...sim.scrolls.values()][0]!;
+    scroll.abilityId = 'frostArrow';
+    scroll.rarity = 'common';
+    const snap = sim.step(); // auto-pickup range
+    expect(snap.scrolls).toHaveLength(0);
+    expect(snap.events.some((e) => e.type === 'upgrade')).toBe(true);
+    expect(sim.players.get(1)!.slots.offense[0]!.rarity).toBe('uncommon');
+  });
+
+  it('a higher-rarity duplicate jumps straight to its rank; epic caps and leaves the scroll', () => {
+    const map = { ...FLAT_MAP, scrolls: [{ x: 1, z: 0 }] };
+    const sim = makeSim([player(1, 0, 0, { loadout: loadout(['frostArrow']) })], { map });
+    const scroll = [...sim.scrolls.values()][0]!;
+    scroll.abilityId = 'frostArrow';
+    scroll.rarity = 'epic';
+    sim.step();
+    expect(sim.players.get(1)!.slots.offense[0]!.rarity).toBe('epic');
+    // Second epic duplicate: nothing to gain, scroll stays on the ground.
+    const map2 = { ...FLAT_MAP, scrolls: [{ x: 1, z: 0 }] };
+    const sim2 = makeSim([player(1, 0, 0, { loadout: loadout(['frostArrow'], [null, null], 'epic') })], { map: map2 });
+    const scroll2 = [...sim2.scrolls.values()][0]!;
+    scroll2.abilityId = 'frostArrow';
+    scroll2.rarity = 'common';
+    const snap2 = sim2.step();
+    expect(snap2.scrolls).toHaveLength(1);
+    expect(sim2.players.get(1)!.slots.offense[0]!.rarity).toBe('epic');
+  });
+});
+
 describe('mobs and leveling', () => {
   it('killing a mob drops coins and levels the killer up', () => {
     const map = { ...FLAT_MAP, mobs: [{ x: 2, z: 0 }] };

@@ -68,6 +68,7 @@ import {
   SLOT_COUNT,
   UTILITY_ABILITIES,
   slotCategory,
+  stackedRarity,
 } from './abilities.js';
 import { computeBotInput } from './bots.js';
 import type {
@@ -160,7 +161,7 @@ export class GameSim {
       const z = setup.spawn?.z ?? Math.sin(angle) * 6;
       const loadout: PlayerSlots =
         setup.loadout ??
-        (setup.isBot ? this.randomBotLoadout() : { offense: [null, null], utility: [null] });
+        (setup.isBot ? this.randomBotLoadout() : { offense: [null, null], utility: [null, null] });
       const landAngle = this.rng.range(0, Math.PI * 2);
       const landR = this.rng.range(15, this.map.size * 0.4);
       this.players.set(setup.id, {
@@ -183,7 +184,7 @@ export class GameSim {
         meleeHeld: false,
         pendingButtons: new Set(),
         pendingSlotCasts: new Set(),
-        slotCds: [0, 0, 0],
+        slotCds: [0, 0, 0, 0],
         meleeCdTicks: 0,
         rollCdTicks: 0,
         healCdTicks: 0,
@@ -273,7 +274,7 @@ export class GameSim {
 
   private randomBotLoadout(): PlayerSlots {
     const offense: PlayerSlots['offense'] = [null, null];
-    const utility: PlayerSlots['utility'] = [null];
+    const utility: PlayerSlots['utility'] = [null, null];
     const o1 = OFFENSE_ABILITIES[this.rng.int(0, OFFENSE_ABILITIES.length)]!;
     offense[0] = { abilityId: o1, rarity: rollRarity(this.rng) };
     if (this.rng.next() < 0.6) {
@@ -281,10 +282,12 @@ export class GameSim {
       offense[1] = { abilityId: rest[this.rng.int(0, rest.length)]!, rarity: rollRarity(this.rng) };
     }
     if (this.rng.next() < 0.7) {
-      utility[0] = {
-        abilityId: UTILITY_ABILITIES[this.rng.int(0, UTILITY_ABILITIES.length)]!,
-        rarity: rollRarity(this.rng),
-      };
+      const u1 = UTILITY_ABILITIES[this.rng.int(0, UTILITY_ABILITIES.length)]!;
+      utility[0] = { abilityId: u1, rarity: rollRarity(this.rng) };
+      if (this.rng.next() < 0.4) {
+        const rest = UTILITY_ABILITIES.filter((a) => a !== u1);
+        utility[1] = { abilityId: rest[this.rng.int(0, rest.length)]!, rarity: rollRarity(this.rng) };
+      }
     }
     return { offense, utility };
   }
@@ -688,6 +691,16 @@ export class GameSim {
   private equipScroll(p: PlayerEntity, scroll: ScrollEntity, force: boolean): boolean {
     const def = ABILITIES[scroll.abilityId];
     const arr = def.category === 'offense' ? p.slots.offense : p.slots.utility;
+    // Duplicate of an equipped ability: stack it into a higher rank (Plunderstorm-style).
+    const dupIdx = arr.findIndex((s) => s?.abilityId === scroll.abilityId);
+    if (dupIdx !== -1) {
+      const next = stackedRarity(arr[dupIdx]!.rarity, scroll.rarity);
+      if (next === null) return false; // already max rank — leave the scroll
+      arr[dupIdx] = { abilityId: scroll.abilityId, rarity: next };
+      this.scrolls.delete(scroll.id);
+      this.events.push({ type: 'upgrade', playerId: p.id, abilityId: scroll.abilityId, rarity: next });
+      return true;
+    }
     let idx = arr.findIndex((s) => s === null);
     if (idx === -1) {
       if (!force) return false;

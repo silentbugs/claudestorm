@@ -34,13 +34,15 @@ export function makeSim(
 
 export function loadout(
   offense: (AbilityId | null)[] = [null, null],
-  utility: (AbilityId | null)[] = [null],
+  utility: (AbilityId | null)[] = [null, null],
   rarity: Rarity = 'common',
 ): PlayerSlots {
-  return {
-    offense: offense.map((a) => (a ? { abilityId: a, rarity } : null)),
-    utility: utility.map((a) => (a ? { abilityId: a, rarity } : null)),
+  const pad = (arr: (AbilityId | null)[]) => {
+    const out = arr.map((a) => (a ? { abilityId: a, rarity } : null));
+    while (out.length < 2) out.push(null);
+    return out;
   };
+  return { offense: pad(offense), utility: pad(utility) };
 }
 
 export function cmd(partial: Partial<InputCommand> = {}): InputCommand {

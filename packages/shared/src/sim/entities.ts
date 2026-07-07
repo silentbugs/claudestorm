@@ -39,7 +39,7 @@ export interface PlayerEntity {
   pendingButtons: Set<'roll' | 'jump' | 'interact' | 'heal'>;
   pendingSlotCasts: Set<number>;
 
-  /** Ticks remaining: [offense0, offense1, utility0]. */
+  /** Ticks remaining: [offense0, offense1, utility0, utility1]. */
   slotCds: number[];
   meleeCdTicks: number;
   rollCdTicks: number;

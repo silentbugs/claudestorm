@@ -718,6 +718,12 @@ export class EntityViews {
         case 'equip':
           if (ev.playerId === selfId) sfx.equip();
           break;
+        case 'upgrade': {
+          const p = playerById.get(ev.playerId);
+          if (p) this.spawnBurst(p.x, p.z, 1.8, RARITY_COLORS[ev.rarity], 0.55, 1.2);
+          if (ev.playerId === selfId) sfx.levelUp();
+          break;
+        }
         case 'coin':
           if (ev.playerId === selfId) sfx.coin();
           break;
