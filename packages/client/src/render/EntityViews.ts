@@ -15,6 +15,7 @@ const DEAD_COLOR = 0x50505a;
 const SLOW_COLOR = 0x9fd8ff;
 const MOB_COLOR = 0x8a6b3d;
 const ELITE_COLOR = 0x9c3f3f;
+const SWING_DURATION = 0.28;
 
 export const RARITY_COLORS: Record<Rarity, number> = {
   common: 0xb8b5a5,
@@ -61,9 +62,10 @@ function setBar(fill: THREE.Mesh, frac: number, width: number): void {
 class PlayerView {
   readonly group = new THREE.Group();
   private readonly bodyPivot = new THREE.Group();
-  private readonly body: THREE.Mesh;
   private readonly bodyMat: THREE.MeshStandardMaterial;
-  private readonly nose: THREE.Mesh;
+  private readonly headMat: THREE.MeshStandardMaterial;
+  private readonly rightArm = new THREE.Group();
+  private readonly leftArm: THREE.Mesh;
   private readonly glider: THREE.Mesh;
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
@@ -71,25 +73,77 @@ class PlayerView {
   private readonly hpFill: THREE.Mesh;
   private deadFor = 0;
   private rollSpin = 0;
+  private swingTimer = 0;
+  private castTimer = 0;
 
   constructor(isSelf: boolean, isBot: boolean) {
     this.bodyMat = new THREE.MeshStandardMaterial({
       color: isSelf ? SELF_COLOR : isBot ? BOT_COLOR : SELF_COLOR,
       roughness: 0.6,
     });
-    this.body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.0, 4, 14), this.bodyMat);
-    this.body.castShadow = true;
-    this.bodyPivot.position.y = 1;
-    this.bodyPivot.add(this.body);
-    this.group.add(this.bodyPivot);
+    this.headMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, roughness: 0.7 });
 
-    this.nose = new THREE.Mesh(
-      new THREE.ConeGeometry(0.2, 0.5, 10),
-      new THREE.MeshStandardMaterial({ color: 0xf5e9c9, roughness: 0.5 }),
+    // Tiny humanoid: legs, torso, head, arms, sword. Pivot at hip height so
+    // roll spins and death fall-over read naturally.
+    this.bodyPivot.position.y = 0.95;
+
+    const legGeo = new THREE.CapsuleGeometry(0.11, 0.32, 3, 8);
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(legGeo, this.bodyMat);
+      leg.position.set(side * 0.17, -0.62, 0);
+      leg.castShadow = true;
+      this.bodyPivot.add(leg);
+    }
+
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.5, 4, 12), this.bodyMat);
+    torso.position.y = -0.05;
+    torso.castShadow = true;
+    this.bodyPivot.add(torso);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 12), this.headMat);
+    head.position.y = 0.62;
+    head.castShadow = true;
+    this.bodyPivot.add(head);
+    // Visor strip so facing is readable up close.
+    const visor = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.09, 0.08),
+      new THREE.MeshStandardMaterial({ color: 0x232633, roughness: 0.4 }),
     );
-    this.nose.rotation.x = Math.PI / 2;
-    this.nose.position.set(0, 1.35, 0.6);
-    this.group.add(this.nose);
+    visor.position.set(0, 0.66, 0.22);
+    this.bodyPivot.add(visor);
+
+    const armGeo = new THREE.CapsuleGeometry(0.1, 0.34, 3, 8);
+    this.leftArm = new THREE.Mesh(armGeo, this.bodyMat);
+    this.leftArm.position.set(-0.47, 0.08, 0);
+    this.leftArm.castShadow = true;
+    this.bodyPivot.add(this.leftArm);
+
+    // Right arm is a pivot group so the sword swings with it.
+    this.rightArm.position.set(0.47, 0.22, 0);
+    const rArmMesh = new THREE.Mesh(armGeo, this.bodyMat);
+    rArmMesh.position.y = -0.14;
+    rArmMesh.castShadow = true;
+    this.rightArm.add(rArmMesh);
+
+    const steel = new THREE.MeshStandardMaterial({ color: 0xcfd2dd, metalness: 0.7, roughness: 0.35 });
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.13, 0.78), steel);
+    blade.position.set(0, -0.36, 0.5);
+    const guard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.26, 0.06, 0.08),
+      new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35 }),
+    );
+    guard.position.set(0, -0.36, 0.1);
+    const grip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 0.16, 8),
+      new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.85 }),
+    );
+    grip.rotation.x = Math.PI / 2;
+    grip.position.set(0, -0.36, 0.0);
+    this.rightArm.add(blade, guard, grip);
+    this.rightArm.rotation.x = 0.35; // resting: sword low, forward
+    this.bodyPivot.add(this.rightArm);
+
+    this.group.add(this.bodyPivot);
 
     this.glider = new THREE.Mesh(
       new THREE.ConeGeometry(1.5, 0.8, 4),
@@ -153,7 +207,7 @@ class PlayerView {
       this.bodyPivot.rotation.x = Math.PI / 2;
       this.bodyPivot.position.y = 0.5;
       this.bodyMat.color.setHex(DEAD_COLOR);
-      this.nose.visible = false;
+      this.headMat.color.setHex(0x8a8070);
       this.hpGroup.visible = false;
       this.shield.visible = false;
       this.aura.visible = false;
@@ -173,7 +227,7 @@ class PlayerView {
       this.rollSpin = 0;
       this.bodyPivot.rotation.x = 0;
     }
-    this.bodyPivot.position.y = 1;
+    this.bodyPivot.position.y = 0.95;
     this.glider.visible = p.gliding;
     this.shield.visible = p.shielded;
     this.aura.visible = p.auraActive;
@@ -182,14 +236,37 @@ class PlayerView {
       this.aura.rotation.z += dt * 6;
     }
 
+    // Sword swing: raise fast, follow through back to rest.
+    if (this.swingTimer > 0) {
+      this.swingTimer = Math.max(0, this.swingTimer - dt);
+      const t = 1 - this.swingTimer / SWING_DURATION;
+      this.rightArm.rotation.x = t < 0.4 ? lerp(0.35, -1.7, t / 0.4) : lerp(-1.7, 0.35, (t - 0.4) / 0.6);
+    } else {
+      this.rightArm.rotation.x = 0.35;
+    }
+    // Off-hand raise while casting.
+    if (this.castTimer > 0) {
+      this.castTimer = Math.max(0, this.castTimer - dt);
+      this.leftArm.rotation.x = -1.9;
+    } else {
+      this.leftArm.rotation.x = 0;
+    }
+
     const color = new THREE.Color(this.baseColor(isSelf, isBot));
     if (p.slowed) color.lerp(new THREE.Color(SLOW_COLOR), 0.55);
     this.bodyMat.color.copy(color);
-    this.nose.visible = true;
     this.hpGroup.visible = true;
     setBar(this.hpFill, p.hpFrac, 1.3);
     this.hpGroup.quaternion.copy(camera.quaternion);
     this.hpGroup.rotation.z = 0;
+  }
+
+  triggerSwing(): void {
+    this.swingTimer = SWING_DURATION;
+  }
+
+  triggerCast(): void {
+    this.castTimer = 0.35;
   }
 }
 
@@ -203,28 +280,52 @@ class MobView {
   constructor(elite: boolean) {
     this.elite = elite;
     const beast = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.45, 0.5, 4, 10),
-      new THREE.MeshStandardMaterial({ color: elite ? ELITE_COLOR : MOB_COLOR, roughness: 0.85 }),
-    );
+    const hideMat = new THREE.MeshStandardMaterial({
+      color: elite ? ELITE_COLOR : MOB_COLOR,
+      roughness: 0.85,
+    });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x6e5430, roughness: 0.8 });
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.55, 4, 10), hideMat);
     body.rotation.x = Math.PI / 2;
-    body.position.y = 0.5;
+    body.position.y = 0.52;
     body.castShadow = true;
     beast.add(body);
-    const snout = new THREE.Mesh(
-      new THREE.ConeGeometry(0.18, 0.4, 8),
-      new THREE.MeshStandardMaterial({ color: 0x6e5430, roughness: 0.8 }),
-    );
+    const snout = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.4, 8), darkMat);
     snout.rotation.x = Math.PI / 2;
-    snout.position.set(0, 0.45, 0.75);
+    snout.position.set(0, 0.45, 0.78);
     beast.add(snout);
+    // Stub legs at the four corners.
+    const legGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.3, 8);
+    for (const [lx, lz] of [[-0.26, 0.3], [0.26, 0.3], [-0.26, -0.3], [0.26, -0.3]]) {
+      const leg = new THREE.Mesh(legGeo, darkMat);
+      leg.position.set(lx!, 0.15, lz!);
+      beast.add(leg);
+    }
+    // Ears, eyes, tail.
+    const earGeo = new THREE.ConeGeometry(0.09, 0.22, 6);
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(earGeo, hideMat);
+      ear.position.set(side * 0.2, 0.82, 0.5);
+      beast.add(ear);
+    }
+    const eyeGeo = new THREE.SphereGeometry(0.05, 8, 6);
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1208, roughness: 0.3 });
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(eyeGeo, eyeMat);
+      eye.position.set(side * 0.15, 0.62, 0.68);
+      beast.add(eye);
+    }
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.35, 6), hideMat);
+    tail.rotation.x = -Math.PI / 2.4;
+    tail.position.set(0, 0.6, -0.82);
+    beast.add(tail);
     if (elite) {
       beast.scale.setScalar(1.55);
       const crown = new THREE.Mesh(
         new THREE.CylinderGeometry(0.24, 0.3, 0.22, 6),
         new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.3 }),
       );
-      crown.position.set(0, 0.85, 0.55);
+      crown.position.set(0, 1.0, 0.3);
       beast.add(crown);
     }
     this.group.add(beast);
@@ -504,10 +605,12 @@ export class EntityViews {
       switch (ev.type) {
         case 'cast':
           this.spawnFlash(ev.x, ev.z, 1.1, 0xcfe8ff, 0.16);
+          this.players.get(ev.casterId)?.triggerCast();
           sfx.cast(ev.abilityId);
           break;
         case 'melee': {
           this.spawnMeleeArc(ev.x, ev.z, ev.facing, ev.combo);
+          this.players.get(ev.casterId)?.triggerSwing();
           sfx.melee(ev.combo);
           break;
         }
