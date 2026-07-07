@@ -4,6 +4,7 @@ export * from './math/rng.js';
 export * from './protocol/types.js';
 export * from './sim/abilities.js';
 export * from './sim/entities.js';
+export * from './sim/items.js';
 export * from './sim/loot.js';
 export * from './sim/movement.js';
 export * from './sim/storm.js';

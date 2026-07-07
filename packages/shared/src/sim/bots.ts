@@ -12,7 +12,7 @@ export interface BotContext {
 }
 
 function noButtons() {
-  return { melee: false, roll: false, jump: false, interact: false, heal: false };
+  return { melee: false, roll: false, jump: false, interact: false, heal: false, useItem: false };
 }
 
 /**
@@ -47,6 +47,8 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
 
   // Everyone has the builtin heal — use it when hurt.
   if (bot.healCdTicks === 0 && bot.hp < bot.maxHp * 0.45) buttons.heal = true;
+  // Snack on the chicken when hurt; save mobility items for the storm (below).
+  if (bot.item === 'chickenCoup' && bot.hp < bot.maxHp * 0.55) buttons.useItem = true;
 
   let target: PlayerEntity | null = null;
   let targetDist = Infinity;
@@ -70,6 +72,12 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
     aimX = bot.x + dir.x * 8;
     aimZ = bot.z + dir.z * 8;
     if (distFromCenter > storm.radius && bot.rollCdTicks === 0) buttons.roll = true;
+    if (
+      distFromCenter > storm.radius &&
+      (bot.item === 'mechanoHog' || bot.item === 'gravityLauncher')
+    ) {
+      buttons.useItem = true;
+    }
   } else if (target && targetDist < 30) {
     // Engage: face the target, imperfect aim that worsens with range.
     yaw = yawToward(bot.x, bot.z, target.x, target.z);

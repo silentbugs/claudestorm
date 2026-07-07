@@ -33,6 +33,8 @@ export interface MapDef {
   elites: Point[];
   /** Loose ability scrolls lying in the world. */
   scrolls: Point[];
+  /** Consumable item spawns. */
+  items: Point[];
 }
 
 /**
@@ -126,5 +128,10 @@ export const ARENA: MapDef = {
     { x: 3, z: 4 }, { x: -51, z: -48 }, { x: 58, z: -50 },
     { x: -55, z: 57 }, { x: 56, z: 53 }, { x: 32, z: 19 },
     { x: 0, z: -68 }, { x: -2, z: 66 },
+  ],
+  items: [
+    { x: -2, z: 2 }, { x: -49, z: -46 }, { x: 54, z: -48 },
+    { x: -57, z: 53 }, { x: 54, z: 57 }, { x: 4, z: -67 },
+    { x: 1, z: 69 }, { x: -27, z: 12 }, { x: 26, z: 19 }, { x: 70, z: 2 },
   ],
 };

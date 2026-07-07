@@ -11,9 +11,9 @@ import {
 import { ABILITIES } from '../src/sim/abilities.js';
 import { castCmd, cmd, loadout, makeSim, player } from './helpers.js';
 
-const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false, heal: false };
-const PRESS_ROLL = { melee: false, roll: true, jump: false, interact: false, heal: false };
-const PRESS_HEAL = { melee: false, roll: false, jump: false, interact: false, heal: true };
+const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false, heal: false, useItem: false };
+const PRESS_ROLL = { melee: false, roll: true, jump: false, interact: false, heal: false, useItem: false };
+const PRESS_HEAL = { melee: false, roll: false, jump: false, interact: false, heal: true, useItem: false };
 
 describe('melee', () => {
   it('sword swing damages a target in the front arc', () => {

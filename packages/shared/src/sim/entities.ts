@@ -36,7 +36,7 @@ export interface PlayerEntity {
   aimX: number;
   aimZ: number;
   meleeHeld: boolean;
-  pendingButtons: Set<'roll' | 'jump' | 'interact' | 'heal'>;
+  pendingButtons: Set<'roll' | 'jump' | 'interact' | 'heal' | 'useItem'>;
   pendingSlotCasts: Set<number>;
 
   /** Ticks remaining: [offense0, offense1, utility0, utility1]. */
@@ -101,6 +101,11 @@ export interface PlayerEntity {
   xp: number;
   plunder: number;
   slots: PlayerSlots;
+  /** Held consumable (one at a time). */
+  item: import('./items.js').ItemId | null;
+  /** Heal-over-time (Chicken Coup). */
+  hotTicks: number;
+  hotPerTick: number;
 
   bot: BotState | null;
 }
@@ -148,6 +153,13 @@ export interface CoinEntity {
   id: number;
   x: number;
   z: number;
+}
+
+export interface ItemEntity {
+  id: number;
+  x: number;
+  z: number;
+  itemId: import('./items.js').ItemId;
 }
 
 export interface ProjectileEntity {

@@ -2,6 +2,7 @@ import {
   ABILITIES,
   HEAL_AMOUNT,
   HEAL_COOLDOWN,
+  ITEMS,
   MELEE_COMBO_FINISHER_MULT,
   MELEE_DAMAGE,
   MELEE_INTERVAL,
@@ -139,9 +140,14 @@ export class Hud {
       )
       .join('');
 
+    const items = Object.values(ITEMS)
+      .map((item) => row(item.icon, item.name, 'G', 'Item', 'one held at a time', item.description))
+      .join('');
+
     list.innerHTML =
       `<div class="skill-section">Builtins — always on your bar</div>${builtins}` +
-      `<div class="skill-section">Lootable abilities — find scrolls in chests, on elites, and in the world</div>${abilities}`;
+      `<div class="skill-section">Lootable abilities — duplicates stack the rank up to epic</div>${abilities}` +
+      `<div class="skill-section">Items — consumables from chests and the world</div>${items}`;
   }
 
   update(snap: Snapshot, selfId: number): void {
@@ -187,6 +193,12 @@ export class Hud {
     this.updateAbilitySlot('1', self, 1);
     this.updateAbilitySlot('2', self, 2);
     this.updateAbilitySlot('3', self, 3);
+    if (self.item) {
+      const item = ITEMS[self.item];
+      this.updateSlot('item', item.name, item.icon, null, 0, 1, false);
+    } else {
+      this.updateSlot('item', '—', '', null, 0, 1, true);
+    }
     this.updateSlot('heal', 'Heal', '💚', null, self.healCd, HEAL_COOLDOWN, false);
     this.updateSlot('roll', 'Roll', '🤸', null, self.rollCd, ROLL_COOLDOWN, false);
 

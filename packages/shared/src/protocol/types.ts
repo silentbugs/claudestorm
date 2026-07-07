@@ -40,6 +40,8 @@ export interface InputButtons {
   jump: boolean;
   interact: boolean;
   heal: boolean;
+  /** Use the held consumable item. */
+  useItem: boolean;
 }
 
 /** One tick worth of player intent. The only way anything controls a character. */
@@ -102,6 +104,8 @@ export interface PlayerSnapshot {
   meleeCd: number;
   rollCd: number;
   healCd: number;
+  /** Held consumable, or null. */
+  item: import('../sim/items.js').ItemId | null;
 }
 
 export interface MobSnapshot {
@@ -133,6 +137,13 @@ export interface CoinSnapshot {
   id: number;
   x: number;
   z: number;
+}
+
+export interface ItemSnapshot {
+  id: number;
+  x: number;
+  z: number;
+  itemId: import('../sim/items.js').ItemId;
 }
 
 export interface ProjectileSnapshot {
@@ -179,7 +190,9 @@ export type GameEvent =
   | { type: 'upgrade'; playerId: number; abilityId: AbilityId; rarity: Rarity }
   | { type: 'pull'; casterId: number; targetId: number }
   | { type: 'coin'; playerId: number }
-  | { type: 'heal'; playerId: number; amount: number; x: number; z: number };
+  | { type: 'heal'; playerId: number; amount: number; x: number; z: number }
+  | { type: 'itemPickup'; playerId: number; itemId: import('../sim/items.js').ItemId }
+  | { type: 'itemUsed'; playerId: number; itemId: import('../sim/items.js').ItemId; x: number; z: number };
 
 export interface Snapshot {
   tick: number;
@@ -194,6 +207,7 @@ export interface Snapshot {
   chests: ChestSnapshot[];
   scrolls: ScrollSnapshot[];
   coins: CoinSnapshot[];
+  items: ItemSnapshot[];
   projectiles: ProjectileSnapshot[];
   zones: ZoneSnapshot[];
   events: GameEvent[];

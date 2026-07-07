@@ -10,8 +10,8 @@ import {
 } from '../src/constants.js';
 import { cmd, loadout, makeSim, player, FLAT_MAP } from './helpers.js';
 
-const PRESS_INTERACT = { melee: false, roll: false, jump: false, interact: true, heal: false };
-const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false, heal: false };
+const PRESS_INTERACT = { melee: false, roll: false, jump: false, interact: true, heal: false, useItem: false };
+const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false, heal: false, useItem: false };
 
 describe('chests', () => {
   it('opens after channeling and spawns loot', () => {

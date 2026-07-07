@@ -75,12 +75,25 @@ import { computeBotInput } from './bots.js';
 import type {
   ChestEntity,
   CoinEntity,
+  ItemEntity,
   MobEntity,
   PlayerEntity,
   ProjectileEntity,
   ScrollEntity,
   ZoneEntity,
 } from './entities.js';
+import {
+  CHEST_ITEM_CHANCE,
+  CHICKEN_HEAL_SECONDS,
+  CHICKEN_HEAL_TOTAL,
+  HOG_SPEED_MULT,
+  HOG_SPEED_SECONDS,
+  LAUNCHER_DURATION,
+  LAUNCHER_RANGE,
+  SMOKE_STEALTH_SECONDS,
+  rollItem,
+  type ItemId,
+} from './items.js';
 import {
   CHEST_COINS_MAX,
   CHEST_COINS_MIN,
@@ -129,6 +142,7 @@ export class GameSim {
   readonly chests = new Map<number, ChestEntity>();
   readonly scrolls = new Map<number, ScrollEntity>();
   readonly coins = new Map<number, CoinEntity>();
+  readonly items = new Map<number, ItemEntity>();
 
   private tick = 0;
   private phase: MatchPhase;
@@ -236,6 +250,9 @@ export class GameSim {
         xp: 0,
         plunder: 0,
         slots: loadout,
+        item: setup.isBot && this.rng.next() < 0.5 ? rollItem(this.rng) : null,
+        hotTicks: 0,
+        hotPerTick: 0,
         bot: setup.isBot
           ? {
               landTargetX: Math.cos(landAngle) * landR,
@@ -258,6 +275,14 @@ export class GameSim {
     for (const p of this.map.scrolls) {
       this.spawnScroll(p.x, p.z, rollAbility(this.rng), rollRarity(this.rng));
     }
+    for (const p of this.map.items) {
+      this.spawnItem(p.x, p.z, rollItem(this.rng));
+    }
+  }
+
+  private spawnItem(x: number, z: number, itemId: ItemId): void {
+    const id = this.nextEntityId++;
+    this.items.set(id, { id, x, z, itemId });
   }
 
   private spawnMob(x: number, z: number, elite: boolean): void {
@@ -333,6 +358,7 @@ export class GameSim {
     if (cmd.buttons.jump) p.pendingButtons.add('jump');
     if (cmd.buttons.interact) p.pendingButtons.add('interact');
     if (cmd.buttons.heal) p.pendingButtons.add('heal');
+    if (cmd.buttons.useItem) p.pendingButtons.add('useItem');
     for (const s of cmd.slotCasts) {
       if (s >= 0 && s < SLOT_COUNT) p.pendingSlotCasts.add(s);
     }
@@ -415,6 +441,10 @@ export class GameSim {
       this.damagePlayer(p, p.poisonDps * TICK_DT, p.poisonSourceId);
       if (!p.alive) return;
     }
+    if (p.hotTicks > 0) {
+      p.hotTicks--;
+      p.hp = Math.min(p.maxHp, p.hp + p.hotPerTick);
+    }
     if (p.shieldTicks > 0) {
       p.shieldTicks--;
       if (p.shieldTicks === 0) p.shieldHp = 0;
@@ -451,6 +481,7 @@ export class GameSim {
       p.healCdTicks = Math.round(HEAL_COOLDOWN * TICK_RATE);
       this.events.push({ type: 'heal', playerId: p.id, amount, x: p.x, z: p.z });
     }
+    if (canAct && p.pendingButtons.has('useItem') && p.item) this.useItem(p);
     if (canAttack && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
     if (canAttack) {
       for (const slot of p.pendingSlotCasts) this.tryCastSlot(p, slot);
@@ -759,6 +790,44 @@ export class GameSim {
     }
   }
 
+  private useItem(p: PlayerEntity): void {
+    const itemId = p.item!;
+    p.item = null;
+    this.events.push({ type: 'itemUsed', playerId: p.id, itemId, x: p.x, z: p.z });
+    switch (itemId) {
+      case 'chickenCoup': {
+        const ticks = Math.round(CHICKEN_HEAL_SECONDS * TICK_RATE);
+        p.hotTicks = ticks;
+        p.hotPerTick = CHICKEN_HEAL_TOTAL / ticks;
+        break;
+      }
+      case 'smokeBomb':
+        p.stealthTicks = Math.round(SMOKE_STEALTH_SECONDS * TICK_RATE);
+        break;
+      case 'mechanoHog':
+        p.speedBuffTicks = Math.round(HOG_SPEED_SECONDS * TICK_RATE);
+        p.speedBuffMult = HOG_SPEED_MULT;
+        break;
+      case 'gravityLauncher': {
+        let dir = norm(p.moveX, p.moveZ);
+        if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+        p.leapDirX = dir.x;
+        p.leapDirZ = dir.z;
+        p.leapTotalTicks = Math.round(LAUNCHER_DURATION * TICK_RATE);
+        p.leapTicks = p.leapTotalTicks;
+        p.leapSpeed = LAUNCHER_RANGE / LAUNCHER_DURATION;
+        p.leapDamage = 0;
+        p.leapLandRadius = 0;
+        p.leapKnockback = 0;
+        p.leapLandStun = 0;
+        p.leapFlat = false;
+        p.leapDashDamage = 0;
+        p.leapHitIds = new Set();
+        break;
+      }
+    }
+  }
+
   /** Instant swing in a front arc (Searing Axe, Toxic Smackerel). */
   private coneAttack(p: PlayerEntity, def: AbilityDef, scale: number): void {
     const fx = Math.sin(p.facing);
@@ -907,6 +976,10 @@ export class GameSim {
         rollAbility(this.rng),
         rollRarity(this.rng),
       );
+    }
+    if (this.rng.next() < CHEST_ITEM_CHANCE) {
+      const angle = this.rng.range(0, Math.PI * 2);
+      this.spawnItem(chest.x + Math.cos(angle) * 1.4, chest.z + Math.sin(angle) * 1.4, rollItem(this.rng));
     }
     this.awardXp(opener, XP_PER_CHEST);
   }
@@ -1200,6 +1273,16 @@ export class GameSim {
           this.equipScroll(p, scroll, false); // auto-pickup only fills empty slots
         }
       }
+      if (!p.item) {
+        for (const item of this.items.values()) {
+          if (dist(p.x, p.z, item.x, item.z) < SCROLL_AUTO_PICKUP_RADIUS) {
+            p.item = item.itemId;
+            this.items.delete(item.id);
+            this.events.push({ type: 'itemPickup', playerId: p.id, itemId: item.itemId });
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -1375,6 +1458,7 @@ export class GameSim {
         meleeCd: p.meleeCdTicks * TICK_DT,
         rollCd: p.rollCdTicks * TICK_DT,
         healCd: p.healCdTicks * TICK_DT,
+        item: p.item,
       })),
       mobs: [...this.mobs.values()].map((m) => ({
         id: m.id,
@@ -1394,6 +1478,7 @@ export class GameSim {
         rarity: s.rarity,
       })),
       coins: [...this.coins.values()].map((c) => ({ id: c.id, x: c.x, z: c.z })),
+      items: [...this.items.values()].map((i) => ({ id: i.id, x: i.x, z: i.z, itemId: i.itemId })),
       projectiles: this.projectiles.map((proj) => ({
         id: proj.id,
         x: proj.x,

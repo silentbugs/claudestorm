@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   ABILITIES,
+  ITEMS,
   lerp,
   type AbilityId,
   type GameEvent,
@@ -464,6 +465,7 @@ export class EntityViews {
   private chests = new Map<number, ChestView>();
   private scrolls = new Map<number, THREE.Mesh>();
   private coins = new Map<number, THREE.Mesh>();
+  private items = new Map<number, THREE.Mesh>();
   private projectiles = new Map<number, THREE.Mesh>();
   private zones = new Map<number, { group: THREE.Group; fill: THREE.Mesh; kind: string }>();
   private effects: Effect[] = [];
@@ -574,6 +576,31 @@ export class EntityViews {
         (mesh.material as THREE.Material).dispose();
         this.scene.remove(mesh);
         this.scrolls.delete(id);
+      }
+    }
+
+    // Items: little supply crates tinted per consumable.
+    const liveItems = new Set<number>();
+    for (const it of next.items) {
+      liveItems.add(it.id);
+      let mesh = this.items.get(it.id);
+      if (!mesh) {
+        const color = ITEMS[it.itemId].color;
+        mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 0.5, 0.5),
+          new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35 }),
+        );
+        this.items.set(it.id, mesh);
+        this.scene.add(mesh);
+      }
+      mesh.position.set(it.x, 0.6 + Math.sin(now * 2 + it.id) * 0.1, it.z);
+      mesh.rotation.y = now * 1.2 + it.id;
+    }
+    for (const [id, mesh] of this.items) {
+      if (!liveItems.has(id)) {
+        (mesh.material as THREE.Material).dispose();
+        this.scene.remove(mesh);
+        this.items.delete(id);
       }
     }
 
@@ -788,6 +815,13 @@ export class EntityViews {
           this.spawnFlash(ev.x, ev.z, 1.0, 0x9df0a5, 0.3);
           if (ev.playerId === selfId) sfx.heal();
           break;
+        case 'itemPickup':
+          if (ev.playerId === selfId) sfx.equip();
+          break;
+        case 'itemUsed':
+          this.spawnBurst(ev.x, ev.z, 1.4, ITEMS[ev.itemId].color, 0.45, 1.0);
+          if (ev.playerId === selfId) sfx.equip();
+          break;
         case 'pull': {
           const a = playerById.get(ev.casterId);
           const b = playerById.get(ev.targetId);
@@ -880,6 +914,7 @@ export class EntityViews {
     for (const view of this.chests.values()) this.scene.remove(view.group);
     for (const mesh of this.scrolls.values()) this.scene.remove(mesh);
     for (const mesh of this.coins.values()) this.scene.remove(mesh);
+    for (const mesh of this.items.values()) this.scene.remove(mesh);
     for (const mesh of this.projectiles.values()) this.scene.remove(mesh);
     for (const view of this.zones.values()) this.scene.remove(view.group);
     for (const fx of this.effects) this.scene.remove(fx.obj);
@@ -888,6 +923,7 @@ export class EntityViews {
     this.chests.clear();
     this.scrolls.clear();
     this.coins.clear();
+    this.items.clear();
     this.projectiles.clear();
     this.zones.clear();
     this.effects = [];

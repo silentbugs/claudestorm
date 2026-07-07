@@ -10,6 +10,7 @@ export const FLAT_MAP: MapDef = {
   mobs: [],
   elites: [],
   scrolls: [],
+  items: [],
 };
 
 /** Storm that never threatens anyone — for tests that aren't about the storm. */
@@ -53,7 +54,7 @@ export function cmd(partial: Partial<InputCommand> = {}): InputCommand {
     yaw: 0,
     aimX: 0,
     aimZ: 0,
-    buttons: { melee: false, roll: false, jump: false, interact: false, heal: false },
+    buttons: { melee: false, roll: false, jump: false, interact: false, heal: false, useItem: false },
     slotCasts: [],
     ...partial,
   };
