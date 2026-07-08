@@ -1,7 +1,13 @@
 import { GameSim, type GameSimOptions, type PlayerSetup } from '../src/sim/GameSim.js';
 import type { MapDef } from '../src/maps/arena.js';
 import type { StormPhaseDef } from '../src/sim/storm.js';
-import type { AbilityId, InputCommand, PlayerSlots, Rarity } from '../src/protocol/types.js';
+import type {
+  AbilityId,
+  InputButtons,
+  InputCommand,
+  PlayerSlots,
+  Rarity,
+} from '../src/protocol/types.js';
 
 export const FLAT_MAP: MapDef = {
   size: 100,
@@ -47,6 +53,21 @@ export function loadout(
   return { offense: pad(offense), utility: pad(utility) };
 }
 
+/** All-false buttons with the given overrides. */
+export function buttons(partial: Partial<InputButtons> = {}): InputButtons {
+  return {
+    melee: false,
+    roll: false,
+    jump: false,
+    interact: false,
+    heal: false,
+    useItem: false,
+    swapOffense: false,
+    swapUtility: false,
+    ...partial,
+  };
+}
+
 export function cmd(partial: Partial<InputCommand> = {}): InputCommand {
   return {
     seq: 0,
@@ -55,7 +76,7 @@ export function cmd(partial: Partial<InputCommand> = {}): InputCommand {
     yaw: 0,
     aimX: 0,
     aimZ: 0,
-    buttons: { melee: false, roll: false, jump: false, interact: false, heal: false, useItem: false },
+    buttons: buttons(),
     slotCasts: [],
     ...partial,
   };

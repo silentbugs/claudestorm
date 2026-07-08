@@ -12,7 +12,16 @@ export interface BotContext {
 }
 
 function noButtons() {
-  return { melee: false, roll: false, jump: false, interact: false, heal: false, useItem: false };
+  return {
+    melee: false,
+    roll: false,
+    jump: false,
+    interact: false,
+    heal: false,
+    useItem: false,
+    swapOffense: false,
+    swapUtility: false,
+  };
 }
 
 /**

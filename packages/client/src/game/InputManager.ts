@@ -7,7 +7,9 @@ import type { InputCommand } from '@claudestorm/shared';
  */
 export class InputManager {
   private keys = new Set<string>();
-  private pendingEdges = new Set<'roll' | 'jump' | 'interact' | 'heal' | 'useItem'>();
+  private pendingEdges = new Set<
+    'roll' | 'jump' | 'interact' | 'heal' | 'useItem' | 'swapOffense' | 'swapUtility'
+  >();
   private pendingSlots = new Set<number>();
   private seq = 0;
   private lmbHeld = false;
@@ -41,6 +43,12 @@ export class InputManager {
         break;
       case 'KeyG':
         this.pendingEdges.add('useItem');
+        break;
+      case 'KeyZ':
+        this.pendingEdges.add('swapOffense');
+        break;
+      case 'KeyX':
+        this.pendingEdges.add('swapUtility');
         break;
       case 'Digit1':
         this.pendingSlots.add(0);
@@ -152,6 +160,8 @@ export class InputManager {
         interact: this.pendingEdges.has('interact'),
         heal: this.pendingEdges.has('heal'),
         useItem: this.pendingEdges.has('useItem'),
+        swapOffense: this.pendingEdges.has('swapOffense'),
+        swapUtility: this.pendingEdges.has('swapUtility'),
       },
       slotCasts: [...this.pendingSlots],
     };

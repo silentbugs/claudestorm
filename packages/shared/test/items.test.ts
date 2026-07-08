@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { PLAYER_BASE_HP, TICK_RATE } from '../src/constants.js';
 import { CHICKEN_HEAL_TOTAL, LAUNCHER_RANGE } from '../src/sim/items.js';
-import { cmd, makeSim, player, FLAT_MAP } from './helpers.js';
+import { buttons, cmd, makeSim, player, FLAT_MAP } from './helpers.js';
 
-const USE_ITEM = { melee: false, roll: false, jump: false, interact: false, heal: false, useItem: true };
+const USE_ITEM = buttons({ useItem: true });
 
 describe('consumable items', () => {
   it('auto-picks up an item into the empty item slot, one at a time', () => {

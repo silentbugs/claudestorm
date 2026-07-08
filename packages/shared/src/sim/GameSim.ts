@@ -372,6 +372,8 @@ export class GameSim {
     if (cmd.buttons.interact) p.pendingButtons.add('interact');
     if (cmd.buttons.heal) p.pendingButtons.add('heal');
     if (cmd.buttons.useItem) p.pendingButtons.add('useItem');
+    if (cmd.buttons.swapOffense) p.pendingButtons.add('swapOffense');
+    if (cmd.buttons.swapUtility) p.pendingButtons.add('swapUtility');
     for (const s of cmd.slotCasts) {
       if (s >= 0 && s < SLOT_COUNT) p.pendingSlotCasts.add(s);
     }
@@ -507,6 +509,9 @@ export class GameSim {
       this.events.push({ type: 'heal', playerId: p.id, amount, x: p.x, z: p.z });
     }
     if (canAct && p.pendingButtons.has('useItem') && p.item) this.useItem(p);
+    // Rearranging the bar is always safe except mid-charge (chargeSlot is an index).
+    if (!charging && p.pendingButtons.has('swapOffense')) this.swapSlotPair(p, 'offense');
+    if (!charging && p.pendingButtons.has('swapUtility')) this.swapSlotPair(p, 'utility');
     if (canAttack && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
     if (canAttack) {
       for (const slot of p.pendingSlotCasts) this.tryCastSlot(p, slot);
@@ -894,6 +899,16 @@ export class GameSim {
     const def = this.chargeDef(p);
     p.chargeSlot = null;
     if (def) p.slotCds[slotIndex] = Math.round(def.cooldown * 0.5 * TICK_RATE);
+  }
+
+  /** Swap the two slots of a pair (1↔2 or 3↔4), cooldowns included. */
+  private swapSlotPair(p: PlayerEntity, category: 'offense' | 'utility'): void {
+    const pair = category === 'offense' ? p.slots.offense : p.slots.utility;
+    [pair[0], pair[1]] = [pair[1] ?? null, pair[0] ?? null];
+    const base = category === 'offense' ? 0 : 2;
+    const tmp = p.slotCds[base]!;
+    p.slotCds[base] = p.slotCds[base + 1]!;
+    p.slotCds[base + 1] = tmp;
   }
 
   private useItem(p: PlayerEntity): void {

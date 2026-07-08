@@ -36,7 +36,7 @@ export interface PlayerEntity {
   aimX: number;
   aimZ: number;
   meleeHeld: boolean;
-  pendingButtons: Set<'roll' | 'jump' | 'interact' | 'heal' | 'useItem'>;
+  pendingButtons: Set<'roll' | 'jump' | 'interact' | 'heal' | 'useItem' | 'swapOffense' | 'swapUtility'>;
   pendingSlotCasts: Set<number>;
 
   /** Ticks remaining: [offense0, offense1, utility0, utility1]. */

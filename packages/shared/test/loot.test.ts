@@ -8,10 +8,10 @@ import {
   XP_PER_CHEST,
   XP_PER_ELITE,
 } from '../src/constants.js';
-import { cmd, loadout, makeSim, player, FLAT_MAP } from './helpers.js';
+import { buttons, cmd, loadout, makeSim, player, FLAT_MAP } from './helpers.js';
 
-const PRESS_INTERACT = { melee: false, roll: false, jump: false, interact: true, heal: false, useItem: false };
-const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false, heal: false, useItem: false };
+const PRESS_INTERACT = buttons({ interact: true });
+const HOLD_MELEE = buttons({ melee: true });
 
 describe('chests', () => {
   it('opens after channeling and spawns loot', () => {

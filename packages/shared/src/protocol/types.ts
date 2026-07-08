@@ -43,6 +43,10 @@ export interface InputButtons {
   heal: boolean;
   /** Use the held consumable item. */
   useItem: boolean;
+  /** Swap the two offense slots (1 ↔ 2). */
+  swapOffense: boolean;
+  /** Swap the two utility slots (3 ↔ 4). */
+  swapUtility: boolean;
 }
 
 /** One tick worth of player intent. The only way anything controls a character. */

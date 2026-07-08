@@ -9,11 +9,11 @@ import {
   TICK_RATE,
 } from '../src/constants.js';
 import { ABILITIES } from '../src/sim/abilities.js';
-import { castCmd, cmd, loadout, makeSim, player } from './helpers.js';
+import { buttons, castCmd, cmd, loadout, makeSim, player } from './helpers.js';
 
-const HOLD_MELEE = { melee: true, roll: false, jump: false, interact: false, heal: false, useItem: false };
-const PRESS_ROLL = { melee: false, roll: true, jump: false, interact: false, heal: false, useItem: false };
-const PRESS_HEAL = { melee: false, roll: false, jump: false, interact: false, heal: true, useItem: false };
+const HOLD_MELEE = buttons({ melee: true });
+const PRESS_ROLL = buttons({ roll: true });
+const PRESS_HEAL = buttons({ heal: true });
 
 describe('melee', () => {
   it('sword swing damages a target in the front arc', () => {
@@ -116,6 +116,41 @@ describe('Rime Arrow', () => {
     sim.applyInput(2, cmd({ yaw: -Math.PI / 2, buttons: PRESS_ROLL }));
     for (let i = 0; i < 20; i++) sim.step();
     expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+  });
+});
+
+describe('slot swapping', () => {
+  it('swaps the two offense slots, cooldowns included; utility pair untouched', () => {
+    const sim = makeSim([
+      player(1, 0, 0, {
+        loadout: loadout(['rimeArrow', 'starBomb'], ['snowdrift', 'repel']),
+      }),
+      player(2, 40, 40),
+    ]);
+    const p = sim.players.get(1)!;
+    sim.applyInput(1, castCmd(0, 10, 0)); // put rimeArrow (slot 1) on cooldown
+    sim.step();
+    const cdAfterCast = p.slotCds[0]!;
+    expect(cdAfterCast).toBeGreaterThan(0);
+    sim.applyInput(1, cmd({ buttons: buttons({ swapOffense: true }) }));
+    sim.step();
+    expect(p.slots.offense[0]!.abilityId).toBe('starBomb');
+    expect(p.slots.offense[1]!.abilityId).toBe('rimeArrow');
+    expect(p.slotCds[0]).toBe(0); // starBomb was never cast
+    expect(p.slotCds[1]).toBe(cdAfterCast - 1); // rimeArrow's cooldown moved with it
+    expect(p.slots.utility[0]!.abilityId).toBe('snowdrift'); // other pair untouched
+  });
+
+  it('swaps the two utility slots with X', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { loadout: loadout([null, null], ['snowdrift', 'repel']) }),
+      player(2, 40, 40),
+    ]);
+    sim.applyInput(1, cmd({ buttons: buttons({ swapUtility: true }) }));
+    sim.step();
+    const p = sim.players.get(1)!;
+    expect(p.slots.utility[0]!.abilityId).toBe('repel');
+    expect(p.slots.utility[1]!.abilityId).toBe('snowdrift');
   });
 });
 
