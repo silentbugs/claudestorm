@@ -114,6 +114,8 @@ export class Hud {
       if (def.buffKind === 'immune') parts.push(`${def.buffDuration}s immunity`);
       if (def.buffKind === 'faeform') parts.push('fast + tough, no attacks');
       if (def.trapCount) parts.push(`${def.trapCount} traps`);
+      if (def.chargeSeconds) parts.push('charge & release');
+      if (def.pierce) parts.push('pierces everything');
       return parts.join(' · ');
     };
 
@@ -202,9 +204,11 @@ export class Hud {
     this.updateSlot('heal', 'Heal', '💚', null, self.healCd, HEAL_COOLDOWN, false);
     this.updateSlot('roll', 'Roll', '🤸', null, self.rollCd, ROLL_COOLDOWN, false);
 
-    if (self.channeling >= 0) {
+    // The channel bar doubles as the charge-and-release meter.
+    const progress = self.charging >= 0 ? self.charging : self.channeling;
+    if (progress >= 0) {
       this.channelBar.classList.remove('hidden');
-      this.channelFill.style.width = `${self.channeling * 100}%`;
+      this.channelFill.style.width = `${progress * 100}%`;
     } else {
       this.channelBar.classList.add('hidden');
     }

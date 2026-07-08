@@ -94,6 +94,17 @@ export interface AbilityDef {
   landStunDuration?: number;
   /** Damage enemies passed through mid-dash (Slicing Winds). */
   dashDamage?: boolean;
+  /** Pierces every enemy in its path instead of dying on first hit (Celestial Barrage). */
+  pierce?: boolean;
+  /**
+   * Charge-and-release: pressing starts a charge, pressing again (or reaching
+   * chargeSeconds) releases. Damage and reach scale with how long you charged.
+   */
+  chargeSeconds?: number;
+  /** Effect fraction when released instantly (scales up to 1 at full charge). */
+  chargeMinFraction?: number;
+  /** Rise into the air while charging (Celestial Barrage). */
+  chargeAir?: boolean;
   /** Ground dash: no arc. */
   dashFlat?: boolean;
   /** Hop backward instead of forward (Explosive Caltrops). */
@@ -219,29 +230,52 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
     id: 'slicingWinds',
     name: 'Slicing Winds',
     icon: '🌪️',
-    description: 'Wrap yourself in razor winds and lunge forward, slicing enemies in your path.',
+    description:
+      'Charge razor winds, then release to lunge forward and slice enemies in your path. Charging longer lunges farther and cuts deeper.',
     category: 'offense',
     behavior: 'leap',
     cooldown: 7,
-    damage: 22,
-    leapRange: 11,
-    leapDuration: 0.35,
+    damage: 30,
+    leapRange: 18,
+    leapDuration: 0.55,
     landRadius: 0,
     dashDamage: true,
     dashFlat: true,
+    chargeSeconds: 1.2,
+    chargeMinFraction: 0.4,
   },
   starBomb: {
     id: 'starBomb',
     name: 'Star Bomb',
     icon: '💫',
-    description: 'Compress the cosmic void into a bomb that explodes at the aimed spot after a delay.',
+    description: 'Compress the cosmic void into a bomb that blankets a huge area at the aimed spot.',
     category: 'offense',
     behavior: 'groundAoE',
     cooldown: 7,
     damage: 40,
     castRange: 26,
-    telegraph: 0.9,
-    aoeRadius: 4,
+    telegraph: 1.1,
+    aoeRadius: 7,
+  },
+  celestialBarrage: {
+    id: 'celestialBarrage',
+    name: 'Celestial Barrage',
+    icon: '🌠',
+    description:
+      'Rise into the air and gather starlight, then release a barrage that slices through every enemy in its path — even very far away.',
+    category: 'offense',
+    behavior: 'projectile',
+    cooldown: 11,
+    damage: 16, // per star, per enemy pierced
+    projectileSpeed: 46,
+    projectileRadius: 0.8,
+    projectileLifetime: 1.6,
+    volley: 3,
+    volleySpreadRad: 0.16,
+    pierce: true,
+    chargeSeconds: 1.6,
+    chargeMinFraction: 0.35,
+    chargeAir: true,
   },
   toxicSmackerel: {
     id: 'toxicSmackerel',

@@ -236,6 +236,9 @@ export class GameSim {
         auraTicks: 0,
         auraDps: 0,
         auraRadius: 0,
+        chargeSlot: null,
+        chargeTicks: 0,
+        chargeMaxTicks: 0,
         leapTicks: 0,
         leapTotalTicks: 0,
         leapDirX: 0,
@@ -466,14 +469,26 @@ export class GameSim {
       this.auraDamage(p);
     }
 
+    // Charge-and-release casts: build up each tick; a stun cancels the cast
+    // (half cooldown), reaching full charge auto-releases.
+    if (p.chargeSlot !== null) {
+      if (p.stunTicks > 0) {
+        this.cancelCharge(p);
+      } else {
+        p.chargeTicks++;
+        if (p.chargeTicks >= p.chargeMaxTicks) this.releaseCharge(p);
+      }
+    }
+
     // Buttons. Stun blocks everything; faeform blocks attacks but not movement tools.
     const stunned = p.stunTicks > 0;
-    const canAct = !p.gliding && this.phase === 'live' && !stunned;
+    const charging = p.chargeSlot !== null;
+    const canAct = !p.gliding && this.phase === 'live' && !stunned && !charging;
     const canAttack = canAct && p.faeTicks === 0;
-    if (p.pendingButtons.has('jump') && p.y === 0 && !p.gliding && p.leapTicks === 0 && !stunned) {
+    if (p.pendingButtons.has('jump') && p.y === 0 && !p.gliding && p.leapTicks === 0 && !stunned && !charging) {
       p.vy = JUMP_VELOCITY;
     }
-    if (p.pendingButtons.has('roll') && !p.gliding && p.rollCdTicks === 0 && p.leapTicks === 0 && !stunned) {
+    if (p.pendingButtons.has('roll') && !p.gliding && p.rollCdTicks === 0 && p.leapTicks === 0 && !stunned && !charging) {
       const dir =
         Math.hypot(p.moveX, p.moveZ) > 0.1
           ? norm(p.moveX, p.moveZ)
@@ -484,7 +499,7 @@ export class GameSim {
       p.rollCdTicks = Math.round(ROLL_COOLDOWN * TICK_RATE);
       p.channel = null;
     }
-    if (p.pendingButtons.has('interact') && !p.gliding) this.handleInteract(p);
+    if (p.pendingButtons.has('interact') && !p.gliding && !charging) this.handleInteract(p);
     if (canAct && p.pendingButtons.has('heal') && p.healCdTicks === 0 && p.hp < p.maxHp) {
       const amount = Math.min(HEAL_AMOUNT, p.maxHp - p.hp);
       p.hp += amount;
@@ -495,6 +510,9 @@ export class GameSim {
     if (canAttack && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
     if (canAttack) {
       for (const slot of p.pendingSlotCasts) this.tryCastSlot(p, slot);
+    } else if (p.chargeSlot !== null && !stunned && this.phase === 'live') {
+      // Re-pressing the charging slot releases the cast early.
+      if (p.pendingSlotCasts.has(p.chargeSlot)) this.releaseCharge(p);
     }
     p.pendingButtons.clear();
     p.pendingSlotCasts.clear();
@@ -565,6 +583,17 @@ export class GameSim {
         p.y = 0;
         this.leapLand(p);
       }
+    } else if (p.chargeSlot !== null) {
+      if (this.chargeDef(p)?.chargeAir) {
+        // Celestial Barrage: rise and hover while gathering starlight.
+        p.y = Math.min(2.4, p.y + 5 * TICK_DT);
+        p.vy = 0;
+      } else {
+        // Ground charge (Slicing Winds): creep while winding up.
+        const speed = PLAYER_SPEED * 0.4 * (p.slowTicks > 0 ? p.slowFactor : 1);
+        vx = p.moveX * speed;
+        vz = p.moveZ * speed;
+      }
     } else if (p.rollTicks > 0) {
       p.rollTicks--;
       vx = p.rollDirX * (ROLL_DISTANCE / ROLL_DURATION);
@@ -581,8 +610,9 @@ export class GameSim {
       vz = p.moveZ * speed;
     }
 
-    // Jump physics (not while gliding or leaping — those own y).
-    if (!p.gliding && p.leapTicks === 0 && (p.y > 0 || p.vy !== 0)) {
+    // Jump physics (not while gliding, leaping, or hovering — those own y).
+    const hovering = p.chargeSlot !== null && this.chargeDef(p)?.chargeAir === true;
+    if (!p.gliding && p.leapTicks === 0 && !hovering && (p.y > 0 || p.vy !== 0)) {
       p.vy -= GRAVITY * TICK_DT;
       p.y += p.vy * TICK_DT;
       if (p.y <= 0) {
@@ -641,6 +671,16 @@ export class GameSim {
     if (!equipped || p.slotCds[slotIndex]! > 0) return;
     const def = ABILITIES[equipped.abilityId];
     const scale = RARITY_MULT[equipped.rarity] * levelDamageMult(p.level);
+    if (def.chargeSeconds) {
+      // Charge-and-release: cooldown and effect land when the cast is released.
+      p.chargeSlot = slotIndex;
+      p.chargeTicks = 0;
+      p.chargeMaxTicks = Math.max(1, Math.round(def.chargeSeconds * TICK_RATE));
+      p.channel = null;
+      p.stealthTicks = 0;
+      this.events.push({ type: 'cast', casterId: p.id, abilityId: def.id, x: p.x, z: p.z });
+      return;
+    }
     p.slotCds[slotIndex] = Math.round(def.cooldown * TICK_RATE);
     p.channel = null;
     if (def.behavior !== 'buff' && !def.blink) p.stealthTicks = 0; // attacking breaks stealth
@@ -648,33 +688,7 @@ export class GameSim {
 
     switch (def.behavior) {
       case 'projectile': {
-        let dir = norm(p.aimX - p.x, p.aimZ - p.z);
-        if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
-        const count = def.volley ?? 1;
-        const spread = def.volleySpreadRad ?? 0;
-        const baseAngle = Math.atan2(dir.x, dir.z);
-        for (let i = 0; i < count; i++) {
-          const angle = baseAngle + (count > 1 ? spread * (i / (count - 1) - 0.5) : 0);
-          const dx = Math.sin(angle);
-          const dz = Math.cos(angle);
-          const spawnDist = PLAYER_RADIUS + def.projectileRadius! + 0.1;
-          this.projectiles.push({
-            id: this.nextEntityId++,
-            abilityId: def.id,
-            ownerId: p.id,
-            x: p.x + dx * spawnDist,
-            z: p.z + dz * spawnDist,
-            dirX: dx,
-            dirZ: dz,
-            speed: def.projectileSpeed!,
-            radius: def.projectileRadius!,
-            damage: def.damage * scale,
-            ticksLeft: Math.round(def.projectileLifetime! * TICK_RATE),
-            scale,
-            returning: false,
-            hitIds: new Set(),
-          });
-        }
+        this.spawnProjectiles(p, def, scale, 1);
         break;
       }
       case 'groundAoE': {
@@ -716,51 +730,7 @@ export class GameSim {
         break;
       }
       case 'leap': {
-        let dir = norm(p.moveX, p.moveZ);
-        if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
-        if (def.dashBackward) dir = { x: -dir.x, z: -dir.z };
-        // Explosive Caltrops: the cluster lands where you were standing.
-        if (def.poolRadius) {
-          this.zones.push({
-            id: this.nextEntityId++,
-            abilityId: def.id,
-            ownerId: p.id,
-            kind: 'pool',
-            x: p.x,
-            z: p.z,
-            radius: def.poolRadius,
-            damage: 0,
-            endTick: this.tick + Math.round(def.poolDuration! * TICK_RATE),
-            dps: (def.poolDps ?? 0) * scale,
-            slowFactor: def.poolSlowFactor ?? 1,
-            rootDuration: 0,
-          });
-        }
-        if (def.blink) {
-          // Fade to Shadow: instant reposition + stealth.
-          const resolved = resolveCollisions(
-            p.x + dir.x * def.leapRange!,
-            p.z + dir.z * def.leapRange!,
-            PLAYER_RADIUS,
-            this.map,
-          );
-          p.x = resolved.x;
-          p.z = resolved.z;
-          p.stealthTicks = Math.round((def.stealthDuration ?? 0) * TICK_RATE);
-          break;
-        }
-        p.leapDirX = dir.x;
-        p.leapDirZ = dir.z;
-        p.leapTotalTicks = Math.round(def.leapDuration! * TICK_RATE);
-        p.leapTicks = p.leapTotalTicks;
-        p.leapSpeed = def.leapRange! / def.leapDuration!;
-        p.leapDamage = def.damage * scale;
-        p.leapLandRadius = def.landRadius!;
-        p.leapKnockback = def.knockbackDistance ?? 0;
-        p.leapLandStun = def.landStunDuration ?? 0;
-        p.leapFlat = def.dashFlat ?? false;
-        p.leapDashDamage = def.dashDamage ? def.damage * scale : 0;
-        p.leapHitIds = new Set();
+        this.startLeap(p, def, scale, 1);
         break;
       }
       case 'shield': {
@@ -798,6 +768,132 @@ export class GameSim {
         break;
       }
     }
+  }
+
+  /** Fire a projectile (or fan volley) toward the aim point. reachMult stretches lifetime (charged casts). */
+  private spawnProjectiles(p: PlayerEntity, def: AbilityDef, scale: number, reachMult: number): void {
+    let dir = norm(p.aimX - p.x, p.aimZ - p.z);
+    if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+    const count = def.volley ?? 1;
+    const spread = def.volleySpreadRad ?? 0;
+    const baseAngle = Math.atan2(dir.x, dir.z);
+    for (let i = 0; i < count; i++) {
+      const angle = baseAngle + (count > 1 ? spread * (i / (count - 1) - 0.5) : 0);
+      const dx = Math.sin(angle);
+      const dz = Math.cos(angle);
+      const spawnDist = PLAYER_RADIUS + def.projectileRadius! + 0.1;
+      this.projectiles.push({
+        id: this.nextEntityId++,
+        abilityId: def.id,
+        ownerId: p.id,
+        x: p.x + dx * spawnDist,
+        z: p.z + dz * spawnDist,
+        dirX: dx,
+        dirZ: dz,
+        speed: def.projectileSpeed!,
+        radius: def.projectileRadius!,
+        damage: def.damage * scale,
+        ticksLeft: Math.max(1, Math.round(def.projectileLifetime! * TICK_RATE * reachMult)),
+        scale,
+        returning: false,
+        hitIds: new Set(),
+      });
+    }
+  }
+
+  /** Begin a leap/dash/blink. reachMult scales the distance covered (charged casts). */
+  private startLeap(p: PlayerEntity, def: AbilityDef, scale: number, reachMult: number): void {
+    let dir = norm(p.moveX, p.moveZ);
+    if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+    if (def.dashBackward) dir = { x: -dir.x, z: -dir.z };
+    // Explosive Caltrops: the cluster lands where you were standing.
+    if (def.poolRadius) {
+      this.zones.push({
+        id: this.nextEntityId++,
+        abilityId: def.id,
+        ownerId: p.id,
+        kind: 'pool',
+        x: p.x,
+        z: p.z,
+        radius: def.poolRadius,
+        damage: 0,
+        endTick: this.tick + Math.round(def.poolDuration! * TICK_RATE),
+        dps: (def.poolDps ?? 0) * scale,
+        slowFactor: def.poolSlowFactor ?? 1,
+        rootDuration: 0,
+      });
+    }
+    if (def.blink) {
+      // Fade to Shadow: instant reposition + stealth.
+      const resolved = resolveCollisions(
+        p.x + dir.x * def.leapRange! * reachMult,
+        p.z + dir.z * def.leapRange! * reachMult,
+        PLAYER_RADIUS,
+        this.map,
+      );
+      p.x = resolved.x;
+      p.z = resolved.z;
+      p.stealthTicks = Math.round((def.stealthDuration ?? 0) * TICK_RATE);
+      return;
+    }
+    p.leapDirX = dir.x;
+    p.leapDirZ = dir.z;
+    p.leapTotalTicks = Math.max(1, Math.round(def.leapDuration! * reachMult * TICK_RATE));
+    p.leapTicks = p.leapTotalTicks;
+    p.leapSpeed = (def.leapRange! * reachMult) / (p.leapTotalTicks * TICK_DT);
+    p.leapDamage = def.damage * scale;
+    p.leapLandRadius = def.landRadius!;
+    p.leapKnockback = def.knockbackDistance ?? 0;
+    p.leapLandStun = def.landStunDuration ?? 0;
+    p.leapFlat = def.dashFlat ?? false;
+    p.leapDashDamage = def.dashDamage ? def.damage * scale : 0;
+    p.leapHitIds = new Set();
+  }
+
+  /** The ability currently being charged, or null. */
+  private chargeDef(p: PlayerEntity): AbilityDef | null {
+    if (p.chargeSlot === null) return null;
+    const equipped =
+      slotCategory(p.chargeSlot) === 'offense'
+        ? p.slots.offense[p.chargeSlot]
+        : p.slots.utility[p.chargeSlot - 2];
+    return equipped ? ABILITIES[equipped.abilityId] : null;
+  }
+
+  /** Release a charged cast: effect and cooldown scale with how long it was held. */
+  private releaseCharge(p: PlayerEntity): void {
+    const slotIndex = p.chargeSlot!;
+    const def = this.chargeDef(p);
+    const fraction = p.chargeMaxTicks > 0 ? Math.min(1, p.chargeTicks / p.chargeMaxTicks) : 1;
+    p.chargeSlot = null;
+    if (!def?.chargeSeconds) return;
+    const category = slotCategory(slotIndex);
+    const equipped =
+      category === 'offense' ? p.slots.offense[slotIndex] : p.slots.utility[slotIndex - 2];
+    if (!equipped) return;
+    // Effect power: chargeMinFraction at an instant tap, 1 at full charge.
+    const min = def.chargeMinFraction ?? 0.5;
+    const power = min + (1 - min) * fraction;
+    const scale = RARITY_MULT[equipped.rarity] * levelDamageMult(p.level) * power;
+    p.slotCds[slotIndex] = Math.round(def.cooldown * TICK_RATE);
+    this.events.push({
+      type: 'chargeRelease',
+      casterId: p.id,
+      abilityId: def.id,
+      x: p.x,
+      z: p.z,
+      fraction: power,
+    });
+    if (def.behavior === 'leap') this.startLeap(p, def, scale, power);
+    else if (def.behavior === 'projectile') this.spawnProjectiles(p, def, scale, power);
+  }
+
+  /** A stun (or death) interrupts the charge: no effect, half cooldown. */
+  private cancelCharge(p: PlayerEntity): void {
+    const slotIndex = p.chargeSlot!;
+    const def = this.chargeDef(p);
+    p.chargeSlot = null;
+    if (def) p.slotCds[slotIndex] = Math.round(def.cooldown * 0.5 * TICK_RATE);
   }
 
   private useItem(p: PlayerEntity): void {
@@ -1029,7 +1125,7 @@ export class GameSim {
       if (proj.returning) {
         // Caught by the owner (or owner died mid-flight).
         if (!owner?.alive || dist(proj.x, proj.z, owner.x, owner.z) < 1.0) gone = true;
-      } else if (circleBlocked(proj.x, proj.z, proj.radius, this.map)) {
+      } else if (!def.pierce && circleBlocked(proj.x, proj.z, proj.radius, this.map)) {
         gone = true;
       } else if (proj.ticksLeft <= 0 && !def.boomerang) {
         gone = true;
@@ -1071,7 +1167,7 @@ export class GameSim {
                 }
               }
             }
-            if (!def.boomerang) gone = true;
+            if (!def.boomerang && !def.pierce) gone = true;
             break;
           }
         }
@@ -1081,7 +1177,7 @@ export class GameSim {
             if (dist(proj.x, proj.z, mob.x, mob.z) < proj.radius + mob.radius) {
               proj.hitIds.add(mob.id);
               this.damageMob(mob, proj.damage, proj.ownerId);
-              if (!def.boomerang) gone = true;
+              if (!def.boomerang && !def.pierce) gone = true;
               break;
             }
           }
@@ -1396,6 +1492,7 @@ export class GameSim {
       target.hp = 0;
       target.alive = false;
       target.channel = null;
+      target.chargeSlot = null;
       this.events.push({ type: 'death', id: target.id, killerId: sourceId, x: target.x, z: target.z });
       const killer = sourceId !== null ? this.players.get(sourceId) : undefined;
       if (killer && killer.alive) this.awardXp(killer, XP_PER_PLAYER_KILL);
@@ -1498,6 +1595,10 @@ export class GameSim {
         fae: p.faeTicks > 0,
         auraActive: p.auraTicks > 0,
         channeling: p.channel ? 1 - p.channel.ticksLeft / p.channel.totalTicks : -1,
+        charging:
+          p.chargeSlot !== null && p.chargeMaxTicks > 0
+            ? Math.min(1, p.chargeTicks / p.chargeMaxTicks)
+            : -1,
         slots: {
           offense: p.slots.offense.map((s) => (s ? { ...s } : null)),
           utility: p.slots.utility.map((s) => (s ? { ...s } : null)),

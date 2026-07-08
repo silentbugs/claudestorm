@@ -1,4 +1,4 @@
-/** The authentic Plunderstorm roster: 10 offensive + 10 utility spells. */
+/** The authentic Plunderstorm roster: 11 offensive + 10 utility spells. */
 export type AbilityId =
   // Offense
   | 'rimeArrow'
@@ -11,6 +11,7 @@ export type AbilityId =
   | 'slicingWinds'
   | 'starBomb'
   | 'toxicSmackerel'
+  | 'celestialBarrage'
   // Utility
   | 'quakingLeap'
   | 'huntersChains'
@@ -98,6 +99,8 @@ export interface PlayerSnapshot {
   auraActive: boolean;
   /** Chest-open progress 0..1, or -1 when not channeling. */
   channeling: number;
+  /** Charge-and-release cast progress 0..1, or -1 when not charging. */
+  charging: number;
   slots: PlayerSlots;
   /** Seconds remaining: [offense0, offense1, utility0, utility1]. */
   slotCds: number[];
@@ -180,6 +183,7 @@ export type GameEvent =
   | { type: 'hit'; targetId: number; sourceId: number | null; amount: number; x: number; z: number }
   | { type: 'death'; id: number; killerId: number | null; x: number; z: number }
   | { type: 'cast'; casterId: number; abilityId: AbilityId; x: number; z: number }
+  | { type: 'chargeRelease'; casterId: number; abilityId: AbilityId; x: number; z: number; fraction: number }
   | { type: 'detonate'; x: number; z: number; radius: number; abilityId: AbilityId }
   | { type: 'projectileGone'; id: number; x: number; z: number }
   | { type: 'melee'; casterId: number; x: number; z: number; facing: number; combo: number }

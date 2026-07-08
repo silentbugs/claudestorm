@@ -61,6 +61,17 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
     }
   }
 
+  // Mid-charge: keep facing the target and release once charged enough.
+  if (bot.chargeSlot !== null) {
+    if (target) {
+      yaw = yawToward(bot.x, bot.z, target.x, target.z);
+      aimX = target.x;
+      aimZ = target.z;
+    }
+    if (bot.chargeTicks >= bot.chargeMaxTicks * 0.7) slotCasts.push(bot.chargeSlot);
+    return { seq: tick, moveX: 0, moveZ: 0, yaw, aimX, aimZ, buttons, slotCasts };
+  }
+
   const distFromCenter = dist(bot.x, bot.z, storm.x, storm.z);
   const stormDanger = distFromCenter > storm.radius - 5;
 

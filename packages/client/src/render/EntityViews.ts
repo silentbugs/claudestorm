@@ -34,6 +34,7 @@ const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
   manaSphere: 0x7a8cff,
   huntersChains: 0xd8d8e8,
   windstorm: 0xcfe8dd,
+  celestialBarrage: 0xd8c8ff,
 };
 
 /** Terrain height under a world position — everything dynamic stands on the hills. */
@@ -546,6 +547,15 @@ function makeProjectileMesh(abilityId: AbilityId): THREE.Mesh {
         new THREE.BoxGeometry(0.24, 0.24, 0.24),
         new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }),
       );
+    case 'celestialBarrage': {
+      // Starlight comet: stretched octahedron streaking along its flight path.
+      const geo = new THREE.OctahedronGeometry(0.34);
+      geo.scale(1, 1, 2.4);
+      return new THREE.Mesh(
+        geo,
+        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2.0 }),
+      );
+    }
     default:
       return new THREE.Mesh(
         new THREE.SphereGeometry(0.32, 12, 10),
@@ -840,6 +850,9 @@ export class EntityViews {
             case 'faeform':
               this.spawnBurst(ev.x, ev.z, 1.4, 0xe98fd8, 0.4, 1.0);
               break;
+            case 'celestialBarrage':
+              this.spawnFlash(ev.x, ev.z, 1.4, 0xd8c8ff, 0.3); // starlight gathers
+              break;
             case 'lightningBulwark':
               this.spawnFlash(ev.x, ev.z, 1.3, 0xc9e2ff, 0.3);
               break;
@@ -848,6 +861,14 @@ export class EntityViews {
           }
           sfx.cast(ev.abilityId);
           break;
+        case 'chargeRelease': {
+          // Bigger flash the longer the charge was held.
+          const color = ev.abilityId === 'celestialBarrage' ? 0xd8c8ff : 0xcfe8dd;
+          this.spawnBurst(ev.x, ev.z, 1.2 + ev.fraction * 1.6, color, 0.3);
+          this.spawnFlash(ev.x, ev.z, 1.0 + ev.fraction, color, 0.2);
+          sfx.cast(ev.abilityId);
+          break;
+        }
         case 'melee': {
           this.spawnMeleeArc(ev.x, ev.z, ev.facing, ev.combo);
           this.players.get(ev.casterId)?.triggerSwing();

@@ -71,6 +71,11 @@ export interface PlayerEntity {
   auraDps: number;
   auraRadius: number;
 
+  /** Charge-and-release cast: the slot being charged, or null. */
+  chargeSlot: number | null;
+  chargeTicks: number;
+  chargeMaxTicks: number;
+
   leapTicks: number;
   leapTotalTicks: number;
   leapDirX: number;
