@@ -159,6 +159,14 @@ export class GameSim {
   private stormPhaseTime = 0;
   private stormRadius: number;
   private stormRadiusAtPhaseStart: number;
+  /** The circle drifts: each phase closes on a new center inside the old circle. */
+  private stormCenterX = 0;
+  private stormCenterZ = 0;
+  private stormCenterAtPhaseStartX = 0;
+  private stormCenterAtPhaseStartZ = 0;
+  private stormTargetCenterX = 0;
+  private stormTargetCenterZ = 0;
+  private nextLightningTick = 0;
 
   constructor(opts: GameSimOptions) {
     this.map = opts.map ?? ARENA;
@@ -167,6 +175,8 @@ export class GameSim {
     this.stormRadius = opts.stormStartRadius ?? STORM_START_RADIUS;
     this.stormRadiusAtPhaseStart = this.stormRadius;
     this.phase = opts.skipDrop ? 'live' : 'drop';
+    const firstPhase = this.stormPhases[0];
+    if (firstPhase) this.pickStormTargetCenter(firstPhase);
 
     const n = opts.players.length;
     opts.players.forEach((setup, i) => {
@@ -369,7 +379,7 @@ export class GameSim {
     this.tick++;
     this.updatePhase();
 
-    const stormView = { x: 0, z: 0, radius: this.stormRadius };
+    const stormView = { x: this.stormCenterX, z: this.stormCenterZ, radius: this.stormRadius };
     for (const p of this.players.values()) {
       if (p.isBot && p.alive) {
         this.applyInput(
@@ -1297,6 +1307,16 @@ export class GameSim {
     }
   }
 
+  /** Pick where the next circle settles: somewhere inside the current one, kept on the map. */
+  private pickStormTargetCenter(phase: StormPhaseDef): void {
+    const maxOffset = Math.max(0, this.stormRadius - phase.targetRadius) * 0.75;
+    const angle = this.rng.range(0, Math.PI * 2);
+    const r = this.rng.range(0, maxOffset);
+    const clampTo = Math.max(0, this.map.size / 2 - phase.targetRadius * 0.5);
+    this.stormTargetCenterX = Math.max(-clampTo, Math.min(clampTo, this.stormCenterX + Math.cos(angle) * r));
+    this.stormTargetCenterZ = Math.max(-clampTo, Math.min(clampTo, this.stormCenterZ + Math.sin(angle) * r));
+  }
+
   private updateStorm(): void {
     if (this.phase !== 'live') return;
     const phase = this.stormPhases[this.stormPhaseIndex];
@@ -1308,23 +1328,51 @@ export class GameSim {
     } else if (this.stormPhaseTime <= phase.hold + phase.shrink) {
       const t = (this.stormPhaseTime - phase.hold) / phase.shrink;
       this.stormRadius = lerp(this.stormRadiusAtPhaseStart, phase.targetRadius, t);
+      this.stormCenterX = lerp(this.stormCenterAtPhaseStartX, this.stormTargetCenterX, t);
+      this.stormCenterZ = lerp(this.stormCenterAtPhaseStartZ, this.stormTargetCenterZ, t);
     } else {
       this.stormRadius = phase.targetRadius;
+      this.stormCenterX = this.stormTargetCenterX;
+      this.stormCenterZ = this.stormTargetCenterZ;
       if (this.stormPhaseIndex < this.stormPhases.length - 1) {
         this.stormPhaseIndex++;
         this.stormPhaseTime = 0;
         this.stormRadiusAtPhaseStart = this.stormRadius;
+        this.stormCenterAtPhaseStartX = this.stormCenterX;
+        this.stormCenterAtPhaseStartZ = this.stormCenterZ;
+        this.pickStormTargetCenter(this.stormPhases[this.stormPhaseIndex]!);
+      } else {
+        // Final circle: Violent Lightnings hammer the remaining playspace.
+        if (this.tick >= this.nextLightningTick) {
+          this.nextLightningTick = this.tick + this.rng.int(18, 45);
+          const angle = this.rng.range(0, Math.PI * 2);
+          const r = Math.sqrt(this.rng.next()) * (this.stormRadius + 4);
+          this.zones.push({
+            id: this.nextEntityId++,
+            abilityId: 'starBomb',
+            ownerId: -1, // the storm itself
+            kind: 'telegraph',
+            x: this.stormCenterX + Math.cos(angle) * r,
+            z: this.stormCenterZ + Math.sin(angle) * r,
+            radius: 2.6,
+            damage: 30,
+            endTick: this.tick + Math.round(1.1 * TICK_RATE),
+            dps: 0,
+            slowFactor: 1,
+            rootDuration: 0,
+          });
+        }
       }
     }
 
     for (const p of this.players.values()) {
       if (!p.alive) continue;
-      if (dist(p.x, p.z, 0, 0) > this.stormRadius) {
+      if (dist(p.x, p.z, this.stormCenterX, this.stormCenterZ) > this.stormRadius) {
         this.damagePlayer(p, phase.dps * TICK_DT, null);
       }
     }
     for (const mob of this.mobs.values()) {
-      if (dist(mob.x, mob.z, 0, 0) > this.stormRadius) {
+      if (dist(mob.x, mob.z, this.stormCenterX, this.stormCenterZ) > this.stormRadius) {
         this.damageMob(mob, phase.dps * TICK_DT, null);
       }
     }
@@ -1412,8 +1460,8 @@ export class GameSim {
       winnerId: this.winnerId,
       aliveCount,
       storm: {
-        x: 0,
-        z: 0,
+        x: this.stormCenterX,
+        z: this.stormCenterZ,
         radius: this.stormRadius,
         targetRadius: phaseDef?.targetRadius ?? this.stormRadius,
         shrinking,

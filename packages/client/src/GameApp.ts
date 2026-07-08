@@ -110,7 +110,11 @@ export class GameApp {
     if (sampled) {
       const { prev, next, t } = sampled;
       this.views.sync(prev, next, t, SELF_ID, this.sceneMgr.camera, dt);
-      this.sceneMgr.setStormRadius(lerp(prev.storm.radius, next.storm.radius, t));
+      this.sceneMgr.setStorm(
+        lerp(prev.storm.x, next.storm.x, t),
+        lerp(prev.storm.z, next.storm.z, t),
+        lerp(prev.storm.radius, next.storm.radius, t),
+      );
       this.hud.update(next, SELF_ID);
 
       const selfNext = next.players.find((p) => p.id === SELF_ID);

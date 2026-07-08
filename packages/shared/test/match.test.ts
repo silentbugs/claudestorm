@@ -59,6 +59,40 @@ describe('storm', () => {
     expect(snap.winnerId).toBe(1);
     expect(sim.players.get(2)!.alive).toBe(false);
   });
+
+  it('drifts toward a new center inside the previous circle each phase', () => {
+    const sim = makeSim([player(1, 0, 0)], {
+      stormPhases: [
+        { hold: 0.5, shrink: 0.5, targetRadius: 30, dps: 0 },
+        { hold: 0.5, shrink: 0.5, targetRadius: 12, dps: 0 },
+      ],
+      stormStartRadius: 50,
+      seed: 7,
+    });
+    let snap = sim.step();
+    const centers: string[] = [];
+    for (let i = 0; i < TICK_RATE * 3; i++) {
+      snap = sim.step();
+      centers.push(`${snap.storm.x.toFixed(2)},${snap.storm.z.toFixed(2)}`);
+    }
+    // The center moved at some point, and the final circle sits off origin.
+    expect(new Set(centers).size).toBeGreaterThan(1);
+    expect(Math.hypot(snap.storm.x, snap.storm.z)).toBeGreaterThan(0.01);
+    expect(Math.hypot(snap.storm.x, snap.storm.z)).toBeLessThan(50); // still near the map
+  });
+
+  it('violent lightnings strike inside the final circle', () => {
+    const sim = makeSim([player(1, 30, 30)], {
+      stormPhases: [{ hold: 0.2, shrink: 0.3, targetRadius: 10, dps: 0 }],
+      stormStartRadius: 12,
+    });
+    let sawLightning = false;
+    for (let i = 0; i < TICK_RATE * 5 && !sawLightning; i++) {
+      const snap = sim.step();
+      if (snap.zones.some((z) => z.kind === 'telegraph')) sawLightning = true;
+    }
+    expect(sawLightning).toBe(true);
+  });
 });
 
 describe('match flow', () => {

@@ -125,13 +125,15 @@ export class SceneManager {
       }),
     );
     this.stormWall.position.y = 20;
-    this.setStormRadius(STORM_START_RADIUS);
+    this.setStorm(0, 0, STORM_START_RADIUS);
     this.scene.add(this.stormWall);
 
     window.addEventListener('resize', () => this.resize());
   }
 
-  setStormRadius(radius: number): void {
+  setStorm(x: number, z: number, radius: number): void {
+    this.stormWall.position.x = x;
+    this.stormWall.position.z = z;
     this.stormWall.scale.set(Math.max(0.01, radius), 1, Math.max(0.01, radius));
   }
 
