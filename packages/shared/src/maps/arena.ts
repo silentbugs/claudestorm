@@ -23,6 +23,14 @@ export interface Point {
   z: number;
 }
 
+/** A smooth terrain bump: height h at the center, cosine falloff to 0 at radius r. */
+export interface Hill {
+  x: number;
+  z: number;
+  r: number;
+  h: number;
+}
+
 export interface MapDef {
   /** Square side length; playable area is [-size/2, size/2] on both axes. */
   size: number;
@@ -35,103 +43,121 @@ export interface MapDef {
   scrolls: Point[];
   /** Consumable item spawns. */
   items: Point[];
+  /** Rolling terrain. Purely cosmetic for combat: entities stand on top of it. */
+  hills: Hill[];
 }
 
 /**
- * 200×200 island with seven points of interest: center ruins, four corner
- * camps, a north watchtower, and a south grove. Chests, creatures, and loose
- * scrolls cluster around the POIs.
+ * Height of the terrain at a world position: the sum of all hill bumps.
+ * Shared by the sim (conceptually flat gameplay) and the renderer (displaced ground).
  */
-export const ARENA: MapDef = {
-  size: 200,
-  obstacles: [
-    // Center ruins
-    { kind: 'box', x: 0, z: 7, hx: 5.5, hz: 1.2, height: 4 },
-    { kind: 'box', x: -7, z: -3, hx: 1.2, hz: 4.5, height: 3.5 },
-    { kind: 'box', x: 7, z: -5, hx: 1.2, hz: 3, height: 5 },
-    { kind: 'circle', x: 2, z: -10, r: 1.6, height: 6 },
-    { kind: 'circle', x: -3, z: 12, r: 1.4, height: 5 },
-    // NW farm
-    { kind: 'box', x: -55, z: -46, hx: 4, hz: 3, height: 4 },
-    { kind: 'box', x: -46, z: -53, hx: 2, hz: 2, height: 3 },
-    { kind: 'circle', x: -63, z: -38, r: 2.2, height: 7 },
-    { kind: 'circle', x: -48, z: -40, r: 1.6, height: 6 },
-    // NE camp
-    { kind: 'box', x: 57, z: -49, hx: 3, hz: 3, height: 3.5 },
-    { kind: 'circle', x: 64, z: -42, r: 1.8, height: 6 },
-    { kind: 'circle', x: 50, z: -58, r: 1.5, height: 5 },
-    // SW docks
-    { kind: 'box', x: -62, z: 51, hx: 5, hz: 2, height: 3 },
-    { kind: 'box', x: -53, z: 60, hx: 2, hz: 4, height: 4 },
-    { kind: 'circle', x: -68, z: 60, r: 1.7, height: 5 },
-    // SE quarry
-    { kind: 'circle', x: 56, z: 56, r: 3.5, height: 8 },
-    { kind: 'box', x: 64, z: 48, hx: 2.5, hz: 2, height: 3 },
-    { kind: 'circle', x: 48, z: 64, r: 2, height: 6 },
-    // N watchtower
-    { kind: 'circle', x: 2, z: -70, r: 2.6, height: 9 },
-    { kind: 'box', x: -5, z: -64, hx: 2, hz: 1.5, height: 3 },
-    { kind: 'box', x: 9, z: -64, hx: 1.5, hz: 1.5, height: 3 },
-    // S grove
-    { kind: 'circle', x: -8, z: 68, r: 2, height: 7 },
-    { kind: 'circle', x: 0, z: 74, r: 1.8, height: 6 },
-    { kind: 'circle', x: 5, z: 65, r: 1.5, height: 6 },
-    // Scattered mid-field cover
-    { kind: 'circle', x: -30, z: 10, r: 2, height: 6 },
-    { kind: 'circle', x: 30, z: 17, r: 1.8, height: 6 },
-    { kind: 'box', x: 13, z: 40, hx: 3, hz: 1.5, height: 3 },
-    { kind: 'box', x: -22, z: -30, hx: 2.5, hz: 1.5, height: 3 },
-    { kind: 'circle', x: 38, z: -18, r: 1.6, height: 5 },
-    { kind: 'circle', x: -42, z: 34, r: 1.7, height: 5 },
-    { kind: 'box', x: -10, z: 44, hx: 2, hz: 2, height: 3 },
-    { kind: 'box', x: 20, z: -42, hx: 2, hz: 2, height: 3.5 },
-    { kind: 'circle', x: 76, z: 4, r: 1.8, height: 6 },
-    { kind: 'circle', x: -78, z: -6, r: 1.8, height: 6 },
-    { kind: 'box', x: 44, z: 30, hx: 2, hz: 2, height: 3 },
-    { kind: 'box', x: -38, z: -58, hx: 2, hz: 1.5, height: 3 },
-  ],
-  chests: [
-    // Center ruins (richest)
-    { x: 0, z: 0 }, { x: -5, z: 9 }, { x: 8, z: 2 }, { x: -2, z: -12 },
-    // NW farm
-    { x: -54, z: -50 }, { x: -47, z: -44 }, { x: -61, z: -43 },
-    // NE camp
-    { x: 55, z: -53 }, { x: 62, z: -46 }, { x: 49, z: -47 },
-    // SW docks
-    { x: -59, z: 55 }, { x: -51, z: 53 }, { x: -65, z: 47 },
-    // SE quarry
-    { x: 59, z: 50 }, { x: 52, z: 59 },
-    // N watchtower
-    { x: 2, z: -66 }, { x: -2, z: -73 },
-    // S grove
-    { x: -4, z: 70 }, { x: 3, z: 68 },
-    // Field chests
-    { x: -29, z: 14 }, { x: 28, z: 21 }, { x: 16, z: -40 }, { x: 74, z: 0 }, { x: -75, z: -2 },
-  ],
-  mobs: [
-    { x: -17, z: 22 }, { x: -21, z: 26 }, { x: 22, z: -25 }, { x: 26, z: -29 },
-    { x: -36, z: -15 }, { x: -40, z: -11 }, { x: 38, z: 34 }, { x: 34, z: 38 },
-    { x: 0, z: 46 }, { x: 4, z: 50 }, { x: -8, z: -44 }, { x: -4, z: -48 },
-    { x: 66, z: 10 }, { x: -66, z: 6 }, { x: 30, z: 60 }, { x: -30, z: 58 },
-    { x: 44, z: -60 }, { x: -44, z: -62 },
-  ],
-  elites: [
-    { x: 4, z: 14 },      // center ruins
-    { x: -57, z: -42 },   // NW farm
-    { x: 53, z: -44 },    // NE camp
-    { x: -57, z: 50 },    // SW docks
-    { x: 52, z: 52 },     // SE quarry
-    { x: 6, z: -70 },     // N watchtower
-    { x: -3, z: 71 },     // S grove
-  ],
-  scrolls: [
-    { x: 3, z: 4 }, { x: -51, z: -48 }, { x: 58, z: -50 },
-    { x: -55, z: 57 }, { x: 56, z: 53 }, { x: 32, z: 19 },
-    { x: 0, z: -68 }, { x: -2, z: 66 },
-  ],
-  items: [
-    { x: -2, z: 2 }, { x: -49, z: -46 }, { x: 54, z: -48 },
-    { x: -57, z: 53 }, { x: 54, z: 57 }, { x: 4, z: -67 },
-    { x: 1, z: 69 }, { x: -27, z: 12 }, { x: 26, z: 19 }, { x: 70, z: 2 },
-  ],
-};
+export function terrainHeight(hills: Hill[], x: number, z: number): number {
+  let y = 0;
+  for (const hill of hills) {
+    const d = Math.hypot(x - hill.x, z - hill.z);
+    if (d < hill.r) y += hill.h * 0.5 * (1 + Math.cos((d / hill.r) * Math.PI));
+  }
+  return y;
+}
+
+/**
+ * 300×300 island. A central ruin, an inner ring of four camps, an outer ring of
+ * eight POIs, rolling hills, and scattered field cover. Built deterministically —
+ * same layout every match.
+ */
+function buildArena(): MapDef {
+  const obstacles: Obstacle[] = [];
+  const chests: Point[] = [];
+  const mobs: Point[] = [];
+  const elites: Point[] = [];
+  const scrolls: Point[] = [];
+  const items: Point[] = [];
+
+  const hills: Hill[] = [
+    { x: 0, z: 0, r: 34, h: 3 }, // the ruins sit on a rise
+    { x: -70, z: -55, r: 30, h: 5 },
+    { x: 75, z: -60, r: 26, h: 4 },
+    { x: -80, z: 60, r: 28, h: 4.5 },
+    { x: 70, z: 70, r: 32, h: 6 }, // quarry hill
+    { x: 0, z: -100, r: 26, h: 5 },
+    { x: -10, z: 100, r: 24, h: 3.5 },
+    { x: -120, z: 0, r: 30, h: 4 },
+    { x: 118, z: 8, r: 28, h: 4 },
+    { x: 40, z: -40, r: 20, h: 2 },
+    { x: -45, z: 35, r: 22, h: 2.5 },
+  ];
+
+  // ── Center ruins ──
+  obstacles.push(
+    { kind: 'box', x: 0, z: 8, hx: 6, hz: 1.3, height: 4.5 },
+    { kind: 'box', x: -8, z: -3, hx: 1.3, hz: 5, height: 3.5 },
+    { kind: 'box', x: 8, z: -5, hx: 1.3, hz: 3.5, height: 5 },
+    { kind: 'circle', x: 2, z: -11, r: 1.7, height: 6 },
+    { kind: 'circle', x: -4, z: 13, r: 1.5, height: 5 },
+  );
+  chests.push({ x: 0, z: 0 }, { x: -6, z: 10 }, { x: 9, z: 2 }, { x: -2, z: -13 }, { x: 5, z: 12 });
+  elites.push({ x: 4, z: 16 });
+  scrolls.push({ x: 3, z: 4 }, { x: -3, z: -6 });
+  items.push({ x: -2, z: 2 });
+  mobs.push({ x: -16, z: 20 }, { x: 18, z: -22 });
+
+  // ── Inner ring: four camps at ~55m ──
+  const inner = [
+    { x: 55, z: 0 },
+    { x: -55, z: 8 },
+    { x: 4, z: 55 },
+    { x: -8, z: -55 },
+  ];
+  inner.forEach((p, i) => {
+    obstacles.push({ kind: 'box', x: p.x + 3, z: p.z - 2, hx: 2.2, hz: 2.2, height: 3.2 });
+    obstacles.push({ kind: 'circle', x: p.x - 5, z: p.z + 4, r: 1.6, height: 6 });
+    chests.push({ x: p.x, z: p.z + 3 }, { x: p.x - 3, z: p.z - 4 });
+    mobs.push({ x: p.x + 8, z: p.z + 6 }, { x: p.x - 9, z: p.z - 7 });
+    if (i % 2 === 0) scrolls.push({ x: p.x + 2, z: p.z - 6 });
+    items.push({ x: p.x - 2, z: p.z + 6 });
+  });
+
+  // ── Outer ring: eight POIs at ~100m ──
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2 + 0.35;
+    const px = Math.round(Math.cos(angle) * 100);
+    const pz = Math.round(Math.sin(angle) * 100);
+    // A hut, a big tree, and a rock — arranged differently per POI.
+    const s = i % 2 === 0 ? 1 : -1;
+    obstacles.push(
+      { kind: 'box', x: px + 4 * s, z: pz - 3, hx: 3, hz: 2.5, height: 3.6 },
+      { kind: 'box', x: px - 5 * s, z: pz + 6, hx: 1.8, hz: 1.8, height: 3 },
+      { kind: 'circle', x: px - 7 * s, z: pz - 5, r: 2.1, height: 7 },
+      { kind: 'circle', x: px + 7 * s, z: pz + 7, r: 1.5, height: 5.5 },
+    );
+    chests.push(
+      { x: px, z: pz },
+      { x: px + 5 * s, z: pz + 4 },
+      { x: px - 6 * s, z: pz - 2 },
+    );
+    elites.push({ x: px + 2 * s, z: pz + 8 });
+    mobs.push({ x: px + 12 * s, z: pz - 9 }, { x: px - 11 * s, z: pz + 11 });
+    scrolls.push({ x: px - 2 * s, z: pz + 2 });
+    if (i % 2 === 1) items.push({ x: px + 3 * s, z: pz - 5 });
+  }
+
+  // ── Scattered field cover, spiraling outward (golden angle) ──
+  for (let i = 0; i < 22; i++) {
+    const angle = i * 2.39996;
+    const r = 28 + (i / 22) * 105;
+    const x = Math.round(Math.cos(angle) * r);
+    const z = Math.round(Math.sin(angle) * r);
+    if (i % 3 === 0) {
+      obstacles.push({ kind: 'box', x, z, hx: 2, hz: 1.6, height: 3 });
+    } else {
+      obstacles.push({ kind: 'circle', x, z, r: 1.5 + (i % 4) * 0.25, height: 5 + (i % 3) });
+    }
+    if (i % 4 === 0) chests.push({ x: x + 3, z: z + 2 });
+    if (i % 5 === 0) mobs.push({ x: x - 4, z: z + 4 });
+    if (i % 7 === 0) items.push({ x: x + 2, z: z - 3 });
+  }
+
+  return { size: 300, obstacles, chests, mobs, elites, scrolls, items, hills };
+}
+
+export const ARENA: MapDef = buildArena();

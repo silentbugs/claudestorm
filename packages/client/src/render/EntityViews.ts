@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import {
   ABILITIES,
+  ARENA,
   ITEMS,
   lerp,
+  terrainHeight,
   type AbilityId,
   type GameEvent,
   type Rarity,
@@ -33,6 +35,11 @@ const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
   huntersChains: 0xd8d8e8,
   windstorm: 0xcfe8dd,
 };
+
+/** Terrain height under a world position — everything dynamic stands on the hills. */
+export function groundAt(x: number, z: number): number {
+  return terrainHeight(ARENA.hills, x, z);
+}
 
 function lerpAngle(a: number, b: number, t: number): number {
   let d = (b - a) % (Math.PI * 2);
@@ -355,7 +362,7 @@ class MobView {
   }
 
   update(x: number, z: number, facing: number, hpFrac: number, camera: THREE.Camera): void {
-    this.group.position.set(x, 0, z);
+    this.group.position.set(x, groundAt(x, z), z);
     this.group.rotation.y = facing;
     this.hpGroup.visible = this.elite || hpFrac < 1;
     setBar(this.hpFill, hpFrac, this.barWidth);
@@ -386,7 +393,7 @@ class ChestView {
     );
     band.position.y = 0.4;
     this.group.add(base, this.lid, band);
-    this.group.position.set(x, 0, z);
+    this.group.position.set(x, groundAt(x, z), z);
     this.group.rotation.y = (x * 7 + z * 13) % Math.PI;
   }
 
@@ -493,11 +500,13 @@ export class EntityViews {
         this.scene.add(view.group);
       }
       const pp = prevPlayers.get(p.id) ?? p;
+      const ix = lerp(pp.x, p.x, t);
+      const iz = lerp(pp.z, p.z, t);
       view.update(
         {
-          x: lerp(pp.x, p.x, t),
-          y: lerp(pp.y, p.y, t),
-          z: lerp(pp.z, p.z, t),
+          x: ix,
+          y: lerp(pp.y, p.y, t) + groundAt(ix, iz),
+          z: iz,
           facing: lerpAngle(pp.facing, p.facing, t),
           hpFrac: p.hp / p.maxHp,
           alive: p.alive,
@@ -568,7 +577,7 @@ export class EntityViews {
         this.scrolls.set(s.id, mesh);
         this.scene.add(mesh);
       }
-      mesh.position.set(s.x, 0.85 + Math.sin(now * 2.2 + s.id) * 0.12, s.z);
+      mesh.position.set(s.x, groundAt(s.x, s.z) + 0.85 + Math.sin(now * 2.2 + s.id) * 0.12, s.z);
       mesh.rotation.y = now * 1.6 + s.id;
     }
     for (const [id, mesh] of this.scrolls) {
@@ -593,7 +602,7 @@ export class EntityViews {
         this.items.set(it.id, mesh);
         this.scene.add(mesh);
       }
-      mesh.position.set(it.x, 0.6 + Math.sin(now * 2 + it.id) * 0.1, it.z);
+      mesh.position.set(it.x, groundAt(it.x, it.z) + 0.6 + Math.sin(now * 2 + it.id) * 0.1, it.z);
       mesh.rotation.y = now * 1.2 + it.id;
     }
     for (const [id, mesh] of this.items) {
@@ -615,7 +624,7 @@ export class EntityViews {
         this.coins.set(c.id, mesh);
         this.scene.add(mesh);
       }
-      mesh.position.set(c.x, 0.35, c.z);
+      mesh.position.set(c.x, groundAt(c.x, c.z) + 0.35, c.z);
       mesh.rotation.z = now * 2 + c.id;
     }
     for (const [id, mesh] of this.coins) {
@@ -637,7 +646,9 @@ export class EntityViews {
         this.scene.add(mesh);
       }
       const pp = prevProj.get(proj.id) ?? proj;
-      mesh.position.set(lerp(pp.x, proj.x, t), 1.1, lerp(pp.z, proj.z, t));
+      const px = lerp(pp.x, proj.x, t);
+      const pz = lerp(pp.z, proj.z, t);
+      mesh.position.set(px, groundAt(px, pz) + 1.1, pz);
       mesh.rotation.y = Math.atan2(proj.dirX, proj.dirZ);
       if (proj.abilityId === 'huntersChains') mesh.rotation.z = now * 14;
       else if (proj.abilityId === 'holyShield') mesh.rotation.z = now * 12;
@@ -683,7 +694,7 @@ export class EntityViews {
         );
         fill.rotation.x = -Math.PI / 2;
         group.add(outline, fill);
-        group.position.set(zone.x, 0.05, zone.z);
+        group.position.set(zone.x, groundAt(zone.x, zone.z) + 0.06, zone.z);
         view = { group, fill, kind: zone.kind };
         this.zones.set(zone.id, view);
         this.scene.add(group);
@@ -845,7 +856,7 @@ export class EntityViews {
       mat,
     );
     ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, 1, z);
+    ring.position.set(x, groundAt(x, z) + 1, z);
     this.scene.add(ring);
     this.effects.push({ obj: ring, mat, age: 0, ttl: 0.16, growth: 0.15 });
   }
@@ -853,8 +864,8 @@ export class EntityViews {
   private spawnChainLine(x1: number, z1: number, x2: number, z2: number): void {
     const mat = new THREE.LineBasicMaterial({ color: 0xd8d8e8, transparent: true, opacity: 0.9 });
     const geo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(x1, 1.2, z1),
-      new THREE.Vector3(x2, 1.2, z2),
+      new THREE.Vector3(x1, groundAt(x1, z1) + 1.2, z1),
+      new THREE.Vector3(x2, groundAt(x2, z2) + 1.2, z2),
     ]);
     const line = new THREE.Line(geo, mat);
     this.scene.add(line);
@@ -864,7 +875,7 @@ export class EntityViews {
   private spawnFlash(x: number, z: number, size: number, color: number, ttl: number): void {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 10), mat);
-    mesh.position.set(x, 1, z);
+    mesh.position.set(x, groundAt(x, z) + 1, z);
     this.scene.add(mesh);
     this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 1.5 });
   }
@@ -877,7 +888,7 @@ export class EntityViews {
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.6, 32, 1, true), mat);
-    mesh.position.set(x, 0.3, z);
+    mesh.position.set(x, groundAt(x, z) + 0.3, z);
     this.scene.add(mesh);
     this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 2.2, rise });
   }
@@ -885,7 +896,7 @@ export class EntityViews {
   private spawnColumn(x: number, z: number, radius: number, height: number, color: number, ttl: number): void {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 });
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.4, height, 8), mat);
-    mesh.position.set(x, height / 2, z);
+    mesh.position.set(x, groundAt(x, z) + height / 2, z);
     this.scene.add(mesh);
     this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 0.4 });
   }

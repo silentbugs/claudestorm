@@ -11,6 +11,7 @@ export const FLAT_MAP: MapDef = {
   elites: [],
   scrolls: [],
   items: [],
+  hills: [],
 };
 
 /** Storm that never threatens anyone — for tests that aren't about the storm. */

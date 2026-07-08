@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ARENA, STORM_START_RADIUS } from '@claudestorm/shared';
+import { ARENA, STORM_START_RADIUS, terrainHeight } from '@claudestorm/shared';
 
 /** Owns the Three.js scene, camera, lights, arena geometry, and storm wall. */
 export class SceneManager {
@@ -20,11 +20,11 @@ export class SceneManager {
       55,
       window.innerWidth / window.innerHeight,
       0.1,
-      700,
+      900,
     );
 
     this.scene.background = new THREE.Color(0x121627);
-    this.scene.fog = new THREE.Fog(0x121627, 150, 420);
+    this.scene.fog = new THREE.Fog(0x121627, 180, 520);
 
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.9);
     this.scene.add(hemi);
@@ -32,24 +32,38 @@ export class SceneManager {
     sun.position.set(40, 70, 25);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -110;
-    sun.shadow.camera.right = 110;
-    sun.shadow.camera.top = 110;
-    sun.shadow.camera.bottom = -110;
-    sun.shadow.camera.far = 300;
+    sun.shadow.camera.left = -160;
+    sun.shadow.camera.right = 160;
+    sun.shadow.camera.top = 160;
+    sun.shadow.camera.bottom = -160;
+    sun.shadow.camera.far = 380;
     this.scene.add(sun);
 
+    // Rolling terrain: the ground plane displaced by the shared hill function,
+    // tinted drier toward the hilltops.
+    const groundGeo = new THREE.PlaneGeometry(ARENA.size, ARENA.size, 150, 150);
+    groundGeo.rotateX(-Math.PI / 2);
+    const pos = groundGeo.attributes.position as THREE.BufferAttribute;
+    const colors = new Float32Array(pos.count * 3);
+    const low = new THREE.Color(0x35543a);
+    const high = new THREE.Color(0x74804c);
+    const tmp = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const h = terrainHeight(ARENA.hills, pos.getX(i), pos.getZ(i));
+      pos.setY(i, h);
+      tmp.copy(low).lerp(high, Math.min(1, h / 6));
+      colors[i * 3] = tmp.r;
+      colors[i * 3 + 1] = tmp.g;
+      colors[i * 3 + 2] = tmp.b;
+    }
+    groundGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    groundGeo.computeVertexNormals();
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(ARENA.size, ARENA.size),
-      new THREE.MeshStandardMaterial({ color: 0x35543a, roughness: 1 }),
+      groundGeo,
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
     );
-    ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
-
-    const grid = new THREE.GridHelper(ARENA.size, 50, 0x466a4e, 0x3d5c44);
-    grid.position.y = 0.02;
-    this.scene.add(grid);
 
     // Obstacle dressing (visual only — the sim collides with the raw shapes):
     // tall cylinders read as trees, short ones as rock pillars, boxes as huts.
@@ -106,7 +120,7 @@ export class SceneManager {
         cap.position.y = ob.height;
         group.add(cap);
       }
-      group.position.set(ob.x, 0, ob.z);
+      group.position.set(ob.x, terrainHeight(ARENA.hills, ob.x, ob.z), ob.z);
       group.traverse((m) => {
         m.castShadow = true;
         m.receiveShadow = true;

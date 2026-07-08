@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import {
   ABILITIES,
+  ARENA,
   INTERACT_RADIUS,
   TICK_DT,
   dist,
   lerp,
+  terrainHeight,
   type Snapshot,
 } from '@claudestorm/shared';
 import { CameraRig } from './game/CameraRig.js';
@@ -121,8 +123,8 @@ export class GameApp {
       const selfPrev = prev.players.find((p) => p.id === SELF_ID) ?? selfNext;
       if (selfNext && selfPrev) {
         const x = lerp(selfPrev.x, selfNext.x, t);
-        const y = lerp(selfPrev.y, selfNext.y, t);
         const z = lerp(selfPrev.z, selfNext.z, t);
+        const y = lerp(selfPrev.y, selfNext.y, t) + terrainHeight(ARENA.hills, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.updateAim(x, z);
         this.updateInteractPrompt(next, x, z, selfNext.gliding);
