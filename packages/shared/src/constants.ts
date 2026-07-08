@@ -46,7 +46,13 @@ export const XP_PER_CHEST = 20;
 export const XP_PER_PLAYER_KILL = 100;
 
 export const COIN_PICKUP_RADIUS = 2.2;
+/** Coins fly toward you from this far away, like the original's plunder vacuum. */
+export const COIN_MAGNET_RADIUS = 7;
+export const COIN_MAGNET_SPEED = 13;
 export const SCROLL_AUTO_PICKUP_RADIUS = 1.4;
+/** Death drops: the fallen leave this share of their plunder behind (capped). */
+export const DEATH_COIN_DROP_FRACTION = 0.25;
+export const DEATH_COIN_DROP_MAX = 12;
 export const INTERACT_RADIUS = 2.6;
 export const CHEST_CHANNEL_SECONDS = 1.5;
 

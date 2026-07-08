@@ -4,7 +4,7 @@ import type { Rng } from '../math/rng.js';
  * Plunderstorm-style consumables: found in the world and in chests,
  * one held at a time, used with G.
  */
-export type ItemId = 'chickenCoup' | 'smokeBomb' | 'mechanoHog' | 'gravityLauncher';
+export type ItemId = 'chickenCoup' | 'smokeBomb' | 'mechanoHog' | 'gravityLauncher' | 'toTheSkies';
 
 export interface ItemDef {
   id: ItemId;
@@ -43,6 +43,13 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: 'Launch yourself in a huge arc in the direction you are moving.',
     color: 0x7fd4ff,
   },
+  toTheSkies: {
+    id: 'toTheSkies',
+    name: 'To the Skies!',
+    icon: '🪁',
+    description: 'Rocket high into the air and glide back down — redeploy anywhere you can steer to.',
+    color: 0x9fe0ff,
+  },
 };
 
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[];
@@ -62,3 +69,5 @@ export const HOG_SPEED_MULT = 1.6;
 export const HOG_SPEED_SECONDS = 4;
 export const LAUNCHER_RANGE = 16;
 export const LAUNCHER_DURATION = 0.7;
+/** To the Skies!: launch height before the glide starts. */
+export const SKIES_LAUNCH_HEIGHT = 22;

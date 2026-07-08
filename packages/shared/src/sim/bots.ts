@@ -94,8 +94,13 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
     if (distFromCenter > storm.radius && bot.rollCdTicks === 0) buttons.roll = true;
     if (
       distFromCenter > storm.radius &&
-      (bot.item === 'mechanoHog' || bot.item === 'gravityLauncher')
+      (bot.item === 'mechanoHog' || bot.item === 'gravityLauncher' || bot.item === 'toTheSkies')
     ) {
+      // Redeploying mid-match: glide toward the safe circle.
+      if (bot.item === 'toTheSkies') {
+        st.landTargetX = storm.x;
+        st.landTargetZ = storm.z;
+      }
       buttons.useItem = true;
     }
   } else if (target && targetDist < 30) {

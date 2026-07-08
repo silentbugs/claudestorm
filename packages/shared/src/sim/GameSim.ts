@@ -1,6 +1,10 @@
 import {
   CHEST_CHANNEL_SECONDS,
+  COIN_MAGNET_RADIUS,
+  COIN_MAGNET_SPEED,
   COIN_PICKUP_RADIUS,
+  DEATH_COIN_DROP_FRACTION,
+  DEATH_COIN_DROP_MAX,
   DROP_START_Y,
   DROP_TIMEOUT_SECONDS,
   GLIDE_FALL_SPEED,
@@ -90,6 +94,7 @@ import {
   HOG_SPEED_SECONDS,
   LAUNCHER_DURATION,
   LAUNCHER_RANGE,
+  SKIES_LAUNCH_HEIGHT,
   SMOKE_STEALTH_SECONDS,
   rollItem,
   type ItemId,
@@ -946,6 +951,13 @@ export class GameSim {
         p.leapHitIds = new Set();
         break;
       }
+      case 'toTheSkies':
+        p.gliding = true;
+        p.y = Math.max(p.y, SKIES_LAUNCH_HEIGHT);
+        p.vy = 0;
+        p.leapTicks = 0;
+        p.channel = null;
+        break;
     }
   }
 
@@ -1379,16 +1391,32 @@ export class GameSim {
   }
 
   private updatePickups(): void {
-    for (const p of this.players.values()) {
-      if (!p.alive || p.gliding) continue;
-      for (const coin of this.coins.values()) {
-        if (dist(p.x, p.z, coin.x, coin.z) < COIN_PICKUP_RADIUS) {
-          this.coins.delete(coin.id);
-          p.plunder++;
-          this.events.push({ type: 'coin', playerId: p.id });
-          this.awardXp(p, XP_PER_COIN);
+    // Coins fly toward the nearest player before being collected (plunder vacuum).
+    for (const coin of this.coins.values()) {
+      let nearest: PlayerEntity | null = null;
+      let nearestDist = Infinity;
+      for (const p of this.players.values()) {
+        if (!p.alive || p.gliding) continue;
+        const d = dist(p.x, p.z, coin.x, coin.z);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearest = p;
         }
       }
+      if (!nearest) continue;
+      if (nearestDist < COIN_PICKUP_RADIUS) {
+        this.coins.delete(coin.id);
+        nearest.plunder++;
+        this.events.push({ type: 'coin', playerId: nearest.id });
+        this.awardXp(nearest, XP_PER_COIN);
+      } else if (nearestDist < COIN_MAGNET_RADIUS) {
+        const dir = norm(nearest.x - coin.x, nearest.z - coin.z);
+        coin.x += dir.x * COIN_MAGNET_SPEED * TICK_DT;
+        coin.z += dir.z * COIN_MAGNET_SPEED * TICK_DT;
+      }
+    }
+    for (const p of this.players.values()) {
+      if (!p.alive || p.gliding) continue;
       for (const scroll of this.scrolls.values()) {
         if (dist(p.x, p.z, scroll.x, scroll.z) < SCROLL_AUTO_PICKUP_RADIUS) {
           this.equipScroll(p, scroll, false); // auto-pickup only fills empty slots
@@ -1508,9 +1536,31 @@ export class GameSim {
       target.alive = false;
       target.channel = null;
       target.chargeSlot = null;
+      this.dropDeathLoot(target);
       this.events.push({ type: 'death', id: target.id, killerId: sourceId, x: target.x, z: target.z });
       const killer = sourceId !== null ? this.players.get(sourceId) : undefined;
       if (killer && killer.alive) this.awardXp(killer, XP_PER_PLAYER_KILL);
+    }
+  }
+
+  /** Like the original: the fallen drop their spell scrolls, a share of plunder, and their item. */
+  private dropDeathLoot(p: PlayerEntity): void {
+    for (const equipped of [...p.slots.offense, ...p.slots.utility]) {
+      if (!equipped) continue;
+      const angle = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(0.6, 2.2);
+      this.spawnScroll(
+        p.x + Math.cos(angle) * r,
+        p.z + Math.sin(angle) * r,
+        equipped.abilityId,
+        equipped.rarity,
+      );
+    }
+    const coins = Math.min(DEATH_COIN_DROP_MAX, Math.floor(p.plunder * DEATH_COIN_DROP_FRACTION));
+    for (let i = 0; i < coins; i++) this.spawnCoin(p.x, p.z);
+    if (p.item) {
+      this.spawnItem(p.x + this.rng.range(-1.2, 1.2), p.z + this.rng.range(-1.2, 1.2), p.item);
+      p.item = null;
     }
   }
 

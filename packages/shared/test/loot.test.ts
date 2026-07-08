@@ -92,6 +92,43 @@ describe('ability rank-ups', () => {
   });
 });
 
+describe('death drops', () => {
+  it('a killed player drops their scrolls, a share of plunder, and their item', () => {
+    const sim = makeSim([
+      // Killer's slots are full of different spells so the drops stay on the ground.
+      player(1, 0, 0, { loadout: loadout(['fireWhirl', 'manaSphere'], ['windstorm', 'snowdrift']) }),
+      player(2, 2, 0, { loadout: loadout(['rimeArrow', 'starBomb'], ['repel'], 'rare') }),
+    ]);
+    const victim = sim.players.get(2)!;
+    victim.hp = 1;
+    victim.plunder = 40;
+    victim.item = 'chickenCoup';
+    sim.applyInput(1, cmd({ yaw: Math.PI / 2, buttons: HOLD_MELEE }));
+    const snap = sim.step();
+    expect(snap.events.some((e) => e.type === 'death' && e.id === 2)).toBe(true);
+    const dropped = snap.scrolls.map((s) => s.abilityId).sort();
+    expect(dropped).toEqual(['repel', 'rimeArrow', 'starBomb']);
+    expect(snap.scrolls.every((s) => s.rarity === 'rare')).toBe(true);
+    expect(snap.items.some((i) => i.itemId === 'chickenCoup')).toBe(true);
+    // 25% of 40 plunder = 10 coins, some possibly hoovered up by the killer already.
+    expect(snap.coins.length + sim.players.get(1)!.plunder).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('coin magnetism', () => {
+  it('coins fly to the nearest player from outside pickup range', () => {
+    const sim = makeSim([player(1, 0, 0)]);
+    sim.coins.set(999, { id: 999, x: 6, z: 0 }); // beyond pickup (2.2), inside magnet (7)
+    let collected = false;
+    for (let i = 0; i < TICK_RATE && !collected; i++) {
+      const snap = sim.step();
+      collected = snap.events.some((e) => e.type === 'coin' && e.playerId === 1);
+    }
+    expect(collected).toBe(true); // without moving at all
+    expect(sim.players.get(1)!.plunder).toBe(1);
+  });
+});
+
 describe('mobs and leveling', () => {
   it('killing a mob drops coins and levels the killer up', () => {
     const map = { ...FLAT_MAP, mobs: [{ x: 2, z: 0 }] };
