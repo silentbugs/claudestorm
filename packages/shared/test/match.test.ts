@@ -70,14 +70,14 @@ describe('storm', () => {
       seed: 7,
     });
     let snap = sim.step();
-    const centers: string[] = [];
-    for (let i = 0; i < TICK_RATE * 3; i++) {
-      snap = sim.step();
-      centers.push(`${snap.storm.x.toFixed(2)},${snap.storm.z.toFixed(2)}`);
-    }
-    // The center moved at some point, and the final circle sits off origin.
-    expect(new Set(centers).size).toBeGreaterThan(1);
-    expect(Math.hypot(snap.storm.x, snap.storm.z)).toBeGreaterThan(0.01);
+    // Settle phase 1 (hold 0.5s + shrink 0.5s), grab the center, then phase 2.
+    for (let i = 0; i < TICK_RATE * 1.2; i++) snap = sim.step();
+    const c1 = { x: snap.storm.x, z: snap.storm.z };
+    for (let i = 0; i < TICK_RATE * 1.8; i++) snap = sim.step();
+    // Each circle settles meaningfully away from the previous center — the
+    // safe zone wanders instead of collapsing toward the middle.
+    expect(Math.hypot(c1.x, c1.z)).toBeGreaterThan(5);
+    expect(Math.hypot(snap.storm.x - c1.x, snap.storm.z - c1.z)).toBeGreaterThan(5);
     expect(Math.hypot(snap.storm.x, snap.storm.z)).toBeLessThan(50); // still near the map
   });
 

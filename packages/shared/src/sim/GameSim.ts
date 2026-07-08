@@ -1446,11 +1446,14 @@ export class GameSim {
     }
   }
 
-  /** Pick where the next circle settles: somewhere inside the current one, kept on the map. */
+  /**
+   * Pick where the next circle settles: always meaningfully off-center — like the
+   * original, the safe zone wanders instead of collapsing toward the middle.
+   */
   private pickStormTargetCenter(phase: StormPhaseDef): void {
-    const maxOffset = Math.max(0, this.stormRadius - phase.targetRadius) * 0.75;
+    const maxOffset = Math.max(0, this.stormRadius - phase.targetRadius) * 0.95;
     const angle = this.rng.range(0, Math.PI * 2);
-    const r = this.rng.range(0, maxOffset);
+    const r = maxOffset * this.rng.range(0.45, 1);
     const clampTo = Math.max(0, this.map.size / 2 - phase.targetRadius * 0.5);
     this.stormTargetCenterX = Math.max(-clampTo, Math.min(clampTo, this.stormCenterX + Math.cos(angle) * r));
     this.stormTargetCenterZ = Math.max(-clampTo, Math.min(clampTo, this.stormCenterZ + Math.sin(angle) * r));
