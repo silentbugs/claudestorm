@@ -76,6 +76,8 @@ class PlayerView {
   private readonly headMat: THREE.MeshStandardMaterial;
   private readonly rightArm = new THREE.Group();
   private readonly leftArm: THREE.Mesh;
+  private readonly legL: THREE.Mesh;
+  private readonly legR: THREE.Mesh;
   private readonly glider: THREE.Mesh;
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
@@ -85,6 +87,9 @@ class PlayerView {
   private rollSpin = 0;
   private swingTimer = 0;
   private castTimer = 0;
+  private walkPhase = 0;
+  private lastX = Number.NaN;
+  private lastZ = Number.NaN;
 
   constructor(isSelf: boolean, isBot: boolean) {
     this.bodyMat = new THREE.MeshStandardMaterial({
@@ -98,12 +103,15 @@ class PlayerView {
     this.bodyPivot.position.y = 0.95;
 
     const legGeo = new THREE.CapsuleGeometry(0.11, 0.32, 3, 8);
-    for (const side of [-1, 1]) {
-      const leg = new THREE.Mesh(legGeo, this.bodyMat);
-      leg.position.set(side * 0.17, -0.62, 0);
-      leg.castShadow = true;
-      this.bodyPivot.add(leg);
-    }
+    // Legs pivot at the hip so walk swings look right.
+    legGeo.translate(0, -0.2, 0);
+    this.legL = new THREE.Mesh(legGeo, this.bodyMat);
+    this.legL.position.set(-0.17, -0.42, 0);
+    this.legL.castShadow = true;
+    this.legR = new THREE.Mesh(legGeo, this.bodyMat);
+    this.legR.position.set(0.17, -0.42, 0);
+    this.legR.castShadow = true;
+    this.bodyPivot.add(this.legL, this.legR);
 
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.5, 4, 12), this.bodyMat);
     torso.position.y = -0.05;
@@ -253,18 +261,43 @@ class PlayerView {
       this.aura.rotation.z += dt * 6;
     }
 
+    // Walk cycle driven by observed horizontal speed.
+    const moved = Number.isNaN(this.lastX) ? 0 : Math.hypot(p.x - this.lastX, p.z - this.lastZ);
+    this.lastX = p.x;
+    this.lastZ = p.z;
+    const speed = dt > 0 ? moved / dt : 0;
+    const airborne = p.y > 0.08 && !p.gliding;
+    if (airborne) {
+      // Jump pose: legs tucked, slight lean.
+      this.legL.rotation.x = 0.55;
+      this.legR.rotation.x = -0.35;
+    } else if (speed > 0.6) {
+      this.walkPhase += dt * Math.min(14, speed * 1.5);
+      const swing = Math.sin(this.walkPhase) * 0.65;
+      this.legL.rotation.x = swing;
+      this.legR.rotation.x = -swing;
+    } else {
+      this.walkPhase = 0;
+      this.legL.rotation.x *= 0.7;
+      this.legR.rotation.x *= 0.7;
+    }
+
     // Sword swing: raise fast, follow through back to rest.
     if (this.swingTimer > 0) {
       this.swingTimer = Math.max(0, this.swingTimer - dt);
       const t = 1 - this.swingTimer / SWING_DURATION;
       this.rightArm.rotation.x = t < 0.4 ? lerp(0.35, -1.7, t / 0.4) : lerp(-1.7, 0.35, (t - 0.4) / 0.6);
+    } else if (!airborne && speed > 0.6) {
+      this.rightArm.rotation.x = 0.35 + Math.sin(this.walkPhase) * 0.3; // counter-swing
     } else {
       this.rightArm.rotation.x = 0.35;
     }
-    // Off-hand raise while casting.
+    // Off-hand raise while casting, counter-swinging on the move otherwise.
     if (this.castTimer > 0) {
       this.castTimer = Math.max(0, this.castTimer - dt);
       this.leftArm.rotation.x = -1.9;
+    } else if (!airborne && speed > 0.6) {
+      this.leftArm.rotation.x = -Math.sin(this.walkPhase) * 0.3;
     } else {
       this.leftArm.rotation.x = 0;
     }
@@ -280,8 +313,8 @@ class PlayerView {
     this.bodyMat.opacity = this.headMat.opacity = opacity;
     this.hpGroup.visible = !p.stealthed;
     setBar(this.hpFill, p.hpFrac, 1.3);
-    this.hpGroup.quaternion.copy(camera.quaternion);
-    this.hpGroup.rotation.z = 0;
+    // Billboard: cancel the parent's facing rotation so the bar always faces the camera.
+    this.hpGroup.quaternion.copy(this.group.quaternion).invert().multiply(camera.quaternion);
   }
 
   triggerSwing(): void {
@@ -299,6 +332,10 @@ class MobView {
   private readonly hpGroup: THREE.Group;
   private readonly barWidth: number;
   private readonly elite: boolean;
+  private readonly legs: THREE.Mesh[] = [];
+  private walkPhase = 0;
+  private lastX = Number.NaN;
+  private lastZ = Number.NaN;
 
   constructor(elite: boolean) {
     this.elite = elite;
@@ -317,12 +354,14 @@ class MobView {
     snout.rotation.x = Math.PI / 2;
     snout.position.set(0, 0.45, 0.78);
     beast.add(snout);
-    // Stub legs at the four corners.
+    // Stub legs at the four corners, pivoting at the shoulder for the scurry.
     const legGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.3, 8);
+    legGeo.translate(0, -0.15, 0);
     for (const [lx, lz] of [[-0.26, 0.3], [0.26, 0.3], [-0.26, -0.3], [0.26, -0.3]]) {
       const leg = new THREE.Mesh(legGeo, darkMat);
-      leg.position.set(lx!, 0.15, lz!);
+      leg.position.set(lx!, 0.3, lz!);
       beast.add(leg);
+      this.legs.push(leg);
     }
     // Ears, eyes, tail.
     const earGeo = new THREE.ConeGeometry(0.09, 0.22, 6);
@@ -361,12 +400,29 @@ class MobView {
     this.group.add(this.hpGroup);
   }
 
-  update(x: number, z: number, facing: number, hpFrac: number, camera: THREE.Camera): void {
+  update(x: number, z: number, facing: number, hpFrac: number, camera: THREE.Camera, dt: number): void {
     this.group.position.set(x, groundAt(x, z), z);
     this.group.rotation.y = facing;
+
+    // Scurry: diagonal leg pairs alternate while moving.
+    const moved = Number.isNaN(this.lastX) ? 0 : Math.hypot(x - this.lastX, z - this.lastZ);
+    this.lastX = x;
+    this.lastZ = z;
+    const speed = dt > 0 ? moved / dt : 0;
+    if (speed > 0.4) {
+      this.walkPhase += dt * Math.min(18, speed * 3);
+      const swing = Math.sin(this.walkPhase) * 0.6;
+      this.legs.forEach((leg, i) => {
+        leg.rotation.x = i === 0 || i === 3 ? swing : -swing;
+      });
+    } else {
+      for (const leg of this.legs) leg.rotation.x *= 0.7;
+    }
+
     this.hpGroup.visible = this.elite || hpFrac < 1;
     setBar(this.hpFill, hpFrac, this.barWidth);
-    this.hpGroup.quaternion.copy(camera.quaternion);
+    // Billboard: cancel the beast's facing so the bar tracks the camera.
+    this.hpGroup.quaternion.copy(this.group.quaternion).invert().multiply(camera.quaternion);
   }
 }
 
@@ -540,7 +596,7 @@ export class EntityViews {
         this.scene.add(view.group);
       }
       const pm = prevMobs.get(m.id) ?? m;
-      view.update(lerp(pm.x, m.x, t), lerp(pm.z, m.z, t), lerpAngle(pm.facing, m.facing, t), m.hp / m.maxHp, camera);
+      view.update(lerp(pm.x, m.x, t), lerp(pm.z, m.z, t), lerpAngle(pm.facing, m.facing, t), m.hp / m.maxHp, camera, dt);
     }
     for (const [id, view] of this.mobs) {
       if (!liveMobs.has(id)) {
