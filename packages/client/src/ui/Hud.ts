@@ -120,7 +120,7 @@ export class Hud {
     };
 
     const builtins = [
-      row('⚔️', 'Sword', 'LMB', 'Builtin',
+      row('⚔️', 'Sword', 'R', 'Builtin',
         `${MELEE_DAMAGE} damage · ${MELEE_INTERVAL}s swing · 3rd hit ×${MELEE_COMBO_FINISHER_MULT}`,
         'Auto-attack combo in a front arc. The third hit in a row is a finisher.'),
       row('💚', 'Heal', 'H', 'Builtin', `${HEAL_AMOUNT} healing · ${HEAL_COOLDOWN}s cooldown`,

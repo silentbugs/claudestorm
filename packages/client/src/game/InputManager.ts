@@ -3,7 +3,7 @@ import type { InputCommand } from '@claudestorm/shared';
 /**
  * WoW-style controls: free cursor for aiming, hold right-mouse to look around,
  * WASD camera-relative movement. Edge presses are accumulated so taps between
- * command sends are never lost; melee (LMB) is a held state.
+ * command sends are never lost; melee (R) is a held state.
  */
 export class InputManager {
   private keys = new Set<string>();
@@ -12,7 +12,6 @@ export class InputManager {
   >();
   private pendingSlots = new Set<number>();
   private seq = 0;
-  private lmbHeld = false;
   private rmbHeld = false;
 
   mouseX = 0;
@@ -79,12 +78,10 @@ export class InputManager {
   };
 
   private readonly onMouseDown = (e: MouseEvent) => {
-    if (e.button === 0) this.lmbHeld = true;
     if (e.button === 2) this.rmbHeld = true;
   };
 
   private readonly onMouseUp = (e: MouseEvent) => {
-    if (e.button === 0) this.lmbHeld = false;
     if (e.button === 2) this.rmbHeld = false;
   };
 
@@ -94,7 +91,6 @@ export class InputManager {
 
   private readonly onBlur = () => {
     this.keys.clear();
-    this.lmbHeld = false;
     this.rmbHeld = false;
   };
 
@@ -154,7 +150,7 @@ export class InputManager {
       aimX,
       aimZ,
       buttons: {
-        melee: this.lmbHeld,
+        melee: this.keys.has('KeyR'),
         roll: this.pendingEdges.has('roll'),
         jump: this.pendingEdges.has('jump'),
         interact: this.pendingEdges.has('interact'),
