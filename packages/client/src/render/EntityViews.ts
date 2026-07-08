@@ -118,6 +118,29 @@ class PlayerView {
     torso.castShadow = true;
     this.bodyPivot.add(torso);
 
+    // Dressing: shoulder pads, belt, and a little cape.
+    const trimMat = new THREE.MeshStandardMaterial({
+      color: isSelf ? 0x2a5a8c : isBot ? 0x7a2e2e : 0x2a5a8c,
+      roughness: 0.7,
+    });
+    const padGeo = new THREE.SphereGeometry(0.16, 10, 8);
+    for (const side of [-1, 1]) {
+      const pad = new THREE.Mesh(padGeo, trimMat);
+      pad.position.set(side * 0.42, 0.36, 0);
+      pad.scale.y = 0.75;
+      this.bodyPivot.add(pad);
+    }
+    const belt = new THREE.Mesh(
+      new THREE.BoxGeometry(0.66, 0.1, 0.52),
+      new THREE.MeshStandardMaterial({ color: 0x4a331f, roughness: 0.9 }),
+    );
+    belt.position.y = -0.34;
+    this.bodyPivot.add(belt);
+    const cape = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.78, 0.05), trimMat);
+    cape.position.set(0, -0.08, -0.32);
+    cape.rotation.x = 0.12;
+    this.bodyPivot.add(cape);
+
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 12), this.headMat);
     head.position.y = 0.62;
     head.castShadow = true;
@@ -337,13 +360,13 @@ class MobView {
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
 
-  constructor(elite: boolean) {
+  constructor(elite: boolean, seed: number) {
     this.elite = elite;
     const beast = new THREE.Group();
-    const hideMat = new THREE.MeshStandardMaterial({
-      color: elite ? ELITE_COLOR : MOB_COLOR,
-      roughness: 0.85,
-    });
+    // Slight per-critter hue/lightness variation so packs don't look cloned.
+    const hide = new THREE.Color(elite ? ELITE_COLOR : MOB_COLOR);
+    hide.offsetHSL(((seed % 5) - 2) * 0.015, 0, ((seed % 3) - 1) * 0.04);
+    const hideMat = new THREE.MeshStandardMaterial({ color: hide, roughness: 0.85 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x6e5430, roughness: 0.8 });
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.55, 4, 10), hideMat);
     body.rotation.x = Math.PI / 2;
@@ -448,7 +471,17 @@ class ChestView {
       new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.5, roughness: 0.4 }),
     );
     band.position.y = 0.4;
-    this.group.add(base, this.lid, band);
+    const goldMat = band.material as THREE.MeshStandardMaterial;
+    const lock = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.1), goldMat);
+    lock.position.set(0, 0.5, 0.44);
+    const footGeo = new THREE.BoxGeometry(0.16, 0.12, 0.16);
+    const footMat = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.9 });
+    for (const [fx, fz] of [[-0.5, 0.3], [0.5, 0.3], [-0.5, -0.3], [0.5, -0.3]]) {
+      const foot = new THREE.Mesh(footGeo, footMat);
+      foot.position.set(fx!, 0.06, fz!);
+      this.group.add(foot);
+    }
+    this.group.add(base, this.lid, band, lock);
     this.group.position.set(x, groundAt(x, z), z);
     this.group.rotation.y = (x * 7 + z * 13) % Math.PI;
   }
@@ -591,7 +624,7 @@ export class EntityViews {
       liveMobs.add(m.id);
       let view = this.mobs.get(m.id);
       if (!view) {
-        view = new MobView(m.elite);
+        view = new MobView(m.elite, m.id);
         this.mobs.set(m.id, view);
         this.scene.add(view.group);
       }

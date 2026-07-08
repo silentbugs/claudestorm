@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ARENA, STORM_START_RADIUS, terrainHeight } from '@claudestorm/shared';
+import { ARENA, Rng, STORM_START_RADIUS, terrainHeight } from '@claudestorm/shared';
 
 /** Owns the Three.js scene, camera, lights, arena geometry, and storm wall. */
 export class SceneManager {
@@ -92,6 +92,12 @@ export class SceneManager {
           roof.rotation.y = Math.PI / 4;
           roof.position.y = ob.height + 0.7;
           group.add(roof);
+          const door = new THREE.Mesh(
+            new THREE.BoxGeometry(0.9, 1.5, 0.12),
+            new THREE.MeshStandardMaterial({ color: 0x4a331f, roughness: 0.9 }),
+          );
+          door.position.set(0, 0.75, ob.hz + 0.02);
+          group.add(door);
         }
       } else if (ob.height >= 5) {
         // Tree: trunk matches the collision radius, canopy flares above head height.
@@ -128,6 +134,8 @@ export class SceneManager {
       this.scene.add(group);
     });
 
+    this.scatterFoliage();
+
     this.stormWall = new THREE.Mesh(
       new THREE.CylinderGeometry(1, 1, 40, 96, 1, true),
       new THREE.MeshBasicMaterial({
@@ -143,6 +151,92 @@ export class SceneManager {
     this.scene.add(this.stormWall);
 
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /** Deterministic decorative scatter: grass, bushes, rocks, flowers on the terrain. */
+  private scatterFoliage(): void {
+    const rng = new Rng(1337);
+    const half = ARENA.size / 2 - 5;
+    const blocked = (x: number, z: number): boolean => {
+      for (const ob of ARENA.obstacles) {
+        const clearance = ob.kind === 'box' ? Math.max(ob.hx, ob.hz) + 1.5 : ob.r + 1.5;
+        if (Math.hypot(x - ob.x, z - ob.z) < clearance) return true;
+      }
+      return false;
+    };
+    const placements = (count: number): { x: number; z: number; s: number; rot: number }[] => {
+      const out: { x: number; z: number; s: number; rot: number }[] = [];
+      let guard = 0;
+      while (out.length < count && guard++ < count * 4) {
+        const x = rng.range(-half, half);
+        const z = rng.range(-half, half);
+        if (blocked(x, z)) continue;
+        out.push({ x, z, s: rng.range(0.6, 1.5), rot: rng.range(0, Math.PI * 2) });
+      }
+      return out;
+    };
+    const dummy = new THREE.Object3D();
+    const fill = (
+      mesh: THREE.InstancedMesh,
+      spots: { x: number; z: number; s: number; rot: number }[],
+      yOffset: number,
+      colors?: number[],
+    ): void => {
+      const tint = new THREE.Color();
+      spots.forEach((p, i) => {
+        dummy.position.set(p.x, terrainHeight(ARENA.hills, p.x, p.z) + yOffset * p.s, p.z);
+        dummy.rotation.set(0, p.rot, 0);
+        dummy.scale.setScalar(p.s);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        if (colors) mesh.setColorAt(i, tint.setHex(colors[i % colors.length]!));
+      });
+      mesh.count = spots.length;
+      mesh.castShadow = true;
+      this.scene.add(mesh);
+    };
+
+    const grass = placements(320);
+    fill(
+      new THREE.InstancedMesh(
+        new THREE.ConeGeometry(0.14, 0.55, 5),
+        new THREE.MeshStandardMaterial({ color: 0x55803f, roughness: 1 }),
+        grass.length,
+      ),
+      grass,
+      0.25,
+    );
+    const bushes = placements(110);
+    fill(
+      new THREE.InstancedMesh(
+        new THREE.IcosahedronGeometry(0.65, 0),
+        new THREE.MeshStandardMaterial({ color: 0x2f5c33, roughness: 1 }),
+        bushes.length,
+      ),
+      bushes,
+      0.4,
+    );
+    const rocks = placements(45);
+    fill(
+      new THREE.InstancedMesh(
+        new THREE.DodecahedronGeometry(0.45, 0),
+        new THREE.MeshStandardMaterial({ color: 0x8a877e, roughness: 0.95 }),
+        rocks.length,
+      ),
+      rocks,
+      0.2,
+    );
+    const flowers = placements(70);
+    fill(
+      new THREE.InstancedMesh(
+        new THREE.SphereGeometry(0.1, 6, 5),
+        new THREE.MeshStandardMaterial({ roughness: 0.7 }),
+        flowers.length,
+      ),
+      flowers,
+      0.3,
+      [0xe86fa4, 0xf3d34d, 0xf0f0e8, 0x9a6fe8],
+    );
   }
 
   setStorm(x: number, z: number, radius: number): void {
