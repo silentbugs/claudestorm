@@ -702,13 +702,11 @@ export class GameSim {
         break;
       }
       case 'groundAoE': {
-        let tx = p.aimX;
-        let tz = p.aimZ;
-        const d = dist(p.x, p.z, tx, tz);
-        if (d > def.castRange!) {
-          tx = p.x + ((tx - p.x) / d) * def.castRange!;
-          tz = p.z + ((tz - p.z) / d) * def.castRange!;
-        }
+        // The circle lands along the character's facing; the cursor's distance
+        // from the caster only picks how far out (clamped to cast range).
+        const d = Math.min(dist(p.x, p.z, p.aimX, p.aimZ), def.castRange!);
+        const tx = p.x + Math.sin(p.facing) * d;
+        const tz = p.z + Math.cos(p.facing) * d;
         this.zones.push({
           id: this.nextEntityId++,
           abilityId: def.id,
@@ -780,9 +778,13 @@ export class GameSim {
     }
   }
 
-  /** Fire a projectile (or fan volley) toward the aim point. reachMult stretches lifetime (charged casts). */
+  /** Fire a projectile (or fan volley) along the caster's facing. reachMult stretches lifetime (charged casts). */
   private spawnProjectiles(p: PlayerEntity, def: AbilityDef, scale: number, reachMult: number): void {
-    let dir = norm(p.aimX - p.x, p.aimZ - p.z);
+    // Plunderstorm-style: spells launch where the character looks; only
+    // aimAtCursor spells (Celestial Barrage) track the cursor's ground point.
+    let dir = def.aimAtCursor
+      ? norm(p.aimX - p.x, p.aimZ - p.z)
+      : { x: Math.sin(p.facing), z: Math.cos(p.facing) };
     if (dir.x === 0 && dir.z === 0) dir = { x: Math.sin(p.facing), z: Math.cos(p.facing) };
     const count = def.volley ?? 1;
     const spread = def.volleySpreadRad ?? 0;

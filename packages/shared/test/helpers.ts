@@ -69,16 +69,21 @@ export function buttons(partial: Partial<InputButtons> = {}): InputButtons {
 }
 
 export function cmd(partial: Partial<InputCommand> = {}): InputCommand {
+  // Spells fire along the character's facing. Tests cast from the origin, so
+  // when no yaw is given, face the aim point (matching how a player would turn).
+  const yaw =
+    partial.yaw ??
+    (partial.aimX || partial.aimZ ? Math.atan2(partial.aimX ?? 0, partial.aimZ ?? 0) : 0);
   return {
     seq: 0,
     moveX: 0,
     moveZ: 0,
-    yaw: 0,
     aimX: 0,
     aimZ: 0,
     buttons: buttons(),
     slotCasts: [],
     ...partial,
+    yaw,
   };
 }
 

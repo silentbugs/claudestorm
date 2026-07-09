@@ -104,11 +104,12 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       buttons.useItem = true;
     }
   } else if (target && targetDist < 30) {
-    // Engage: face the target, imperfect aim that worsens with range.
-    yaw = yawToward(bot.x, bot.z, target.x, target.z);
+    // Engage: face the target with imperfect aim that worsens with range.
+    // Spells fire along facing, so the miss lives in the yaw, not the aim point.
     const spread = Math.min(3, targetDist * 0.12);
     aimX = target.x + rng.range(-spread, spread);
     aimZ = target.z + rng.range(-spread, spread);
+    yaw = yawToward(bot.x, bot.z, aimX, aimZ);
 
     if (targetDist < 2.4) buttons.melee = true;
 

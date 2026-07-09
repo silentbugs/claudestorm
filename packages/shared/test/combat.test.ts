@@ -337,6 +337,30 @@ describe('Slicing Winds', () => {
   });
 });
 
+describe('aiming', () => {
+  it('projectiles fly where the character faces, not toward the cursor', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { loadout: loadout(['rimeArrow']) }),
+      player(2, 10, 0),
+    ]);
+    // The cursor rests on the enemy, but the character faces +z: the arrow misses.
+    sim.applyInput(1, cmd({ yaw: 0, aimX: 10, aimZ: 0, slotCasts: [0] }));
+    for (let i = 0; i < 25; i++) sim.step();
+    expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+  });
+
+  it('ground circles land along the facing, at the cursor distance', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { loadout: loadout(['starBomb']) }),
+      player(2, 0, 10),
+    ]);
+    // Cursor 10m out but pointing the wrong way; facing +z drops the bomb on the enemy.
+    sim.applyInput(1, cmd({ yaw: 0, aimX: 10, aimZ: 0, slotCasts: [0] }));
+    for (let i = 0; i < TICK_RATE * 2; i++) sim.step();
+    expect(sim.players.get(2)!.hp).toBeLessThan(PLAYER_BASE_HP);
+  });
+});
+
 describe('Celestial Barrage', () => {
   it('hovers while charging, then pierces through every enemy in the line', () => {
     const sim = makeSim([
@@ -363,7 +387,8 @@ describe('Celestial Barrage', () => {
       player(2, 8, 0, { loadout: loadout([null, null], ['windstorm']) }),
     ]);
     sim.applyInput(1, castCmd(0, 8, 0));
-    sim.applyInput(2, castCmd(2, 0, 0));
+    // The stunner at (8, 0) faces the charging caster at the origin.
+    sim.applyInput(2, cmd({ yaw: -Math.PI / 2, slotCasts: [2] }));
     for (let i = 0; i < 12; i++) sim.step();
     const a = sim.players.get(1)!;
     expect(a.stunTicks).toBeGreaterThan(0);
@@ -469,7 +494,8 @@ describe('Lightning Bulwark', () => {
     ]);
     sim.applyInput(1, castCmd(2, 0, 0));
     sim.step();
-    sim.applyInput(2, castCmd(0, 0, 0));
+    // The attacker stands at (10, 0) and must face the shielded player at the origin.
+    sim.applyInput(2, cmd({ yaw: -Math.PI / 2, slotCasts: [0] }));
     for (let i = 0; i < 10; i++) sim.step();
     const a = sim.players.get(1)!;
     expect(a.hp).toBe(PLAYER_BASE_HP);

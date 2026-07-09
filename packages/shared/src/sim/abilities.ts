@@ -97,6 +97,11 @@ export interface AbilityDef {
   /** Pierces every enemy in its path instead of dying on first hit (Celestial Barrage). */
   pierce?: boolean;
   /**
+   * Fire toward the cursor's aim point instead of the character's facing
+   * (Celestial Barrage). Everything else launches where the character looks.
+   */
+  aimAtCursor?: boolean;
+  /**
    * Charge-and-release: pressing starts a charge, pressing again (or reaching
    * chargeSeconds) releases. Damage and reach scale with how long you charged.
    */
@@ -273,6 +278,7 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
     volley: 3,
     volleySpreadRad: 0.16,
     pierce: true,
+    aimAtCursor: true,
     chargeSeconds: 1.6,
     chargeMinFraction: 0.35,
     chargeAir: true,
