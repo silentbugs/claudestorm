@@ -27,6 +27,24 @@ export const RARITY_COLORS: Record<Rarity, number> = {
   epic: 0xb05df0,
 };
 
+/** Ability glyphs rendered to textures, so dropped scrolls show which spell they are. */
+const abilityIconTextures = new Map<AbilityId, THREE.Texture>();
+function abilityIconTexture(id: AbilityId): THREE.Texture {
+  let tex = abilityIconTextures.get(id);
+  if (!tex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    ctx.font = '96px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ABILITIES[id].icon, 64, 72);
+    tex = new THREE.CanvasTexture(canvas);
+    abilityIconTextures.set(id, tex);
+  }
+  return tex;
+}
+
 const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
   rimeArrow: 0x7fd4ff,
   holyShield: 0xffe9a8,
@@ -569,7 +587,7 @@ export class EntityViews {
   private players = new Map<number, PlayerView>();
   private mobs = new Map<number, MobView>();
   private chests = new Map<number, ChestView>();
-  private scrolls = new Map<number, THREE.Mesh>();
+  private scrolls = new Map<number, THREE.Group>();
   private coins = new Map<number, THREE.Mesh>();
   private items = new Map<number, THREE.Mesh>();
   private projectiles = new Map<number, THREE.Mesh>();
@@ -659,13 +677,15 @@ export class EntityViews {
       view.setOpened(c.opened);
     }
 
-    // Scrolls
+    // Scrolls: a rarity-colored gem with the spell's icon floating above it,
+    // so you can tell what dropped from across the fight.
     const liveScrolls = new Set<number>();
     for (const s of next.scrolls) {
       liveScrolls.add(s.id);
-      let mesh = this.scrolls.get(s.id);
-      if (!mesh) {
-        mesh = new THREE.Mesh(
+      let group = this.scrolls.get(s.id);
+      if (!group) {
+        group = new THREE.Group();
+        const gem = new THREE.Mesh(
           this.scrollGeo,
           new THREE.MeshStandardMaterial({
             color: RARITY_COLORS[s.rarity],
@@ -673,16 +693,30 @@ export class EntityViews {
             emissiveIntensity: 0.6,
           }),
         );
-        this.scrolls.set(s.id, mesh);
-        this.scene.add(mesh);
+        group.add(gem);
+        const icon = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: abilityIconTexture(s.abilityId),
+            transparent: true,
+            depthWrite: false,
+          }),
+        );
+        icon.scale.set(0.85, 0.85, 1);
+        icon.position.y = 0.95;
+        group.add(icon);
+        this.scrolls.set(s.id, group);
+        this.scene.add(group);
       }
-      mesh.position.set(s.x, groundAt(s.x, s.z) + 0.85 + Math.sin(now * 2.2 + s.id) * 0.12, s.z);
-      mesh.rotation.y = now * 1.6 + s.id;
+      group.position.set(s.x, groundAt(s.x, s.z) + 0.85 + Math.sin(now * 2.2 + s.id) * 0.12, s.z);
+      group.rotation.y = now * 1.6 + s.id;
     }
-    for (const [id, mesh] of this.scrolls) {
+    for (const [id, group] of this.scrolls) {
       if (!liveScrolls.has(id)) {
-        (mesh.material as THREE.Material).dispose();
-        this.scene.remove(mesh);
+        for (const child of group.children) {
+          const mat = (child as THREE.Mesh | THREE.Sprite).material as THREE.Material;
+          mat.dispose(); // icon textures are cached and shared; only materials go
+        }
+        this.scene.remove(group);
         this.scrolls.delete(id);
       }
     }
@@ -1033,7 +1067,7 @@ export class EntityViews {
     for (const view of this.players.values()) this.scene.remove(view.group);
     for (const view of this.mobs.values()) this.scene.remove(view.group);
     for (const view of this.chests.values()) this.scene.remove(view.group);
-    for (const mesh of this.scrolls.values()) this.scene.remove(mesh);
+    for (const group of this.scrolls.values()) this.scene.remove(group);
     for (const mesh of this.coins.values()) this.scene.remove(mesh);
     for (const mesh of this.items.values()) this.scene.remove(mesh);
     for (const mesh of this.projectiles.values()) this.scene.remove(mesh);
