@@ -13,12 +13,16 @@ export class InputManager {
   private pendingSlots = new Set<number>();
   private seq = 0;
   private rmbHeld = false;
+  private lmbHeld = false;
 
   mouseX = 0;
   mouseY = 0;
-  /** Accumulated look deltas (only while right mouse is held) — consumed by the camera. */
+  /** Accumulated look deltas (right mouse: turns the character) — consumed by the camera. */
   lookDX = 0;
   lookDY = 0;
+  /** Accumulated orbit deltas (left mouse: camera only, character keeps facing). */
+  orbitDX = 0;
+  orbitDY = 0;
   /** Accumulated wheel delta — consumed by the camera. */
   zoomDelta = 0;
 
@@ -74,15 +78,20 @@ export class InputManager {
     if (this.rmbHeld) {
       this.lookDX += e.movementX;
       this.lookDY += e.movementY;
+    } else if (this.lmbHeld) {
+      this.orbitDX += e.movementX;
+      this.orbitDY += e.movementY;
     }
   };
 
   private readonly onMouseDown = (e: MouseEvent) => {
     if (e.button === 2) this.rmbHeld = true;
+    if (e.button === 0) this.lmbHeld = true;
   };
 
   private readonly onMouseUp = (e: MouseEvent) => {
     if (e.button === 2) this.rmbHeld = false;
+    if (e.button === 0) this.lmbHeld = false;
   };
 
   private readonly onWheel = (e: WheelEvent) => {
@@ -92,6 +101,7 @@ export class InputManager {
   private readonly onBlur = () => {
     this.keys.clear();
     this.rmbHeld = false;
+    this.lmbHeld = false;
   };
 
   attach(): void {
@@ -119,11 +129,19 @@ export class InputManager {
     return this.rmbHeld;
   }
 
-  /** Consume accumulated look/zoom deltas. */
-  takeLook(): { dx: number; dy: number; zoom: number } {
-    const out = { dx: this.lookDX, dy: this.lookDY, zoom: this.zoomDelta };
+  /** Consume accumulated look/orbit/zoom deltas. */
+  takeLook(): { dx: number; dy: number; odx: number; ody: number; zoom: number } {
+    const out = {
+      dx: this.lookDX,
+      dy: this.lookDY,
+      odx: this.orbitDX,
+      ody: this.orbitDY,
+      zoom: this.zoomDelta,
+    };
     this.lookDX = 0;
     this.lookDY = 0;
+    this.orbitDX = 0;
+    this.orbitDY = 0;
     this.zoomDelta = 0;
     return out;
   }

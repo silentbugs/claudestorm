@@ -44,6 +44,7 @@ export class GameApp {
   private endShown = false;
   private inMatch = false;
   private menuTime = 0;
+  private wasLooking = false;
 
   constructor(container: HTMLElement) {
     this.sceneMgr = new SceneManager(container);
@@ -131,7 +132,11 @@ export class GameApp {
     }
 
     const look = this.input.takeLook();
+    // Engaging right-mouse snaps the character to the camera's heading (WoW).
+    if (this.input.isLooking && !this.wasLooking) this.rig.foldOrbit();
+    this.wasLooking = this.input.isLooking;
     this.rig.applyLook(look.dx, look.dy, look.zoom);
+    this.rig.applyOrbit(look.odx, look.ody);
 
     this.buffer.advance(dt);
     const sampled = this.buffer.sample();
