@@ -100,6 +100,7 @@ class PlayerView {
   private readonly glider: THREE.Mesh;
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
+  private readonly cape: THREE.Mesh;
   private readonly hpGroup: THREE.Group;
   private readonly hpFill: THREE.Mesh;
   private deadFor = 0;
@@ -107,6 +108,7 @@ class PlayerView {
   private swingTimer = 0;
   private castTimer = 0;
   private walkPhase = 0;
+  private idleTime = 0;
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
 
@@ -155,10 +157,11 @@ class PlayerView {
     );
     belt.position.y = -0.34;
     this.bodyPivot.add(belt);
-    const cape = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.78, 0.05), trimMat);
-    cape.position.set(0, -0.08, -0.32);
-    cape.rotation.x = 0.12;
-    this.bodyPivot.add(cape);
+    this.cape = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.78, 0.05), trimMat);
+    this.cape.geometry.translate(0, -0.39, 0); // hang from the shoulders
+    this.cape.position.set(0, 0.31, -0.32);
+    this.cape.rotation.x = 0.12;
+    this.bodyPivot.add(this.cape);
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 12), this.headMat);
     head.position.y = 0.62;
@@ -205,11 +208,16 @@ class PlayerView {
 
     this.group.add(this.bodyPivot);
 
+    // Delta-wing glider: a wide triangle pointing the way you fly.
+    const wingGeo = new THREE.CircleGeometry(2.0, 3);
+    wingGeo.rotateZ(Math.PI / 2); // one vertex up...
+    wingGeo.rotateX(Math.PI / 2); // ...then lay flat, nose forward (+z)
+    wingGeo.scale(1.1, 1, 0.7);
     this.glider = new THREE.Mesh(
-      new THREE.ConeGeometry(1.5, 0.8, 4),
+      wingGeo,
       new THREE.MeshStandardMaterial({ color: 0xe0b34c, roughness: 0.7, side: THREE.DoubleSide }),
     );
-    this.glider.position.y = 3;
+    this.glider.position.y = 2.8;
     this.glider.visible = false;
     this.group.add(this.glider);
 
@@ -322,7 +330,14 @@ class PlayerView {
       this.walkPhase = 0;
       this.legL.rotation.x *= 0.7;
       this.legR.rotation.x *= 0.7;
+      // Idle breathing: a barely-there bob so standing still doesn't look frozen.
+      this.idleTime += dt;
+      this.bodyPivot.position.y = 0.95 + Math.sin(this.idleTime * 2.4) * 0.02;
     }
+
+    // The cape trails out with speed and settles when standing.
+    const capeLift = Math.min(0.85, speed * 0.07);
+    this.cape.rotation.x = 0.12 + capeLift + (speed > 0.6 ? Math.sin(this.walkPhase * 0.5) * 0.05 : 0);
 
     // Sword swing: raise fast, follow through back to rest.
     if (this.swingTimer > 0) {
