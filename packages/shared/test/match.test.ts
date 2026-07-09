@@ -96,6 +96,28 @@ describe('storm', () => {
     expect(Math.hypot(snap.storm.x, snap.storm.z)).toBeLessThan(50); // still near the map
   });
 
+  it('bots keep fighting inside a tiny final circle instead of freezing', () => {
+    // Two bots in a radius-5 circle: the old flat 5m danger margin made every
+    // spot "dangerous", so they scrambled for the center and never attacked.
+    const sim = makeSim(
+      [
+        { id: 1, name: 'B1', isBot: true, spawn: { x: 2, z: 0 } },
+        { id: 2, name: 'B2', isBot: true, spawn: { x: -2, z: 0 } },
+      ],
+      {
+        stormPhases: [{ hold: 100000, shrink: 1, targetRadius: 5, dps: 0 }],
+        stormStartRadius: 5,
+      },
+    );
+    let damaged = false;
+    for (let i = 0; i < TICK_RATE * 20 && !damaged; i++) {
+      sim.step();
+      damaged =
+        sim.players.get(1)!.hp < PLAYER_BASE_HP || sim.players.get(2)!.hp < PLAYER_BASE_HP;
+    }
+    expect(damaged).toBe(true);
+  });
+
   it('violent lightnings strike inside the final circle', () => {
     const sim = makeSim([player(1, 30, 30)], {
       stormPhases: [{ hold: 0.2, shrink: 0.3, targetRadius: 10, dps: 0 }],

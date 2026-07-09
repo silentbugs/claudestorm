@@ -89,13 +89,22 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   }
 
   const distFromCenter = dist(bot.x, bot.z, storm.x, storm.z);
-  const stormDanger = distFromCenter > storm.radius - 5;
+  // Safety margin shrinks with the circle — a flat 5m would swallow the whole
+  // final circle and leave every bot permanently "fleeing" to the exact center.
+  const margin = Math.min(5, storm.radius * 0.3);
+  const stormDanger = distFromCenter > storm.radius - margin;
 
   if (stormDanger) {
-    const dir = norm(storm.x - bot.x, storm.z - bot.z);
+    // Head for a safe point on this bot's own side of the circle, not dead
+    // center, so endgame bots spread out instead of jostling on one spot.
+    const out = norm(bot.x - storm.x, bot.z - storm.z);
+    const safeR = Math.max(0, storm.radius - margin * 1.5);
+    const gx = storm.x + out.x * safeR;
+    const gz = storm.z + out.z * safeR;
+    const dir = norm(gx - bot.x, gz - bot.z);
     moveX = dir.x;
     moveZ = dir.z;
-    yaw = yawToward(bot.x, bot.z, storm.x, storm.z);
+    yaw = yawToward(bot.x, bot.z, gx, gz);
     aimX = bot.x + dir.x * 8;
     aimZ = bot.z + dir.z * 8;
     if (distFromCenter > storm.radius && bot.rollCdTicks === 0) buttons.roll = true;
@@ -175,7 +184,8 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   } else {
     // Roam toward a waypoint inside the safe circle.
     if (dist(bot.x, bot.z, st.waypointX, st.waypointZ) < 2.5 || tick >= st.nextDecisionTick) {
-      const maxR = Math.max(5, storm.radius - 8);
+      // Keep waypoints clear of the danger band, even in a tiny final circle.
+      const maxR = Math.max(2, storm.radius - Math.max(8, margin * 2));
       const angle = rng.range(0, Math.PI * 2);
       const r = Math.sqrt(rng.next()) * maxR;
       st.waypointX = storm.x + Math.cos(angle) * r;
