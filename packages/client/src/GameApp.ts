@@ -21,8 +21,15 @@ import { Hud } from './ui/Hud.js';
 const SELF_ID = 1;
 const BOT_NAMES = [
   'Swabbie', 'Cutpurse', 'Corsair', 'Freebooter', 'Sea Dog', 'Powder Monkey',
-  'Bilge Rat', 'Deckhand', 'Buccaneer', 'Lookout', 'Quartermaster',
+  'Bilge Rat', 'Deckhand', 'Buccaneer', 'Lookout', 'Quartermaster', 'Mutineer',
+  'Castaway', 'Privateer', 'First Mate', 'Bosun', 'Shipwright', 'Harpooner',
+  'Gunner', 'Sailmaker', 'Plunderer', 'Marauder', 'Scallywag', 'Keelhauler',
 ];
+
+function botName(i: number): string {
+  const base = BOT_NAMES[i % BOT_NAMES.length]!;
+  return i < BOT_NAMES.length ? base : `${base} ${Math.floor(i / BOT_NAMES.length) + 1}`;
+}
 
 export class GameApp {
   private readonly sceneMgr: SceneManager;
@@ -69,6 +76,9 @@ export class GameApp {
     document
       .getElementById('skills-btn')!
       .addEventListener('click', () => this.hud.toggleSkills());
+    const botSlider = document.getElementById('bot-count') as HTMLInputElement;
+    const botValue = document.getElementById('bot-count-value')!;
+    botSlider.addEventListener('input', () => (botValue.textContent = botSlider.value));
 
     requestAnimationFrame((now) => this.frame(now));
   }
@@ -78,12 +88,19 @@ export class GameApp {
     this.views.clear();
     this.hud.hideEnd();
     this.endShown = false;
+    const botCount = Number(
+      (document.getElementById('bot-count') as HTMLInputElement | null)?.value ?? 11,
+    );
     this.transport = new LocalTransport(
       {
         seed: Date.now() & 0x7fffffff,
         players: [
           { id: SELF_ID, name: 'You', isBot: false },
-          ...BOT_NAMES.map((name, i) => ({ id: i + 2, name, isBot: true })),
+          ...Array.from({ length: botCount }, (_, i) => ({
+            id: i + 2,
+            name: botName(i),
+            isBot: true,
+          })),
         ],
       },
       SELF_ID,

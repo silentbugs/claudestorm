@@ -168,6 +168,41 @@ body {
   margin-bottom: 14px;
 }
 
+#start-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 22px;
+  margin-bottom: 6px;
+  background: rgba(16, 20, 36, 0.7);
+  border: 1px solid #333a55;
+  border-radius: 10px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.setting-row label {
+  width: 92px;
+  font-size: 15px;
+  color: #b8b5a5;
+  text-align: right;
+}
+
+.setting-row input[type='range'] {
+  width: 180px;
+  accent-color: #ffd75e;
+}
+
+.setting-value {
+  width: 28px;
+  font-size: 16px;
+  color: #ffd75e;
+}
+
 #start-btn {
   padding: 14px 52px;
   font-size: 24px;
