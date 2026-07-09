@@ -42,6 +42,8 @@ export class GameApp {
   private lastInputSend = 0;
   private lastFrame = performance.now();
   private endShown = false;
+  private inMatch = false;
+  private menuTime = 0;
 
   constructor(container: HTMLElement) {
     this.sceneMgr = new SceneManager(container);
@@ -53,7 +55,20 @@ export class GameApp {
     this.input.attach();
     window.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
     window.addEventListener('keydown', () => sfx.unlock(), { once: true });
-    this.startMatch();
+
+    // The match waits behind the start screen; the island slowly orbits below it.
+    const hudRoot = document.getElementById('hud')!;
+    hudRoot.classList.add('in-menu');
+    document.getElementById('start-btn')!.addEventListener('click', () => {
+      document.getElementById('start-screen')!.classList.add('hidden');
+      hudRoot.classList.remove('in-menu');
+      this.inMatch = true;
+      this.startMatch();
+    });
+    document
+      .getElementById('skills-btn')!
+      .addEventListener('click', () => this.hud.toggleSkills());
+
     requestAnimationFrame((now) => this.frame(now));
   }
 
@@ -103,6 +118,17 @@ export class GameApp {
   private frame(now: number): void {
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
+
+    if (!this.inMatch) {
+      // Menu backdrop: a slow flyover of the island.
+      this.menuTime += dt;
+      const a = this.menuTime * 0.04;
+      this.sceneMgr.camera.position.set(Math.cos(a) * 150, 75, Math.sin(a) * 150);
+      this.sceneMgr.camera.lookAt(0, 6, 0);
+      this.sceneMgr.render();
+      requestAnimationFrame((n) => this.frame(n));
+      return;
+    }
 
     const look = this.input.takeLook();
     this.rig.applyLook(look.dx, look.dy, look.zoom);

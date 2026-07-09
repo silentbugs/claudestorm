@@ -244,6 +244,10 @@ export class Hud {
     els.text.textContent = cd > 0.25 ? cd.toFixed(1) : '';
   }
 
+  toggleSkills(): void {
+    this.skillsOverlay.classList.toggle('hidden');
+  }
+
   showInteract(text: string | null): void {
     if (text) {
       this.interactPrompt.innerHTML = `<span class="kb">F</span>${text}`;
