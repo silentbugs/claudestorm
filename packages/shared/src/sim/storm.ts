@@ -6,13 +6,22 @@ export interface StormPhaseDef {
   targetRadius: number;
   /** Damage per second outside the circle during and after this phase's shrink. */
   dps: number;
+  /** Violent Lightnings rake the safe zone once this phase starts shrinking. */
+  lightnings?: boolean;
 }
 
 export const STORM_START_RADIUS = 212;
 
+/**
+ * Long holds are the "cooldowns" between closes — time to loot and fight.
+ * The next-to-last circle is the endgame arena with real room to duel; the
+ * last phase is a slow, inescapable creep down to almost nothing while
+ * Violent Lightnings hammer whatever space is left.
+ */
 export const STORM_PHASES: StormPhaseDef[] = [
-  { hold: 24, shrink: 26, targetRadius: 115, dps: 5 },
-  { hold: 14, shrink: 20, targetRadius: 62, dps: 10 },
-  { hold: 12, shrink: 16, targetRadius: 28, dps: 18 },
-  { hold: 8, shrink: 12, targetRadius: 5, dps: 30 },
+  { hold: 35, shrink: 35, targetRadius: 130, dps: 4 },
+  { hold: 25, shrink: 30, targetRadius: 78, dps: 8 },
+  { hold: 22, shrink: 24, targetRadius: 44, dps: 14 },
+  { hold: 20, shrink: 18, targetRadius: 26, dps: 20 },
+  { hold: 14, shrink: 75, targetRadius: 4, dps: 32, lightnings: true },
 ];

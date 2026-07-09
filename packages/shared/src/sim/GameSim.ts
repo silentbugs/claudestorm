@@ -1485,27 +1485,33 @@ export class GameSim {
         this.stormCenterAtPhaseStartX = this.stormCenterX;
         this.stormCenterAtPhaseStartZ = this.stormCenterZ;
         this.pickStormTargetCenter(this.stormPhases[this.stormPhaseIndex]!);
-      } else {
-        // Final circle: Violent Lightnings hammer the remaining playspace.
-        if (this.tick >= this.nextLightningTick) {
-          this.nextLightningTick = this.tick + this.rng.int(18, 45);
-          const angle = this.rng.range(0, Math.PI * 2);
-          const r = Math.sqrt(this.rng.next()) * (this.stormRadius + 4);
-          this.zones.push({
-            id: this.nextEntityId++,
-            abilityId: 'starBomb',
-            ownerId: -1, // the storm itself
-            kind: 'telegraph',
-            x: this.stormCenterX + Math.cos(angle) * r,
-            z: this.stormCenterZ + Math.sin(angle) * r,
-            radius: 2.6,
-            damage: 30,
-            endTick: this.tick + Math.round(1.1 * TICK_RATE),
-            dps: 0,
-            slowFactor: 1,
-            rootDuration: 0,
-          });
-        }
+      }
+    }
+
+    // Violent Lightnings hammer the playspace once a lightnings phase starts
+    // shrinking, and always after the whole script has run out.
+    const lastPhaseDone =
+      this.stormPhaseIndex === this.stormPhases.length - 1 &&
+      this.stormPhaseTime > phase.hold + phase.shrink;
+    if ((phase.lightnings && this.stormPhaseTime > phase.hold) || lastPhaseDone) {
+      if (this.tick >= this.nextLightningTick) {
+        this.nextLightningTick = this.tick + this.rng.int(18, 45);
+        const angle = this.rng.range(0, Math.PI * 2);
+        const r = Math.sqrt(this.rng.next()) * (this.stormRadius + 4);
+        this.zones.push({
+          id: this.nextEntityId++,
+          abilityId: 'starBomb',
+          ownerId: -1, // the storm itself
+          kind: 'telegraph',
+          x: this.stormCenterX + Math.cos(angle) * r,
+          z: this.stormCenterZ + Math.sin(angle) * r,
+          radius: 2.6,
+          damage: 30,
+          endTick: this.tick + Math.round(1.1 * TICK_RATE),
+          dps: 0,
+          slowFactor: 1,
+          rootDuration: 0,
+        });
       }
     }
 

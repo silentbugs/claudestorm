@@ -118,6 +118,20 @@ describe('storm', () => {
     expect(damaged).toBe(true);
   });
 
+  it('violent lightnings start during a lightnings-flagged shrink, not just after it', () => {
+    const sim = makeSim([player(1, 30, 30)], {
+      stormPhases: [{ hold: 0.5, shrink: 60, targetRadius: 5, dps: 0, lightnings: true }],
+      stormStartRadius: 60,
+    });
+    let radiusWhenSeen = 0;
+    for (let i = 0; i < TICK_RATE * 8 && radiusWhenSeen === 0; i++) {
+      const snap = sim.step();
+      if (snap.zones.some((z) => z.kind === 'telegraph')) radiusWhenSeen = snap.storm.radius;
+    }
+    // Struck while the slow endgame creep was still far from its target.
+    expect(radiusWhenSeen).toBeGreaterThan(30);
+  });
+
   it('violent lightnings strike inside the final circle', () => {
     const sim = makeSim([player(1, 30, 30)], {
       stormPhases: [{ hold: 0.2, shrink: 0.3, targetRadius: 10, dps: 0 }],
