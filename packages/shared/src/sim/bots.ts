@@ -41,11 +41,18 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
 
   // Drop phase: steer toward the chosen landing spot.
   if (bot.gliding) {
+    const d = dist(bot.x, bot.z, st.landTargetX, st.landTargetZ);
+    // Already over the spot: hold course. Steering from here flips the
+    // direction every tick and the bot pirouettes all the way down.
+    if (d < 2.5) {
+      return { seq: tick, moveX: 0, moveZ: 0, yaw: bot.yaw, aimX: bot.aimX, aimZ: bot.aimZ, buttons, slotCasts };
+    }
+    const ease = Math.min(1, d / 8); // slow the approach so it doesn't overshoot
     const dir = norm(st.landTargetX - bot.x, st.landTargetZ - bot.z);
     return {
       seq: tick,
-      moveX: dir.x,
-      moveZ: dir.z,
+      moveX: dir.x * ease,
+      moveZ: dir.z * ease,
       yaw: yawToward(bot.x, bot.z, st.landTargetX, st.landTargetZ),
       aimX: st.landTargetX,
       aimZ: st.landTargetZ,

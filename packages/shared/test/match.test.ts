@@ -32,6 +32,21 @@ describe('drop phase', () => {
     expect(snap.players[0]!.x).toBeGreaterThan(30);
   });
 
+  it('bots hold course once over their landing spot instead of spinning', () => {
+    const sim = makeSim([{ id: 1, name: 'B', isBot: true }], { skipDrop: false });
+    const b = sim.players.get(1)!;
+    const yawsOverTarget: number[] = [];
+    for (let i = 0; i < (DROP_TIMEOUT_SECONDS + 1) * TICK_RATE && b.gliding; i++) {
+      sim.step();
+      if (b.gliding && Math.hypot(b.x - b.bot!.landTargetX, b.z - b.bot!.landTargetZ) < 2.5) {
+        yawsOverTarget.push(b.yaw);
+      }
+    }
+    // The bot reached its spot early and then descended without twitching.
+    expect(yawsOverTarget.length).toBeGreaterThan(5);
+    for (const y of yawsOverTarget) expect(y).toBe(yawsOverTarget[0]);
+  });
+
   it('no damage is dealt during the drop', () => {
     const sim = makeSim(
       [
