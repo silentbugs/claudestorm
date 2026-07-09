@@ -28,6 +28,34 @@ export const RARITY_COLORS: Record<Rarity, number> = {
   epic: 0xb05df0,
 };
 
+/**
+ * Woven tunic texture, drawn in near-white so the material color tints it:
+ * fabric streaks, a dark belt band, and collar stitching.
+ */
+let clothTex: THREE.Texture | null = null;
+function clothTexture(): THREE.Texture {
+  if (clothTex) return clothTex;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#f4f0ea';
+  ctx.fillRect(0, 0, 128, 128);
+  // Fabric weave: faint vertical streaks.
+  for (let x = 0; x < 128; x += 2) {
+    ctx.fillStyle = `rgba(40, 30, 20, ${0.03 + (x % 6) * 0.008})`;
+    ctx.fillRect(x, 0, 1, 128);
+  }
+  // Collar stitching and belt band (drawn dark so tinting keeps them dark).
+  ctx.fillStyle = 'rgba(35, 26, 16, 0.55)';
+  ctx.fillRect(0, 14, 128, 3);
+  ctx.fillStyle = '#3a2c1c';
+  ctx.fillRect(0, 86, 128, 14);
+  ctx.fillStyle = '#c9a244';
+  ctx.fillRect(58, 87, 12, 12); // buckle
+  clothTex = new THREE.CanvasTexture(canvas);
+  return clothTex;
+}
+
 /** Glyphs rendered to textures, so drops show what they are at a glance. */
 const glyphTextures = new Map<string, THREE.Texture>();
 function glyphTexture(glyph: string): THREE.Texture {
@@ -93,6 +121,7 @@ class PlayerView {
   readonly group = new THREE.Group();
   private readonly bodyPivot = new THREE.Group();
   private readonly bodyMat: THREE.MeshStandardMaterial;
+  private readonly limbMat: THREE.MeshStandardMaterial;
   private readonly headMat: THREE.MeshStandardMaterial;
   private readonly rightArm = new THREE.Group();
   private readonly leftArm: THREE.Mesh;
@@ -114,9 +143,16 @@ class PlayerView {
   private lastZ = Number.NaN;
 
   constructor(isSelf: boolean, isBot: boolean) {
+    const base = isSelf ? SELF_COLOR : isBot ? BOT_COLOR : SELF_COLOR;
     this.bodyMat = new THREE.MeshStandardMaterial({
-      color: isSelf ? SELF_COLOR : isBot ? BOT_COLOR : SELF_COLOR,
-      roughness: 0.6,
+      color: base,
+      roughness: 0.75,
+      map: clothTexture(),
+    });
+    // Limbs: same hue, a shade darker, no belt texture ringing the arms.
+    this.limbMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(base).multiplyScalar(0.8),
+      roughness: 0.75,
     });
     this.headMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, roughness: 0.7 });
 
@@ -124,15 +160,22 @@ class PlayerView {
     // roll spins and death fall-over read naturally.
     this.bodyPivot.position.y = 0.95;
 
+    const bootMat = new THREE.MeshStandardMaterial({ color: 0x3a2c1c, roughness: 0.9 });
     const legGeo = new THREE.CapsuleGeometry(0.11, 0.32, 3, 8);
     // Legs pivot at the hip so walk swings look right.
     legGeo.translate(0, -0.2, 0);
-    this.legL = new THREE.Mesh(legGeo, this.bodyMat);
+    this.legL = new THREE.Mesh(legGeo, this.limbMat);
     this.legL.position.set(-0.17, -0.42, 0);
     this.legL.castShadow = true;
-    this.legR = new THREE.Mesh(legGeo, this.bodyMat);
+    this.legR = new THREE.Mesh(legGeo, this.limbMat);
     this.legR.position.set(0.17, -0.42, 0);
     this.legR.castShadow = true;
+    // Boots hang off the leg meshes so they swing with the walk.
+    for (const leg of [this.legL, this.legR]) {
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.14, 0.26), bootMat);
+      boot.position.set(0, -0.42, 0.04);
+      leg.add(boot);
+    }
     this.bodyPivot.add(this.legL, this.legR);
 
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.5, 4, 12), this.bodyMat);
@@ -168,26 +211,43 @@ class PlayerView {
     head.position.y = 0.62;
     head.castShadow = true;
     this.bodyPivot.add(head);
-    // Visor strip so facing is readable up close.
-    const visor = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, 0.09, 0.08),
-      new THREE.MeshStandardMaterial({ color: 0x232633, roughness: 0.4 }),
+    // A face: two eyes under a team-colored bandana.
+    const eyeGeo = new THREE.SphereGeometry(0.038, 8, 6);
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1c1a22, roughness: 0.35 });
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(eyeGeo, eyeMat);
+      eye.position.set(side * 0.095, 0.66, 0.225);
+      this.bodyPivot.add(eye);
+    }
+    const bandana = new THREE.Mesh(
+      new THREE.SphereGeometry(0.275, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.46),
+      this.limbMat,
     );
-    visor.position.set(0, 0.66, 0.22);
-    this.bodyPivot.add(visor);
+    bandana.position.y = 0.64;
+    this.bodyPivot.add(bandana);
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), this.limbMat);
+    knot.position.set(0.12, 0.76, -0.2);
+    this.bodyPivot.add(knot);
 
+    const gloveMat = new THREE.MeshStandardMaterial({ color: 0x4a3a28, roughness: 0.85 });
     const armGeo = new THREE.CapsuleGeometry(0.1, 0.34, 3, 8);
-    this.leftArm = new THREE.Mesh(armGeo, this.bodyMat);
+    this.leftArm = new THREE.Mesh(armGeo, this.limbMat);
     this.leftArm.position.set(-0.47, 0.08, 0);
     this.leftArm.castShadow = true;
+    const gloveL = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 7), gloveMat);
+    gloveL.position.y = -0.3;
+    this.leftArm.add(gloveL);
     this.bodyPivot.add(this.leftArm);
 
     // Right arm is a pivot group so the sword swings with it.
     this.rightArm.position.set(0.47, 0.22, 0);
-    const rArmMesh = new THREE.Mesh(armGeo, this.bodyMat);
+    const rArmMesh = new THREE.Mesh(armGeo, this.limbMat);
     rArmMesh.position.y = -0.14;
     rArmMesh.castShadow = true;
     this.rightArm.add(rArmMesh);
+    const gloveR = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 7), gloveMat);
+    gloveR.position.y = -0.44;
+    this.rightArm.add(gloveR);
 
     const steel = new THREE.MeshStandardMaterial({ color: 0xcfd2dd, metalness: 0.7, roughness: 0.35 });
     const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.13, 0.78), steel);
@@ -280,6 +340,7 @@ class PlayerView {
       this.bodyPivot.rotation.x = Math.PI / 2;
       this.bodyPivot.position.y = 0.5;
       this.bodyMat.color.setHex(DEAD_COLOR);
+      this.limbMat.color.setHex(DEAD_COLOR);
       this.headMat.color.setHex(0x8a8070);
       this.hpGroup.visible = false;
       this.shield.visible = false;
@@ -327,6 +388,9 @@ class PlayerView {
       const swing = Math.sin(this.walkPhase) * 0.65;
       this.legL.rotation.x = swing;
       this.legR.rotation.x = -swing;
+      // Running: lean into the sprint and bob with the stride.
+      this.bodyPivot.position.y = 0.95 + Math.abs(Math.sin(this.walkPhase)) * 0.05;
+      if (!p.rolling && !p.gliding) this.bodyPivot.rotation.x = Math.min(0.16, speed * 0.014);
     } else {
       this.walkPhase = 0;
       this.legL.rotation.x *= 0.7;
@@ -365,10 +429,11 @@ class PlayerView {
     if (p.poisoned) color.lerp(new THREE.Color(0x5fce6a), 0.4);
     if (p.fae) color.lerp(new THREE.Color(0xe98fd8), 0.7);
     this.bodyMat.color.copy(color);
+    this.limbMat.color.copy(color).multiplyScalar(0.8);
     // Stealth: nearly invisible to enemies, ghostly to yourself.
     const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
-    this.bodyMat.transparent = this.headMat.transparent = opacity < 1;
-    this.bodyMat.opacity = this.headMat.opacity = opacity;
+    this.bodyMat.transparent = this.limbMat.transparent = this.headMat.transparent = opacity < 1;
+    this.bodyMat.opacity = this.limbMat.opacity = this.headMat.opacity = opacity;
     this.hpGroup.visible = !p.stealthed;
     setBar(this.hpFill, p.hpFrac, 1.3);
     // Billboard: cancel the parent's facing rotation so the bar always faces the camera.
