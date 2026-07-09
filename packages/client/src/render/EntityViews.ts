@@ -13,6 +13,16 @@ import {
 import { sfx } from '../sfx.js';
 import type { AssetLibrary } from './assets.js';
 
+/**
+ * Draw distances for small entities (players are always drawn). A critter at
+ * 300m is a couple of pixels and already deep in the fog; culling it there
+ * keeps a far look from paying draw calls for the entire island's wildlife
+ * and loot.
+ */
+const MOB_DRAW_DIST = 230;
+const CHEST_DRAW_DIST = 230;
+const PICKUP_DRAW_DIST = 150;
+
 const SELF_COLOR = 0x4da6ff;
 const BOT_COLOR = 0xd9534f;
 const DEAD_COLOR = 0x50505a;
@@ -665,6 +675,10 @@ export class EntityViews {
 
   sync(prev: Snapshot, next: Snapshot, t: number, selfId: number, camera: THREE.Camera, dt: number): void {
     const now = performance.now() / 1000;
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
+    const beyond = (x: number, z: number, drawDist: number): boolean =>
+      (x - camX) * (x - camX) + (z - camZ) * (z - camZ) > drawDist * drawDist;
 
     // Players
     const prevPlayers = new Map(prev.players.map((p) => [p.id, p]));
@@ -715,6 +729,11 @@ export class EntityViews {
         this.mobs.set(m.id, view);
         this.scene.add(view.group);
       }
+      if (beyond(m.x, m.z, MOB_DRAW_DIST)) {
+        view.group.visible = false;
+        continue;
+      }
+      view.group.visible = true;
       const pm = prevMobs.get(m.id) ?? m;
       view.update(lerp(pm.x, m.x, t), lerp(pm.z, m.z, t), lerpAngle(pm.facing, m.facing, t), m.hp / m.maxHp, camera, dt);
     }
@@ -733,6 +752,7 @@ export class EntityViews {
         this.chests.set(c.id, view);
         this.scene.add(view.group);
       }
+      view.group.visible = !beyond(c.x, c.z, CHEST_DRAW_DIST);
       view.setOpened(c.opened);
     }
 
@@ -766,6 +786,11 @@ export class EntityViews {
         this.scrolls.set(s.id, group);
         this.scene.add(group);
       }
+      if (beyond(s.x, s.z, PICKUP_DRAW_DIST)) {
+        group.visible = false;
+        continue;
+      }
+      group.visible = true;
       group.position.set(s.x, groundAt(s.x, s.z) + 0.85 + Math.sin(now * 2.2 + s.id) * 0.12, s.z);
       group.rotation.y = now * 1.6 + s.id;
     }
@@ -801,6 +826,11 @@ export class EntityViews {
         this.items.set(it.id, group);
         this.scene.add(group);
       }
+      if (beyond(it.x, it.z, PICKUP_DRAW_DIST)) {
+        group.visible = false;
+        continue;
+      }
+      group.visible = true;
       group.position.set(it.x, groundAt(it.x, it.z) + 0.05 + Math.sin(now * 2 + it.id) * 0.05, it.z);
       group.rotation.y = now * 1.2 + it.id;
     }
@@ -823,6 +853,11 @@ export class EntityViews {
         this.coins.set(c.id, mesh);
         this.scene.add(mesh);
       }
+      if (beyond(c.x, c.z, PICKUP_DRAW_DIST)) {
+        mesh.visible = false;
+        continue;
+      }
+      mesh.visible = true;
       mesh.position.set(c.x, groundAt(c.x, c.z) + 0.35, c.z);
       mesh.rotation.z = now * 2 + c.id;
     }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ARENA, Rng, STORM_START_RADIUS, terrainHeight } from '@claudestorm/shared';
 import type { AssetLibrary, ModelName } from './assets.js';
 
@@ -15,6 +16,9 @@ export class SceneManager {
   private readonly waterMat: THREE.ShaderMaterial;
   private readonly clouds: { group: THREE.Group; speed: number }[] = [];
   private readonly clock = new THREE.Clock();
+  private readonly sun: THREE.DirectionalLight;
+  /** Staging area for static scenery; merged into per-material meshes at the end. */
+  private readonly staticStage = new THREE.Group();
 
   constructor(container: HTMLElement, private readonly assets: AssetLibrary) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -38,22 +42,26 @@ export class SceneManager {
 
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffe6c0, 1.7);
-    sun.position.copy(SUN_DIR).multiplyScalar(320);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
-    sun.shadow.camera.left = -230;
-    sun.shadow.camera.right = 230;
-    sun.shadow.camera.top = 230;
-    sun.shadow.camera.bottom = -230;
-    sun.shadow.camera.far = 620;
-    this.scene.add(sun);
+    // The shadow map covers a tight box that follows the player (setFocus)
+    // instead of the whole island: far casters skip the shadow pass entirely
+    // and the texels land where the fight is.
+    this.sun = new THREE.DirectionalLight(0xffe6c0, 1.7);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.camera.left = -70;
+    this.sun.shadow.camera.right = 70;
+    this.sun.shadow.camera.top = 70;
+    this.sun.shadow.camera.bottom = -70;
+    this.sun.shadow.camera.far = 420;
+    this.scene.add(this.sun, this.sun.target);
+    this.setFocus(0, 0);
 
     this.buildGround();
     this.waterMat = this.buildWater();
     this.buildObstacles();
     this.scatterFoliage();
     this.buildShoreline();
+    this.mergeStatics();
     this.buildClouds();
 
     // Storm wall: scrolling energy bands, denser toward the ground.
@@ -168,8 +176,9 @@ export class SceneManager {
 
   /** The sea: normal-mapped waves with a sun glint, fading into the fog. */
   private buildWater(): THREE.ShaderMaterial {
+    // Opaque on purpose: this plane fills half the screen at the horizon, and
+    // blending it would be the single biggest fill cost in the frame.
     const mat = new THREE.ShaderMaterial({
-      transparent: true,
       uniforms: {
         uTime: { value: 0 },
         uNormals: { value: this.assets.waterNormals },
@@ -211,21 +220,68 @@ export class SceneManager {
           float spec = pow(max(dot(n, normalize(viewDir + uSunDir)), 0.0), 70.0);
           col += vec3(1.0, 0.82, 0.55) * spec * 0.9;
           col = mix(col, uFogColor, smoothstep(240.0, 760.0, vDist));
-          gl_FragColor = vec4(col, 0.96);
+          gl_FragColor = vec4(col, 1.0);
         }`,
     });
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2600, 64, 64), mat);
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2600, 32, 32), mat);
     water.geometry.rotateX(-Math.PI / 2);
     water.position.y = -0.55;
     this.scene.add(water);
     return mat;
   }
 
-  /** Place a model clone on the terrain. */
+  /** Stage a model clone on the terrain; mergeStatics() bakes the stage down. */
   private place(model: THREE.Group, x: number, z: number, rotY = 0): void {
     model.position.set(x, terrainHeight(ARENA.hills, x, z), z);
     model.rotation.y = rotY;
-    this.scene.add(model);
+    this.staticStage.add(model);
+  }
+
+  /**
+   * Static batching: the ~110 staged scenery models would otherwise be ~250
+   * draw calls in the main pass and again in the shadow pass whenever the
+   * whole island is in the frustum. Bake them into one mesh per material
+   * (Kenney reuses a handful of named materials across the kits).
+   */
+  private mergeStatics(): void {
+    this.staticStage.updateMatrixWorld(true);
+    const groups = new Map<string, { material: THREE.Material; geos: THREE.BufferGeometry[] }>();
+    this.staticStage.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const material = o.material as THREE.Material & { map?: THREE.Texture | null };
+      const geo = (o.geometry as THREE.BufferGeometry).clone();
+      geo.applyMatrix4(o.matrixWorld);
+      // Attribute sets must match to merge: uv only matters on textured materials.
+      if (!material.map) {
+        geo.deleteAttribute('uv');
+        geo.deleteAttribute('uv1');
+      }
+      const key = `${material.name}|${material.map ? 'tex' : 'flat'}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { material, geos: [] };
+        groups.set(key, group);
+      }
+      group.geos.push(geo);
+    });
+    for (const { material, geos } of groups.values()) {
+      const merged = mergeGeometries(geos, false);
+      const batches = merged ? [merged] : geos; // mismatched attributes: keep unmerged
+      if (merged) for (const g of geos) g.dispose();
+      for (const geometry of batches) {
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+    this.staticStage.clear();
+  }
+
+  /** Keep the sun's shadow box centered on the action. */
+  setFocus(x: number, z: number): void {
+    this.sun.target.position.set(x, 0, z);
+    this.sun.position.set(x, 0, z).addScaledVector(SUN_DIR, 260);
   }
 
   /**

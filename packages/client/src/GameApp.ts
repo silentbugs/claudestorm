@@ -183,6 +183,7 @@ export class GameApp {
         const z = lerp(selfPrev.z, selfNext.z, t);
         const y = lerp(selfPrev.y, selfNext.y, t) + terrainHeight(ARENA.hills, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
+        this.sceneMgr.setFocus(x, z);
         this.updateAim(x, z);
         this.updateInteractPrompt(next, x, z, selfNext.gliding);
       }
