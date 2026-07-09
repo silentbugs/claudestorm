@@ -13,6 +13,7 @@ import { CameraRig } from './game/CameraRig.js';
 import { InputManager } from './game/InputManager.js';
 import { SnapshotBuffer } from './game/SnapshotBuffer.js';
 import { LocalTransport } from './net/LocalTransport.js';
+import { AssetLibrary } from './render/assets.js';
 import { EntityViews } from './render/EntityViews.js';
 import { SceneManager } from './render/SceneManager.js';
 import { sfx } from './sfx.js';
@@ -32,8 +33,8 @@ function botName(i: number): string {
 }
 
 export class GameApp {
-  private readonly sceneMgr: SceneManager;
-  private readonly views: EntityViews;
+  private sceneMgr!: SceneManager;
+  private views!: EntityViews;
   private readonly hud: Hud;
   private readonly input = new InputManager();
   private readonly rig = new CameraRig();
@@ -53,9 +54,7 @@ export class GameApp {
   private menuTime = 0;
   private wasLooking = false;
 
-  constructor(container: HTMLElement) {
-    this.sceneMgr = new SceneManager(container);
-    this.views = new EntityViews(this.sceneMgr.scene);
+  constructor(private readonly container: HTMLElement) {
     this.hud = new Hud(() => this.restart());
   }
 
@@ -67,7 +66,10 @@ export class GameApp {
     // The match waits behind the start screen; the island slowly orbits below it.
     const hudRoot = document.getElementById('hud')!;
     hudRoot.classList.add('in-menu');
-    document.getElementById('start-btn')!.addEventListener('click', () => {
+    const startBtn = document.getElementById('start-btn') as HTMLButtonElement;
+    startBtn.disabled = true;
+    startBtn.textContent = 'Loading…';
+    startBtn.addEventListener('click', () => {
       document.getElementById('start-screen')!.classList.add('hidden');
       hudRoot.classList.remove('in-menu');
       this.inMatch = true;
@@ -80,7 +82,14 @@ export class GameApp {
     const botValue = document.getElementById('bot-count-value')!;
     botSlider.addEventListener('input', () => (botValue.textContent = botSlider.value));
 
-    requestAnimationFrame((now) => this.frame(now));
+    // Scene and renderer come up once the art is in; only then can you start.
+    void AssetLibrary.load().then((assets) => {
+      this.sceneMgr = new SceneManager(this.container, assets);
+      this.views = new EntityViews(this.sceneMgr.scene, assets);
+      startBtn.disabled = false;
+      startBtn.textContent = 'Start Game';
+      requestAnimationFrame((now) => this.frame(now));
+    });
   }
 
   private startMatch(): void {

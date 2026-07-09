@@ -11,6 +11,7 @@ import {
   type Snapshot,
 } from '@claudestorm/shared';
 import { sfx } from '../sfx.js';
+import type { AssetLibrary } from './assets.js';
 
 const SELF_COLOR = 0x4da6ff;
 const BOT_COLOR = 0xd9534f;
@@ -27,10 +28,10 @@ export const RARITY_COLORS: Record<Rarity, number> = {
   epic: 0xb05df0,
 };
 
-/** Ability glyphs rendered to textures, so dropped scrolls show which spell they are. */
-const abilityIconTextures = new Map<AbilityId, THREE.Texture>();
-function abilityIconTexture(id: AbilityId): THREE.Texture {
-  let tex = abilityIconTextures.get(id);
+/** Glyphs rendered to textures, so drops show what they are at a glance. */
+const glyphTextures = new Map<string, THREE.Texture>();
+function glyphTexture(glyph: string): THREE.Texture {
+  let tex = glyphTextures.get(glyph);
   if (!tex) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 128;
@@ -38,9 +39,9 @@ function abilityIconTexture(id: AbilityId): THREE.Texture {
     ctx.font = '96px serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(ABILITIES[id].icon, 64, 72);
+    ctx.fillText(glyph, 64, 72);
     tex = new THREE.CanvasTexture(canvas);
-    abilityIconTextures.set(id, tex);
+    glyphTextures.set(glyph, tex);
   }
   return tex;
 }
@@ -484,38 +485,15 @@ class MobView {
 }
 
 class ChestView {
-  readonly group = new THREE.Group();
-  private readonly lid: THREE.Mesh;
+  readonly group: THREE.Group;
+  private readonly lid: THREE.Object3D | null;
   private opened = false;
 
-  constructor(x: number, z: number) {
-    const base = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.55, 0.8),
-      new THREE.MeshStandardMaterial({ color: 0x7a4f28, roughness: 0.8 }),
-    );
-    base.position.y = 0.28;
-    base.castShadow = true;
-    this.lid = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.25, 0.8),
-      new THREE.MeshStandardMaterial({ color: 0x8f5c2e, roughness: 0.8 }),
-    );
-    this.lid.position.set(0, 0.68, 0);
-    const band = new THREE.Mesh(
-      new THREE.BoxGeometry(1.26, 0.14, 0.86),
-      new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.5, roughness: 0.4 }),
-    );
-    band.position.y = 0.4;
-    const goldMat = band.material as THREE.MeshStandardMaterial;
-    const lock = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.1), goldMat);
-    lock.position.set(0, 0.5, 0.44);
-    const footGeo = new THREE.BoxGeometry(0.16, 0.12, 0.16);
-    const footMat = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.9 });
-    for (const [fx, fz] of [[-0.5, 0.3], [0.5, 0.3], [-0.5, -0.3], [0.5, -0.3]]) {
-      const foot = new THREE.Mesh(footGeo, footMat);
-      foot.position.set(fx!, 0.06, fz!);
-      this.group.add(foot);
-    }
-    this.group.add(base, this.lid, band, lock);
+  constructor(assets: AssetLibrary, x: number, z: number) {
+    // The pirate-kit chest ships with a separate hinged lid node.
+    this.group = assets.model('chest');
+    this.group.scale.setScalar(1.5 / Math.max(0.001, assets.size('chest').x));
+    this.lid = this.group.getObjectByName('lid') ?? null;
     this.group.position.set(x, groundAt(x, z), z);
     this.group.rotation.y = (x * 7 + z * 13) % Math.PI;
   }
@@ -523,9 +501,7 @@ class ChestView {
   setOpened(opened: boolean): void {
     if (opened === this.opened) return;
     this.opened = opened;
-    this.lid.rotation.x = opened ? -1.9 : 0;
-    this.lid.position.z = opened ? -0.35 : 0;
-    this.lid.position.y = opened ? 0.75 : 0.68;
+    if (this.lid) this.lid.rotation.x = opened ? -2.1 : 0;
   }
 }
 
@@ -604,7 +580,7 @@ export class EntityViews {
   private chests = new Map<number, ChestView>();
   private scrolls = new Map<number, THREE.Group>();
   private coins = new Map<number, THREE.Mesh>();
-  private items = new Map<number, THREE.Mesh>();
+  private items = new Map<number, THREE.Group>();
   private projectiles = new Map<number, THREE.Mesh>();
   private zones = new Map<number, { group: THREE.Group; fill: THREE.Mesh; kind: string }>();
   private effects: Effect[] = [];
@@ -617,7 +593,10 @@ export class EntityViews {
     roughness: 0.3,
   });
 
-  constructor(private readonly scene: THREE.Scene) {}
+  constructor(
+    private readonly scene: THREE.Scene,
+    private readonly assets: AssetLibrary,
+  ) {}
 
   sync(prev: Snapshot, next: Snapshot, t: number, selfId: number, camera: THREE.Camera, dt: number): void {
     const now = performance.now() / 1000;
@@ -685,7 +664,7 @@ export class EntityViews {
     for (const c of next.chests) {
       let view = this.chests.get(c.id);
       if (!view) {
-        view = new ChestView(c.x, c.z);
+        view = new ChestView(this.assets, c.x, c.z);
         this.chests.set(c.id, view);
         this.scene.add(view.group);
       }
@@ -711,7 +690,7 @@ export class EntityViews {
         group.add(gem);
         const icon = new THREE.Sprite(
           new THREE.SpriteMaterial({
-            map: abilityIconTexture(s.abilityId),
+            map: glyphTexture(ABILITIES[s.abilityId].icon),
             transparent: true,
             depthWrite: false,
           }),
@@ -736,27 +715,34 @@ export class EntityViews {
       }
     }
 
-    // Items: little supply crates tinted per consumable.
+    // Items: supply barrels with the consumable's icon floating above.
     const liveItems = new Set<number>();
     for (const it of next.items) {
       liveItems.add(it.id);
-      let mesh = this.items.get(it.id);
-      if (!mesh) {
-        const color = ITEMS[it.itemId].color;
-        mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(0.5, 0.5, 0.5),
-          new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35 }),
+      let group = this.items.get(it.id);
+      if (!group) {
+        group = new THREE.Group();
+        group.add(this.assets.modelAtHeight('barrel', 0.75));
+        const icon = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: glyphTexture(ITEMS[it.itemId].icon),
+            transparent: true,
+            depthWrite: false,
+          }),
         );
-        this.items.set(it.id, mesh);
-        this.scene.add(mesh);
+        icon.scale.set(0.75, 0.75, 1);
+        icon.position.y = 1.25;
+        group.add(icon);
+        this.items.set(it.id, group);
+        this.scene.add(group);
       }
-      mesh.position.set(it.x, groundAt(it.x, it.z) + 0.6 + Math.sin(now * 2 + it.id) * 0.1, it.z);
-      mesh.rotation.y = now * 1.2 + it.id;
+      group.position.set(it.x, groundAt(it.x, it.z) + 0.05 + Math.sin(now * 2 + it.id) * 0.05, it.z);
+      group.rotation.y = now * 1.2 + it.id;
     }
-    for (const [id, mesh] of this.items) {
+    for (const [id, group] of this.items) {
       if (!liveItems.has(id)) {
-        (mesh.material as THREE.Material).dispose();
-        this.scene.remove(mesh);
+        // Model materials are shared with the asset templates — leave them be.
+        this.scene.remove(group);
         this.items.delete(id);
       }
     }

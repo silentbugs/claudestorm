@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { ARENA, Rng, STORM_START_RADIUS, terrainHeight } from '@claudestorm/shared';
+import type { AssetLibrary, ModelName } from './assets.js';
 
 const FOG_COLOR = 0x453e58;
+const SUN_DIR = new THREE.Vector3(0.55, 0.5, 0.32).normalize();
 
 /** Owns the Three.js scene, camera, lights, sky, water, arena geometry, and storm wall. */
 export class SceneManager {
@@ -14,7 +16,7 @@ export class SceneManager {
   private readonly clouds: { group: THREE.Group; speed: number }[] = [];
   private readonly clock = new THREE.Clock();
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, private readonly assets: AssetLibrary) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -37,7 +39,7 @@ export class SceneManager {
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
     this.scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xffe6c0, 1.7);
-    sun.position.set(120, 170, 70);
+    sun.position.copy(SUN_DIR).multiplyScalar(320);
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
     sun.shadow.camera.left = -230;
@@ -51,6 +53,7 @@ export class SceneManager {
     this.waterMat = this.buildWater();
     this.buildObstacles();
     this.scatterFoliage();
+    this.buildShoreline();
     this.buildClouds();
 
     // Storm wall: scrolling energy bands, denser toward the ground.
@@ -97,7 +100,7 @@ export class SceneManager {
         side: THREE.BackSide,
         depthWrite: false,
         fog: false,
-        uniforms: { uSunDir: { value: new THREE.Vector3(0.55, 0.5, 0.32).normalize() } },
+        uniforms: { uSunDir: { value: SUN_DIR } },
         vertexShader: `
           varying vec3 vWorld;
           void main() {
@@ -124,17 +127,17 @@ export class SceneManager {
 
   /**
    * Rolling terrain: the ground plane displaced by the shared hill function,
-   * tinted drier toward the hilltops and sandy toward the shoreline, with a
-   * procedural noise texture for close-up detail.
+   * tinted drier toward the hilltops and sandy toward the shoreline, over a
+   * real tiling grass texture.
    */
   private buildGround(): void {
     const groundGeo = new THREE.PlaneGeometry(ARENA.size, ARENA.size, 150, 150);
     groundGeo.rotateX(-Math.PI / 2);
     const pos = groundGeo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
-    const low = new THREE.Color(0x35543a);
-    const high = new THREE.Color(0x74804c);
-    const sand = new THREE.Color(0xb3a374);
+    const low = new THREE.Color(0x86b06e);
+    const high = new THREE.Color(0xc0bd7e);
+    const sand = new THREE.Color(0xd8c491);
     const tmp = new THREE.Color();
     const half = ARENA.size / 2;
     for (let i = 0; i < pos.count; i++) {
@@ -153,60 +156,60 @@ export class SceneManager {
     groundGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     groundGeo.computeVertexNormals();
 
-    // Subtle brightness noise so the ground isn't a flat wash up close.
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 128;
-    const ctx = canvas.getContext('2d')!;
-    const noiseRng = new Rng(7);
-    const img = ctx.createImageData(128, 128);
-    for (let i = 0; i < img.data.length; i += 4) {
-      const v = 216 + Math.floor(noiseRng.next() * 40);
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-      img.data[i + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-    const detail = new THREE.CanvasTexture(canvas);
-    detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
-    detail.repeat.set(60, 60);
-
+    const grassTex = this.assets.grassTexture;
+    grassTex.repeat.set(56, 56);
     const ground = new THREE.Mesh(
       groundGeo,
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: detail }),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: grassTex }),
     );
     ground.receiveShadow = true;
     this.scene.add(ground);
   }
 
-  /** The sea around the island: a huge plane with gently rolling shader waves. */
+  /** The sea: normal-mapped waves with a sun glint, fading into the fog. */
   private buildWater(): THREE.ShaderMaterial {
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       uniforms: {
         uTime: { value: 0 },
+        uNormals: { value: this.assets.waterNormals },
+        uSunDir: { value: SUN_DIR },
         uFogColor: { value: new THREE.Color(FOG_COLOR) },
       },
       vertexShader: `
         uniform float uTime;
-        varying vec3 vPos;
+        varying vec3 vWorld;
+        varying vec3 vView;
         varying float vDist;
         void main() {
           vec3 p = position;
-          p.y += sin(p.x * 0.06 + uTime * 0.8) * 0.3 + cos(p.z * 0.05 + uTime * 0.6) * 0.3;
-          vPos = p;
-          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          p.y += sin(p.x * 0.06 + uTime * 0.8) * 0.25 + cos(p.z * 0.05 + uTime * 0.6) * 0.25;
+          vec4 world = modelMatrix * vec4(p, 1.0);
+          vWorld = world.xyz;
+          vView = cameraPosition - world.xyz;
+          vec4 mv = viewMatrix * world;
           vDist = -mv.z;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
         uniform float uTime;
+        uniform sampler2D uNormals;
+        uniform vec3 uSunDir;
         uniform vec3 uFogColor;
-        varying vec3 vPos;
+        varying vec3 vWorld;
+        varying vec3 vView;
         varying float vDist;
         void main() {
-          float sparkle = sin(vPos.x * 0.35 + uTime * 1.3) * sin(vPos.z * 0.3 - uTime * 1.1);
-          vec3 deep = vec3(0.05, 0.12, 0.22);
-          vec3 crest = vec3(0.17, 0.32, 0.44);
-          vec3 col = mix(deep, crest, smoothstep(-0.6, 1.0, sparkle));
+          vec3 n1 = texture2D(uNormals, vWorld.xz * 0.020 + vec2(uTime * 0.020, uTime * 0.014)).xyz * 2.0 - 1.0;
+          vec3 n2 = texture2D(uNormals, vWorld.xz * 0.047 - vec2(uTime * 0.016, uTime * 0.022)).xyz * 2.0 - 1.0;
+          vec3 n = normalize(vec3(n1.x + n2.x, 3.0, n1.y + n2.y));
+          vec3 viewDir = normalize(vView);
+          float fresnel = pow(1.0 - max(dot(viewDir, n), 0.0), 3.0);
+          vec3 deep = vec3(0.04, 0.11, 0.20);
+          vec3 skyTint = vec3(0.36, 0.36, 0.48);
+          vec3 col = mix(deep, skyTint, fresnel * 0.8);
+          float spec = pow(max(dot(n, normalize(viewDir + uSunDir)), 0.0), 70.0);
+          col += vec3(1.0, 0.82, 0.55) * spec * 0.9;
           col = mix(col, uFogColor, smoothstep(240.0, 760.0, vDist));
           gl_FragColor = vec4(col, 0.96);
         }`,
@@ -218,112 +221,58 @@ export class SceneManager {
     return mat;
   }
 
+  /** Place a model clone on the terrain. */
+  private place(model: THREE.Group, x: number, z: number, rotY = 0): void {
+    model.position.set(x, terrainHeight(ARENA.hills, x, z), z);
+    model.rotation.y = rotY;
+    this.scene.add(model);
+  }
+
   /**
-   * Obstacle dressing (visual only — the sim collides with the raw shapes):
-   * tall cylinders read as trees, short ones as rock pillars, boxes as huts.
+   * Obstacle dressing with real models (visual only — the sim collides with
+   * the raw shapes): tall cylinders are trees (palms near the shore), short
+   * ones rocks; boxes become walls, huts, or crates by footprint.
    */
   private buildObstacles(): void {
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.9 });
-    const wallMatAlt = new THREE.MeshStandardMaterial({ color: 0x7a6a55, roughness: 0.9 });
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x8f4b32, roughness: 0.85 });
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.95 });
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x3f7a3a, roughness: 0.9 });
-    const leafMatAlt = new THREE.MeshStandardMaterial({ color: 0x4c8a40, roughness: 0.9 });
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x7d7a72, roughness: 0.95 });
-    const doorMat = new THREE.MeshStandardMaterial({ color: 0x4a331f, roughness: 0.9 });
-    const windowMat = new THREE.MeshStandardMaterial({
-      color: 0x2b2b33,
-      emissive: 0xffbf5e,
-      emissiveIntensity: 0.7,
-    });
+    const treePick: ModelName[] = [
+      'tree_oak', 'tree_fat', 'tree_pineDefaultA', 'tree_tall', 'tree_thin', 'tree_pineDefaultB',
+    ];
+    const palmPick: ModelName[] = ['tree_palm', 'tree_palmTall'];
+    const rockPick: ModelName[] = ['rock_tallA', 'rock_tallB', 'rock_tallC'];
 
     ARENA.obstacles.forEach((ob, i) => {
-      const group = new THREE.Group();
-      if (ob.kind === 'box') {
-        const walls = new THREE.Mesh(
-          new THREE.BoxGeometry(ob.hx * 2, ob.height, ob.hz * 2),
-          i % 2 === 0 ? wallMat : wallMatAlt,
-        );
-        walls.position.y = ob.height / 2;
-        group.add(walls);
-        if (ob.height >= 3) {
-          const roof = new THREE.Mesh(
-            new THREE.ConeGeometry(Math.hypot(ob.hx, ob.hz) * 1.15, 1.4, 4),
-            roofMat,
-          );
-          roof.rotation.y = Math.PI / 4;
-          roof.position.y = ob.height + 0.7;
-          group.add(roof);
-          const door = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.5, 0.12), doorMat);
-          door.position.set(0, 0.75, ob.hz + 0.02);
-          group.add(door);
-          // Lit windows so camps feel inhabited at dusk.
-          if (ob.hx >= 1.6) {
-            for (const side of [-1, 1]) {
-              const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.08), windowMat);
-              win.position.set(side * ob.hx * 0.55, 1.7, ob.hz + 0.02);
-              group.add(win);
-            }
-          }
-        }
-      } else if (ob.height >= 5) {
-        // Tree: trunk matches the collision radius; canopy alternates between
-        // pine cones and broadleaf blobs so groves read as mixed forest.
-        const trunk = new THREE.Mesh(
-          new THREE.CylinderGeometry(ob.r * 0.85, ob.r, ob.height, 12),
-          trunkMat,
-        );
-        trunk.position.y = ob.height / 2;
-        group.add(trunk);
-        const leaves = i % 2 === 0 ? leafMat : leafMatAlt;
-        if (i % 3 === 0) {
-          const lower = new THREE.Mesh(new THREE.ConeGeometry(ob.r * 2.4, ob.r * 3.6, 10), leaves);
-          lower.position.y = ob.height * 0.75;
-          const upper = new THREE.Mesh(new THREE.ConeGeometry(ob.r * 1.7, ob.r * 3, 10), leaves);
-          upper.position.y = ob.height * 0.75 + ob.r * 2;
-          group.add(lower, upper);
+      const rot = i * 2.39; // deterministic "random" facing
+      if (ob.kind === 'circle') {
+        if (ob.height >= 5) {
+          const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > 168;
+          const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
+          // Canopy overshoots the collision cylinder; trunks match its radius.
+          this.place(this.assets.modelAtHeight(name, ob.height * 1.45), ob.x, ob.z, rot);
         } else {
-          const blobGeo = new THREE.IcosahedronGeometry(1, 0);
-          const offsets: [number, number, number, number][] = [
-            [0, ob.height * 0.92, 0, ob.r * 2.1],
-            [ob.r * 1.3, ob.height * 0.78, ob.r * 0.7, ob.r * 1.5],
-            [-ob.r * 1.2, ob.height * 0.8, -ob.r * 0.6, ob.r * 1.4],
-          ];
-          for (const [bx, by, bz, s] of offsets) {
-            const blob = new THREE.Mesh(blobGeo, leaves);
-            blob.position.set(bx, by, bz);
-            blob.scale.setScalar(s);
-            blob.rotation.y = i + bx;
-            group.add(blob);
-          }
+          this.place(this.assets.modelAtHeight(rockPick[i % 3]!, ob.height * 1.1), ob.x, ob.z, rot);
         }
-      } else {
-        // Squat cylinder: weathered rock pillar.
-        const rock = new THREE.Mesh(
-          new THREE.CylinderGeometry(ob.r * 0.8, ob.r, ob.height, 7),
-          rockMat,
-        );
-        rock.position.y = ob.height / 2;
-        rock.rotation.y = i * 1.7;
-        rock.rotation.z = ((i % 5) - 2) * 0.03;
-        group.add(rock);
-        const cap = new THREE.Mesh(new THREE.DodecahedronGeometry(ob.r * 0.75, 0), rockMat);
-        cap.position.y = ob.height;
-        group.add(cap);
+        return;
       }
-      group.position.set(ob.x, terrainHeight(ARENA.hills, ob.x, ob.z), ob.z);
-      group.traverse((m) => {
-        m.castShadow = true;
-        m.receiveShadow = true;
-      });
-      this.scene.add(group);
+      // Boxes: long thin footprints are ruin walls, large ones huts, small ones crates.
+      const long = Math.max(ob.hx, ob.hz);
+      const thin = Math.min(ob.hx, ob.hz);
+      const name: ModelName =
+        long >= 3.5 && thin <= 1.6 ? 'castle-wall' : long >= 2.2 && ob.height >= 3 ? 'structure' : 'crate';
+      const model = this.assets.model(name);
+      const size = this.assets.size(name);
+      model.scale.set(
+        (ob.hx * 2) / Math.max(0.001, size.x),
+        (ob.height * (name === 'structure' ? 1.2 : 1.05)) / Math.max(0.001, size.y),
+        (ob.hz * 2) / Math.max(0.001, size.z),
+      );
+      this.place(model, ob.x, ob.z);
     });
   }
 
-  /** Deterministic decorative scatter: grass, bushes, rocks, flowers on the terrain. */
+  /** Instanced foliage stamped from the nature-kit models. */
   private scatterFoliage(): void {
     const rng = new Rng(1337);
-    const half = ARENA.size / 2 - 5;
+    const half = ARENA.size / 2 - 8;
     const blocked = (x: number, z: number): boolean => {
       for (const ob of ARENA.obstacles) {
         const clearance = ob.kind === 'box' ? Math.max(ob.hx, ob.hz) + 1.5 : ob.r + 1.5;
@@ -338,72 +287,55 @@ export class SceneManager {
         const x = rng.range(-half, half);
         const z = rng.range(-half, half);
         if (blocked(x, z)) continue;
-        out.push({ x, z, s: rng.range(0.6, 1.5), rot: rng.range(0, Math.PI * 2) });
+        out.push({ x, z, s: rng.range(0.7, 1.4), rot: rng.range(0, Math.PI * 2) });
       }
       return out;
     };
+
     const dummy = new THREE.Object3D();
-    const fill = (
-      mesh: THREE.InstancedMesh,
-      spots: { x: number; z: number; s: number; rot: number }[],
-      yOffset: number,
-      colors?: number[],
-    ): void => {
-      const tint = new THREE.Color();
-      spots.forEach((p, i) => {
-        dummy.position.set(p.x, terrainHeight(ARENA.hills, p.x, p.z) + yOffset * p.s, p.z);
-        dummy.rotation.set(0, p.rot, 0);
-        dummy.scale.setScalar(p.s);
-        dummy.updateMatrix();
-        mesh.setMatrixAt(i, dummy.matrix);
-        if (colors) mesh.setColorAt(i, tint.setHex(colors[i % colors.length]!));
-      });
-      mesh.count = spots.length;
-      mesh.castShadow = true;
-      this.scene.add(mesh);
+    const stamp = (name: ModelName, count: number, targetHeight: number, shadows: boolean): void => {
+      const spots = placements(count);
+      const base = targetHeight / Math.max(0.001, this.assets.size(name).y);
+      for (const part of this.assets.meshParts(name)) {
+        const mesh = new THREE.InstancedMesh(part.geometry, part.material, spots.length);
+        spots.forEach((p, idx) => {
+          dummy.position.set(p.x, terrainHeight(ARENA.hills, p.x, p.z), p.z);
+          dummy.rotation.set(0, p.rot, 0);
+          dummy.scale.setScalar(p.s * base);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(idx, dummy.matrix);
+        });
+        mesh.castShadow = shadows;
+        this.scene.add(mesh);
+      }
     };
 
-    const grass = placements(650);
-    fill(
-      new THREE.InstancedMesh(
-        new THREE.ConeGeometry(0.14, 0.55, 5),
-        new THREE.MeshStandardMaterial({ color: 0x55803f, roughness: 1 }),
-        grass.length,
-      ),
-      grass,
-      0.25,
-    );
-    const bushes = placements(220);
-    fill(
-      new THREE.InstancedMesh(
-        new THREE.IcosahedronGeometry(0.65, 0),
-        new THREE.MeshStandardMaterial({ color: 0x2f5c33, roughness: 1 }),
-        bushes.length,
-      ),
-      bushes,
-      0.4,
-    );
-    const rocks = placements(90);
-    fill(
-      new THREE.InstancedMesh(
-        new THREE.DodecahedronGeometry(0.45, 0),
-        new THREE.MeshStandardMaterial({ color: 0x8a877e, roughness: 0.95 }),
-        rocks.length,
-      ),
-      rocks,
-      0.2,
-    );
-    const flowers = placements(140);
-    fill(
-      new THREE.InstancedMesh(
-        new THREE.SphereGeometry(0.1, 6, 5),
-        new THREE.MeshStandardMaterial({ roughness: 0.7 }),
-        flowers.length,
-      ),
-      flowers,
-      0.3,
-      [0xe86fa4, 0xf3d34d, 0xf0f0e8, 0x9a6fe8],
-    );
+    stamp('grass', 420, 0.5, false);
+    stamp('grass_large', 240, 0.55, false);
+    stamp('plant_bush', 150, 0.8, true);
+    stamp('plant_bushLarge', 70, 1.1, true);
+    stamp('rock_largeA', 60, 0.7, true);
+    stamp('flower_redA', 50, 0.5, false);
+    stamp('flower_purpleA', 50, 0.5, false);
+    stamp('flower_yellowA', 50, 0.5, false);
+    stamp('mushroom_red', 30, 0.35, false);
+    stamp('mushroom_tanGroup', 25, 0.3, false);
+    stamp('stump_round', 25, 0.5, true);
+    stamp('log', 20, 0.55, true);
+  }
+
+  /** Wrecks and rowboats beached on the sand ring. */
+  private buildShoreline(): void {
+    const wreck = this.assets.modelAtHeight('ship-wreck', 11);
+    this.place(wreck, 192, -55, 2.3);
+    const boatA = this.assets.modelAtHeight('boat-row-small', 1.4);
+    this.place(boatA, -190, 118, 0.8);
+    const boatB = this.assets.modelAtHeight('boat-row-small', 1.4);
+    this.place(boatB, 64, 196, -1.9);
+    const camp = this.assets.modelAtHeight('campfire_logs', 0.8);
+    this.place(camp, 186, -42, 0);
+    const flag = this.assets.modelAtHeight('flag-pirate-high', 6);
+    this.place(flag, 196, -62, 2.6);
   }
 
   /** Puffy low-poly clouds drifting high over the island. */
