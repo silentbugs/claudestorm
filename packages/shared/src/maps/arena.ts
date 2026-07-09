@@ -92,9 +92,10 @@ function scatterPoints(
 }
 
 /**
- * 300×300 island. Twelve named POIs scattered across the whole map — no special
- * center — plus lone loot, roaming mobs, and field cover between them. Built
- * from a fixed-seed Rng, so the layout is identical every match.
+ * 420×420 island. Eighteen named POIs scattered across the whole map — no
+ * special center — plus lone loot, mobs roaming the open fields, and cover
+ * between them. Built from a fixed-seed Rng, so the layout is identical
+ * every match.
  */
 function buildArena(): MapDef {
   const rng = new Rng(0x15_1a_9d); // island seed — change for a new layout
@@ -106,23 +107,24 @@ function buildArena(): MapDef {
   const items: Point[] = [];
 
   // Rolling hills, everywhere rather than radiating from the middle.
-  const hills: Hill[] = scatterPoints(rng, 12, 42, 118).map((p) => ({
+  const hills: Hill[] = scatterPoints(rng, 22, 40, 172).map((p) => ({
     x: p.x,
     z: p.z,
-    r: rng.range(20, 34),
-    h: rng.range(2.5, 6),
+    r: rng.range(22, 38),
+    h: rng.range(2.5, 6.5),
   }));
 
-  // ── Twelve POIs spread over the island, each a different kit ──
-  const pois = scatterPoints(rng, 12, 42, 120);
+  // ── Eighteen POIs spread over the island, each a different kit ──
+  const pois = scatterPoints(rng, 18, 55, 180);
   pois.forEach((poi, i) => {
     const { x: px, z: pz } = poi;
     const s = i % 2 === 0 ? 1 : -1;
     switch (i % 4) {
-      case 0: // ruin: broken walls and a pillar
+      case 0: // ruin: broken walls, a pillar, and a collapsed corner
         obstacles.push(
           { kind: 'box', x: px, z: pz + 8, hx: 6, hz: 1.3, height: 4.5 },
           { kind: 'box', x: px - 8 * s, z: pz - 3, hx: 1.3, hz: 5, height: 3.5 },
+          { kind: 'box', x: px + 9 * s, z: pz - 1, hx: 1.2, hz: 3.5, height: 2.8 },
           { kind: 'circle', x: px + 2 * s, z: pz - 10, r: 1.7, height: 6 },
         );
         break;
@@ -130,6 +132,7 @@ function buildArena(): MapDef {
         obstacles.push(
           { kind: 'box', x: px + 4 * s, z: pz - 3, hx: 3, hz: 2.5, height: 3.6 },
           { kind: 'box', x: px - 5 * s, z: pz + 6, hx: 1.8, hz: 1.8, height: 3 },
+          { kind: 'box', x: px - 1 * s, z: pz - 9, hx: 2.2, hz: 1.8, height: 3.2 },
         );
         break;
       case 2: // grove: a stand of big trees
@@ -137,17 +140,19 @@ function buildArena(): MapDef {
           { kind: 'circle', x: px - 6 * s, z: pz - 4, r: 2.1, height: 7 },
           { kind: 'circle', x: px + 7 * s, z: pz + 6, r: 1.6, height: 6 },
           { kind: 'circle', x: px + 1 * s, z: pz + 11, r: 1.4, height: 5.5 },
+          { kind: 'circle', x: px - 10 * s, z: pz + 5, r: 1.8, height: 6.5 },
         );
         break;
-      default: // quarry: rocks and a cut block
+      default: // quarry: rocks and cut blocks
         obstacles.push(
           { kind: 'box', x: px + 3 * s, z: pz + 4, hx: 2.2, hz: 2.2, height: 3.2 },
+          { kind: 'box', x: px - 2 * s, z: pz + 10, hx: 1.6, hz: 1.6, height: 2.4 },
           { kind: 'circle', x: px - 5 * s, z: pz - 4, r: 2.4, height: 4.5 },
         );
     }
     chests.push({ x: px, z: pz }, { x: px + 5 * s, z: pz + 4 });
     if (i % 3 !== 2) chests.push({ x: px - 6 * s, z: pz - 2 });
-    if (i % 3 !== 2) elites.push({ x: px + 2 * s, z: pz + 8 });
+    if (i % 4 !== 3) elites.push({ x: px + 2 * s, z: pz + 8 });
     mobs.push({ x: px + 11 * s, z: pz - 8 });
     if (i % 3 === 0) mobs.push({ x: px - 10 * s, z: pz + 10 });
     if (i % 3 !== 0) scrolls.push({ x: px - 2 * s, z: pz + 2 });
@@ -155,7 +160,7 @@ function buildArena(): MapDef {
   });
 
   // ── Field cover between the POIs (kept clear of them) ──
-  const cover = scatterPoints(rng, 26, 14, 138, pois);
+  const cover = scatterPoints(rng, 48, 15, 196, pois);
   cover.forEach((p, i) => {
     if (i % 3 === 0) {
       obstacles.push({ kind: 'box', x: p.x, z: p.z, hx: 2, hz: 1.6, height: 3 });
@@ -164,13 +169,13 @@ function buildArena(): MapDef {
     }
   });
 
-  // ── Loose pickings for the space between POIs ──
-  for (const p of scatterPoints(rng, 8, 24, 130, pois)) chests.push(p);
-  for (const p of scatterPoints(rng, 8, 24, 130, pois)) mobs.push(p);
-  for (const p of scatterPoints(rng, 4, 30, 125, pois)) scrolls.push(p);
-  for (const p of scatterPoints(rng, 6, 26, 130, pois)) items.push(p);
+  // ── Loose pickings and roaming packs for the space between POIs ──
+  for (const p of scatterPoints(rng, 14, 26, 190, pois)) chests.push(p);
+  for (const p of scatterPoints(rng, 24, 18, 195, pois)) mobs.push(p);
+  for (const p of scatterPoints(rng, 9, 30, 185, pois)) scrolls.push(p);
+  for (const p of scatterPoints(rng, 10, 26, 190, pois)) items.push(p);
 
-  return { size: 300, obstacles, chests, mobs, elites, scrolls, items, hills };
+  return { size: 420, obstacles, chests, mobs, elites, scrolls, items, hills };
 }
 
 export const ARENA: MapDef = buildArena();

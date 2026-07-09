@@ -10,7 +10,7 @@ export interface StormPhaseDef {
   lightnings?: boolean;
 }
 
-export const STORM_START_RADIUS = 212;
+export const STORM_START_RADIUS = 297; // covers the 420×420 island corner to corner
 
 /**
  * Long holds are the "cooldowns" between closes — time to loot and fight.
