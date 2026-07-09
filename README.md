@@ -9,8 +9,11 @@ npm install
 npm run dev     # open http://localhost:5173, then hit Start Game
 ```
 
-- **WASD** — move (camera-relative)
-- **Hold right mouse** — look around (character faces camera)
+Pick your opponent count on the start screen (3–23 bots), then hit Start Game.
+
+- **WASD** — move (relative to your character's facing)
+- **Hold right mouse** — turn your character with the camera (WoW-style)
+- **Hold left mouse** — orbit the camera without turning your character; pressing RMB snaps you to the camera's heading
 - **R** — sword auto-attack (3-hit combo, big finisher)
 - **1 / 2** — offense spell slots (looted); charge-and-release spells cast on press, release on re-press
 - **3 / 4** — utility spell slots (looted)
@@ -59,3 +62,5 @@ Load-bearing rules:
 4. **Abilities are data** (`shared/src/sim/abilities.ts`) over behavior primitives (`projectile`, `groundAoE`, `cone`, `selfAura`, `leap`, `shield`, `buff`, `trap`). New abilities are mostly new config entries. Terrain is data too: `terrainHeight()` in `shared/maps` drives both the renderer's ground mesh and entity placement.
 
 The sim is deterministic for a given seed + input stream (covered by a test), which keeps the door open for replays and server reconciliation.
+
+Art: the client bundles CC0 models from Kenney's Nature and Pirate kits plus MIT textures from the three.js examples (see `packages/client/public/assets/ASSETS.md`), loaded through `AssetLibrary` before the start screen unlocks.
