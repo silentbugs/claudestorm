@@ -143,38 +143,52 @@ function setBar(fill: THREE.Mesh, frac: number, width: number): void {
 }
 
 /*
- * Player characters are "storm constructs": hovering crystalline creatures —
- * an elongated gem body, a floating head with a glowing visor, and two
- * orbiting hand-shards, the right one carrying a crystal blade. Deliberately
- * not humanoid: minimal, unique, and it tints cleanly per hero color. All
- * geometries are shared; each view owns only its three tintable materials.
+ * Player characters are wisp specters: one smooth, flowing ghost-robe
+ * silhouette (a lathed surface tapering to a floating tail), big glowing
+ * eyes, and two small floating hands — the right one grips a proper little
+ * sword. Non-human, minimal, and a single coherent shape rather than an
+ * assembly of primitives. Geometries and sword materials are shared; each
+ * view owns only its three tintable materials.
  */
-const CONSTRUCT_BODY_GEO = new THREE.OctahedronGeometry(0.42);
-CONSTRUCT_BODY_GEO.scale(1, 1.5, 1);
-const CONSTRUCT_HEAD_GEO = new THREE.OctahedronGeometry(0.19);
-CONSTRUCT_HEAD_GEO.scale(1, 1.3, 1);
-const CONSTRUCT_SHARD_GEO = new THREE.OctahedronGeometry(0.12);
-CONSTRUCT_SHARD_GEO.scale(1, 1.7, 1);
-const CONSTRUCT_BLADE_GEO = new THREE.OctahedronGeometry(0.17);
-CONSTRUCT_BLADE_GEO.scale(0.32, 0.9, 3.4);
-const CONSTRUCT_VISOR_GEO = new THREE.BoxGeometry(0.24, 0.05, 0.05);
-const CONSTRUCT_RING_GEO = new THREE.TorusGeometry(0.4, 0.045, 8, 24);
-CONSTRUCT_RING_GEO.rotateX(Math.PI / 2);
+const WISP_BODY_GEO = new THREE.LatheGeometry(
+  [
+    [0.02, 0.0], [0.10, 0.06], [0.20, 0.16], [0.30, 0.30], [0.365, 0.48],
+    [0.375, 0.66], [0.335, 0.88], [0.315, 1.06], [0.325, 1.22], [0.30, 1.36],
+    [0.22, 1.50], [0.11, 1.58], [0.0, 1.61],
+  ].map(([r, y]) => new THREE.Vector2(r!, y!)),
+  24,
+);
+WISP_BODY_GEO.translate(0, -0.8, 0); // pivot mid-body for rolls and death topples
+const WISP_EYE_GEO = new THREE.SphereGeometry(0.06, 10, 10);
+WISP_EYE_GEO.scale(1, 1.45, 0.5);
+const WISP_HAND_GEO = new THREE.SphereGeometry(0.095, 12, 10);
+
+const SWORD_BLADE_GEO = new THREE.BoxGeometry(0.045, 0.1, 0.62);
+const SWORD_TIP_GEO = new THREE.ConeGeometry(0.058, 0.14, 4);
+SWORD_TIP_GEO.rotateX(Math.PI / 2);
+SWORD_TIP_GEO.rotateZ(Math.PI / 4);
+SWORD_TIP_GEO.scale(0.75, 1, 1.9);
+const SWORD_GUARD_GEO = new THREE.BoxGeometry(0.2, 0.05, 0.05);
+const SWORD_GRIP_GEO = new THREE.CylinderGeometry(0.028, 0.028, 0.14, 8);
+SWORD_GRIP_GEO.rotateX(Math.PI / 2);
+const STEEL_MAT = new THREE.MeshStandardMaterial({ color: 0xcfd2dd, metalness: 0.7, roughness: 0.35 });
+const GOLD_MAT = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35 });
+const GRIP_MAT = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.85 });
 
 /** Scratch colors for per-frame tinting — never allocate in update(). */
 const TINT = new THREE.Color();
 const TINT_MIX = new THREE.Color();
+const WHITE = new THREE.Color(0xffffff);
 
 class PlayerView {
   readonly group = new THREE.Group();
   private readonly bodyPivot = new THREE.Group();
-  private readonly bodyMat: THREE.MeshStandardMaterial;
-  private readonly shardMat: THREE.MeshStandardMaterial;
-  private readonly glowMat: THREE.MeshBasicMaterial;
-  private readonly head = new THREE.Group();
-  private readonly shardL = new THREE.Group();
-  private readonly shardR = new THREE.Group();
-  private readonly ring: THREE.Mesh;
+  private readonly robeMat: THREE.MeshStandardMaterial;
+  private readonly handMat: THREE.MeshStandardMaterial;
+  private readonly eyeMat: THREE.MeshBasicMaterial;
+  private readonly body: THREE.Mesh;
+  private readonly handL = new THREE.Group();
+  private readonly handR = new THREE.Group();
   private readonly glider: THREE.Mesh;
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
@@ -192,61 +206,51 @@ class PlayerView {
 
   constructor(isSelf: boolean, isBot: boolean, selfColor: number = SELF_COLOR) {
     this.base = isSelf || !isBot ? selfColor : BOT_COLOR;
-    this.bodyMat = new THREE.MeshStandardMaterial({
-      color: this.base,
-      roughness: 0.45,
-      metalness: 0.15,
-      flatShading: true,
+    this.robeMat = new THREE.MeshStandardMaterial({ color: this.base, roughness: 0.62 });
+    this.handMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(this.base).lerp(WHITE, 0.3),
+      roughness: 0.6,
     });
-    this.shardMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(this.base).multiplyScalar(0.7),
-      roughness: 0.5,
-      flatShading: true,
-    });
-    // Visor and hover ring share one unlit glow tint.
-    this.glowBase.setHex(this.base).lerp(TINT_MIX.setHex(0xffffff), 0.55);
-    this.glowMat = new THREE.MeshBasicMaterial({
-      color: this.glowBase,
-      transparent: true,
-      opacity: 0.85,
-    });
+    this.glowBase.setHex(this.base).lerp(WHITE, 0.72);
+    this.eyeMat = new THREE.MeshBasicMaterial({ color: this.glowBase });
 
     // Pivot at mid-body so roll spins and the death topple read naturally.
     this.bodyPivot.position.y = 1.0;
 
-    const body = new THREE.Mesh(CONSTRUCT_BODY_GEO, this.bodyMat);
-    body.position.y = -0.05;
-    body.castShadow = true;
-    this.bodyPivot.add(body);
+    // One continuous robe-to-head form; the tail floats above the ground.
+    this.body = new THREE.Mesh(WISP_BODY_GEO, this.robeMat);
+    this.body.castShadow = true;
+    this.bodyPivot.add(this.body);
 
-    // Floating head with the glowing visor marking the facing.
-    const skull = new THREE.Mesh(CONSTRUCT_HEAD_GEO, this.bodyMat);
-    skull.castShadow = true;
-    const visor = new THREE.Mesh(CONSTRUCT_VISOR_GEO, this.glowMat);
-    visor.position.set(0, 0.02, 0.15);
-    this.head.add(skull, visor);
-    this.head.position.y = 0.75;
-    this.bodyPivot.add(this.head);
+    // Tall glowing eyes on the dome mark the facing.
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(WISP_EYE_GEO, this.eyeMat);
+      eye.position.set(side * 0.105, 0.47, 0.26);
+      this.bodyPivot.add(eye);
+    }
 
-    // Hand-shards orbiting at the sides; the right one carries the blade.
-    const shardMeshL = new THREE.Mesh(CONSTRUCT_SHARD_GEO, this.shardMat);
-    shardMeshL.castShadow = true;
-    this.shardL.add(shardMeshL);
-    this.shardL.position.set(-0.45, 0.1, 0);
-    const shardMeshR = new THREE.Mesh(CONSTRUCT_SHARD_GEO, this.shardMat);
-    shardMeshR.castShadow = true;
-    const blade = new THREE.Mesh(CONSTRUCT_BLADE_GEO, this.shardMat);
-    blade.position.set(0, -0.04, 0.72);
+    // Floating mitten hands; the right one grips the sword.
+    const palmL = new THREE.Mesh(WISP_HAND_GEO, this.handMat);
+    palmL.position.set(-0.02, -0.16, 0.06);
+    palmL.castShadow = true;
+    this.handL.add(palmL);
+    this.handL.position.set(-0.44, 0.28, 0.04);
+    const palmR = new THREE.Mesh(WISP_HAND_GEO, this.handMat);
+    palmR.position.set(0.02, -0.16, 0.06);
+    palmR.castShadow = true;
+    const blade = new THREE.Mesh(SWORD_BLADE_GEO, STEEL_MAT);
+    blade.position.set(0.02, -0.18, 0.42);
     blade.castShadow = true;
-    this.shardR.add(shardMeshR, blade);
-    this.shardR.position.set(0.45, 0.1, 0);
-    this.shardR.rotation.x = 0.25; // resting: blade low, forward
-    this.bodyPivot.add(this.shardL, this.shardR);
-
-    // A soft ring hovering under the construct sells the levitation.
-    this.ring = new THREE.Mesh(CONSTRUCT_RING_GEO, this.glowMat);
-    this.ring.position.y = 0.14;
-    this.group.add(this.ring);
+    const tip = new THREE.Mesh(SWORD_TIP_GEO, STEEL_MAT);
+    tip.position.set(0.02, -0.18, 0.8);
+    const guard = new THREE.Mesh(SWORD_GUARD_GEO, GOLD_MAT);
+    guard.position.set(0.02, -0.18, 0.08);
+    const grip = new THREE.Mesh(SWORD_GRIP_GEO, GRIP_MAT);
+    grip.position.set(0.02, -0.18, -0.03);
+    this.handR.add(palmR, blade, tip, guard, grip);
+    this.handR.position.set(0.44, 0.28, 0.04);
+    this.handR.rotation.x = 0.3; // resting: sword low, forward
+    this.bodyPivot.add(this.handL, this.handR);
 
     this.group.add(this.bodyPivot);
 
@@ -313,14 +317,13 @@ class PlayerView {
   ): void {
     this.group.position.set(p.x, p.y, p.z);
     if (!p.alive) {
-      // The construct dies: topples, dims, and gutters out.
+      // The wisp dies: topples, dims, and gutters out.
       this.deadFor += dt;
       this.bodyPivot.rotation.x = Math.PI / 2;
-      this.bodyPivot.position.y = 0.45;
-      this.bodyMat.color.setHex(DEAD_COLOR);
-      this.shardMat.color.setHex(DEAD_COLOR);
-      this.glowMat.color.setHex(0x555560);
-      this.ring.visible = false;
+      this.bodyPivot.position.y = 0.5;
+      this.robeMat.color.setHex(DEAD_COLOR);
+      this.handMat.color.setHex(DEAD_COLOR);
+      this.eyeMat.color.setHex(0x777788);
       this.hpGroup.visible = false;
       this.shield.visible = false;
       this.aura.visible = false;
@@ -347,8 +350,10 @@ class PlayerView {
     this.lastZ = p.z;
     const speed = dt > 0 ? moved / dt : 0;
     const airborne = p.y > 0.08 && !p.gliding;
-    this.bobPhase += dt * (3 + Math.min(10, speed * 1.2));
-    this.bodyPivot.position.y = 1.0 + Math.sin(this.bobPhase) * (speed > 0.6 ? 0.07 : 0.035);
+    this.bobPhase += dt * (2.4 + Math.min(9, speed * 1.1));
+    this.bodyPivot.position.y = 1.0 + Math.sin(this.bobPhase) * (speed > 0.6 ? 0.06 : 0.035);
+    // The tail sways gently, more with speed.
+    this.body.rotation.z = Math.sin(this.bobPhase * 0.8) * (0.04 + Math.min(0.05, speed * 0.006));
     if (p.rolling) {
       this.rollSpin += dt * 18;
       this.bodyPivot.rotation.x = this.rollSpin;
@@ -357,47 +362,45 @@ class PlayerView {
       this.bodyPivot.rotation.x = -0.9;
     } else {
       this.rollSpin = 0;
-      // Lean into the glide of travel; pull up a touch mid-jump.
-      this.bodyPivot.rotation.x = airborne ? -0.15 : Math.min(0.22, speed * 0.02);
+      // Lean into the direction of travel; pull up a touch mid-jump.
+      this.bodyPivot.rotation.x = airborne ? -0.12 : Math.min(0.2, speed * 0.018);
     }
-    this.ring.visible = !airborne;
-    const ringPulse = 1 + Math.sin(this.bobPhase) * 0.06;
-    this.ring.scale.set(ringPulse, 1, ringPulse);
 
-    // The head and hand-shards float on their own slightly offset rhythms.
-    this.head.position.y = 0.75 + Math.sin(this.bobPhase * 1.1 + 0.8) * 0.03;
-    this.shardL.position.y = 0.1 + Math.sin(this.bobPhase + 1.7) * 0.05;
-    if (this.swingTimer <= 0) this.shardR.position.y = 0.1 + Math.sin(this.bobPhase) * 0.05;
+    // Hands drift on their own slightly offset rhythms.
+    this.handL.position.y = 0.28 + Math.sin(this.bobPhase + 1.6) * 0.03;
+    if (this.swingTimer <= 0) this.handR.position.y = 0.28 + Math.sin(this.bobPhase) * 0.03;
 
-    // Blade swing: the right shard whips forward, then floats back to rest.
+    // Sword swing: whip forward, then drift back to rest.
     if (this.swingTimer > 0) {
       this.swingTimer = Math.max(0, this.swingTimer - dt);
       const t = 1 - this.swingTimer / SWING_DURATION;
-      this.shardR.rotation.x = t < 0.4 ? lerp(0.25, -1.9, t / 0.4) : lerp(-1.9, 0.25, (t - 0.4) / 0.6);
+      this.handR.rotation.x = t < 0.4 ? lerp(0.3, -1.85, t / 0.4) : lerp(-1.85, 0.3, (t - 0.4) / 0.6);
     } else {
-      this.shardR.rotation.x = 0.25;
+      this.handR.rotation.x = 0.3;
     }
-    // The off-shard rises while casting.
+    // The off-hand rises while casting.
     if (this.castTimer > 0) {
       this.castTimer = Math.max(0, this.castTimer - dt);
-      this.shardL.rotation.x = -1.6;
-      this.shardL.position.y += 0.18;
+      this.handL.rotation.x = -1.7;
+      this.handL.position.y += 0.16;
     } else {
-      this.shardL.rotation.x = 0;
+      this.handL.rotation.x = 0;
     }
 
     TINT.setHex(this.base);
     if (p.slowed) TINT.lerp(TINT_MIX.setHex(SLOW_COLOR), 0.55);
     if (p.poisoned) TINT.lerp(TINT_MIX.setHex(0x5fce6a), 0.4);
     if (p.fae) TINT.lerp(TINT_MIX.setHex(0xe98fd8), 0.7);
-    this.bodyMat.color.copy(TINT);
-    this.shardMat.color.copy(TINT).multiplyScalar(0.7);
-    this.glowMat.color.copy(this.glowBase);
-    // Stealth: nearly invisible to enemies, ghostly to yourself.
+    this.robeMat.color.copy(TINT);
+    this.handMat.color.copy(TINT).lerp(WHITE, 0.3);
+    this.eyeMat.color.copy(this.glowBase);
+    // Stealth: nearly invisible to enemies, ghostly to yourself. The sword's
+    // materials are shared, so the hands (and sword) hide instead of fading.
     const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
-    this.bodyMat.transparent = this.shardMat.transparent = opacity < 1;
-    this.bodyMat.opacity = this.shardMat.opacity = opacity;
-    this.glowMat.opacity = 0.85 * opacity;
+    this.robeMat.transparent = this.eyeMat.transparent = opacity < 1;
+    this.robeMat.opacity = opacity;
+    this.eyeMat.opacity = opacity;
+    this.handL.visible = this.handR.visible = !p.stealthed || isSelf;
     this.hpGroup.visible = !p.stealthed;
     setBar(this.hpFill, p.hpFrac, 1.3);
     // Billboard: cancel the parent's facing rotation so the bar always faces the camera.
