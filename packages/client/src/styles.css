@@ -137,6 +137,52 @@ body {
   display: none !important;
 }
 
+#minimap {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 200px;
+  height: 200px;
+  border: 2px solid #333a55;
+  border-radius: 10px;
+  background: #0b0e1a;
+  opacity: 0.95;
+}
+
+#map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(5, 6, 12, 0.6);
+  pointer-events: auto;
+}
+
+#map-canvas {
+  width: min(78vh, 90vw);
+  height: min(78vh, 90vw);
+  border: 2px solid #444a63;
+  border-radius: 12px;
+}
+
+#map-hint {
+  font-size: 14px;
+  color: #b8b5a5;
+  text-shadow: 0 1px 3px #000;
+}
+
+#map-hint .kb {
+  display: inline-block;
+  padding: 0 7px;
+  border: 1px solid #b8b5a5;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
 #start-screen {
   position: absolute;
   inset: 0;

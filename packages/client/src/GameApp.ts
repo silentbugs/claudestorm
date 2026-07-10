@@ -20,6 +20,7 @@ import { EntityViews } from './render/EntityViews.js';
 import { SceneManager, type EnvironmentId } from './render/SceneManager.js';
 import { sfx } from './sfx.js';
 import { Hud } from './ui/Hud.js';
+import { MapView } from './ui/MapView.js';
 
 const SELF_ID = 1;
 const BOT_NAMES = [
@@ -47,6 +48,7 @@ export class GameApp {
   private sceneMgr!: SceneManager;
   private views!: EntityViews;
   private readonly hud: Hud;
+  private readonly map = new MapView();
   private readonly input = new InputManager();
   private readonly rig = new CameraRig();
   private readonly buffer = new SnapshotBuffer();
@@ -85,6 +87,7 @@ export class GameApp {
       document.getElementById('start-screen')!.classList.add('hidden');
       hudRoot.classList.remove('in-menu');
       this.inMatch = true;
+      this.map.setActive(true);
       this.startMatch();
     });
     document
@@ -227,6 +230,7 @@ export class GameApp {
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.sceneMgr.setFocus(x, z);
         sfx.setListener(x, z, this.rig.camYaw);
+        this.map.update(next.storm, x, z, this.rig.yaw);
         this.updateAim(x, z);
         this.updateInteractPrompt(next, x, z, selfNext.gliding);
       }
