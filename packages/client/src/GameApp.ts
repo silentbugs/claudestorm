@@ -19,8 +19,10 @@ import { AssetLibrary } from './render/assets.js';
 import { EntityViews } from './render/EntityViews.js';
 import { SceneManager, type EnvironmentId } from './render/SceneManager.js';
 import { sfx } from './sfx.js';
+import { StatsTracker, statsStore, type MatchStats } from './stats.js';
 import { Hud } from './ui/Hud.js';
 import { MapView } from './ui/MapView.js';
+import { StatsPanel } from './ui/StatsPanel.js';
 
 const SELF_ID = 1;
 const BOT_NAMES = [
@@ -67,6 +69,8 @@ export class GameApp {
   private deathPlacement = 0;
   private spectateId: number | null = null;
   private latestSnap: Snapshot | null = null;
+  private tracker: StatsTracker | null = null;
+  private lastMatch: MatchStats | null = null;
   private inMatch = false;
   private menuTime = 0;
   private wasLooking = false;
@@ -105,6 +109,7 @@ export class GameApp {
     this.hud.showSpectate(null);
     this.hud.showInteract(null);
     this.spectateId = null;
+    this.tracker = null; // abandoned matches are not recorded
     this.inMatch = false;
     this.map.setActive(false);
     this.sceneMgr.setStorm(0, 0, STORM_START_RADIUS);
@@ -140,6 +145,7 @@ export class GameApp {
     document
       .getElementById('skills-btn')!
       .addEventListener('click', () => this.hud.toggleSkills());
+    new StatsPanel();
     const botSlider = document.getElementById('bot-count') as HTMLInputElement;
     const botValue = document.getElementById('bot-count-value')!;
     botSlider.addEventListener('input', () => (botValue.textContent = botSlider.value));
@@ -194,6 +200,8 @@ export class GameApp {
     const difficulty = (choiceValue('difficulty-choice') || 'normal') as BotDifficulty;
     const circles = Number(choiceValue('circles-choice')) || 5;
     const paceMult = Number(choiceValue('pace-choice')) || 1;
+    this.tracker = new StatsTracker(SELF_ID, { bots: botCount, difficulty, circles });
+    this.lastMatch = null;
     this.transport = new LocalTransport(
       {
         seed: Date.now() & 0x7fffffff,
@@ -223,6 +231,13 @@ export class GameApp {
 
   private onSnapshot(snap: Snapshot): void {
     this.latestSnap = snap;
+    // The tracker finishes exactly once (self death or match end): remember
+    // the record for the end screen and file it in the local database.
+    const finished = this.tracker?.consume(snap);
+    if (finished) {
+      this.lastMatch = finished;
+      void statsStore.add(finished);
+    }
     this.views.handleEvents(snap.events, SELF_ID, snap);
     for (const ev of snap.events) {
       if (ev.type === 'hit' && ev.targetId === SELF_ID) this.hud.flashVignette();
@@ -230,7 +245,9 @@ export class GameApp {
         this.deadShown = true;
         this.deathPlacement = snap.aliveCount + 1;
         // Offer to watch the rest of the match play out.
-        if (snap.phase !== 'ended') this.hud.showEnd(false, this.deathPlacement, true);
+        if (snap.phase !== 'ended') {
+          this.hud.showEnd(false, this.deathPlacement, true, this.matchSummary());
+        }
       }
     }
     if (snap.phase === 'ended' && !this.endShown) {
@@ -239,8 +256,21 @@ export class GameApp {
       this.hud.showSpectate(null);
       const victory = snap.winnerId === SELF_ID;
       if (victory) sfx.victory();
-      this.hud.showEnd(victory, victory ? 1 : this.deathPlacement || snap.aliveCount + 1);
+      this.hud.showEnd(
+        victory,
+        victory ? 1 : this.deathPlacement || snap.aliveCount + 1,
+        false,
+        this.matchSummary(),
+      );
     }
+  }
+
+  /** One line of the match's numbers for the end screen. */
+  private matchSummary(): string {
+    const m = this.lastMatch;
+    if (!m) return '';
+    const time = `${Math.floor(m.survivalSeconds / 60)}:${String(m.survivalSeconds % 60).padStart(2, '0')}`;
+    return `${m.kills} kills · ${m.damageDealt} damage · ⛃ ${m.plunder} · survived ${time}`;
   }
 
   private frame(now: number): void {

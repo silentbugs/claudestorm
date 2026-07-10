@@ -46,6 +46,7 @@ export class Hud {
   private readonly endScreen = document.getElementById('end-screen')!;
   private readonly endTitle = document.getElementById('end-title')!;
   private readonly endSub = document.getElementById('end-sub')!;
+  private readonly endStats = document.getElementById('end-stats')!;
   private readonly spectateBtn = document.getElementById('spectate-btn')!;
   private readonly spectateBanner = document.getElementById('spectate-banner')!;
   private readonly vignette = document.getElementById('vignette')!;
@@ -272,13 +273,15 @@ export class Hud {
     }
   }
 
-  showEnd(victory: boolean, placement: number, canSpectate = false): void {
+  showEnd(victory: boolean, placement: number, canSpectate = false, statsLine = ''): void {
     this.endScreen.classList.remove('hidden');
     this.endTitle.textContent = victory ? 'VICTORY' : 'DEFEAT';
     this.endTitle.className = victory ? 'victory' : 'defeat';
     this.endSub.textContent = victory
       ? 'Last one standing — the plunder is yours!'
       : `You placed #${placement}`;
+    this.endStats.textContent = statsLine;
+    this.endStats.classList.toggle('hidden', !statsLine);
     this.spectateBtn.classList.toggle('hidden', !canSpectate);
   }
 

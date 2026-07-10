@@ -1146,7 +1146,7 @@ export class GameSim {
 
   private openChest(chest: ChestEntity, opener: PlayerEntity): void {
     chest.opened = true;
-    this.events.push({ type: 'chestOpened', x: chest.x, z: chest.z });
+    this.events.push({ type: 'chestOpened', playerId: opener.id, x: chest.x, z: chest.z });
     const coins = this.rng.int(CHEST_COINS_MIN, CHEST_COINS_MAX + 1);
     for (let i = 0; i < coins; i++) this.spawnCoin(chest.x, chest.z);
     const scrolls = this.rng.int(CHEST_SCROLLS_MIN, CHEST_SCROLLS_MAX + 1);
@@ -1662,7 +1662,7 @@ export class GameSim {
     }
     if (mob.hp <= 0) {
       this.mobs.delete(mob.id);
-      this.events.push({ type: 'mobDeath', x: mob.x, z: mob.z, elite: mob.elite });
+      this.events.push({ type: 'mobDeath', killerId: sourceId, x: mob.x, z: mob.z, elite: mob.elite });
       const coins = mob.elite
         ? this.rng.int(ELITE_COINS_MIN, ELITE_COINS_MAX + 1)
         : this.rng.int(MOB_COINS_MIN, MOB_COINS_MAX + 1);

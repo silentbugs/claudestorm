@@ -194,8 +194,8 @@ export type GameEvent =
   | { type: 'detonate'; x: number; z: number; radius: number; abilityId: AbilityId }
   | { type: 'projectileGone'; id: number; x: number; z: number }
   | { type: 'melee'; casterId: number; x: number; z: number; facing: number; combo: number }
-  | { type: 'chestOpened'; x: number; z: number }
-  | { type: 'mobDeath'; x: number; z: number; elite: boolean }
+  | { type: 'chestOpened'; playerId: number; x: number; z: number }
+  | { type: 'mobDeath'; killerId: number | null; x: number; z: number; elite: boolean }
   | { type: 'levelUp'; playerId: number; level: number }
   | { type: 'equip'; playerId: number; abilityId: AbilityId; rarity: Rarity }
   | { type: 'upgrade'; playerId: number; abilityId: AbilityId; rarity: Rarity }

@@ -90,12 +90,22 @@
           </div>
           <button id="start-btn">Start Game</button>
           <button id="skills-btn" class="menu-secondary">Skills Compendium</button>
+          <button id="stats-btn" class="menu-secondary">Match History</button>
           <div id="start-hint">WASD move · hold RMB look · R slap · 1–4 spells · T skills</div>
+        </div>
+      </div>
+      <div id="stats-overlay" class="hidden">
+        <div id="stats-panel">
+          <h1>Match History</h1>
+          <div id="stats-summary"></div>
+          <div id="stats-list"></div>
+          <div id="stats-close-hint">Press <span class="kb">Esc</span> to close</div>
         </div>
       </div>
       <div id="end-screen" class="hidden">
         <div id="end-title"></div>
         <div id="end-sub"></div>
+        <div id="end-stats"></div>
         <button id="spectate-btn" class="menu-secondary">Spectate</button>
         <button id="restart-btn">Play Again</button>
         <button id="menu-btn" class="menu-secondary">Main Menu</button>
