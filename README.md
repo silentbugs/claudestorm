@@ -9,7 +9,7 @@ npm install
 npm run dev     # open http://localhost:5173, then hit Start Game
 ```
 
-Set up your match on the start screen — hero color, opponent count (3–23 bots), bot difficulty, how many circles the storm has (3–6), and how fast they close — then hit Start Game.
+Set up your match on the start screen — hero color, opponent count (3–23 bots), bot difficulty, time of day (Day / Dusk / Night, previewed live on the menu), how many circles the storm has (3–6), and how fast they close — then hit Start Game.
 
 - **WASD** — move (relative to your character's facing)
 - **Hold right mouse** — turn your character with the camera (WoW-style)
@@ -24,15 +24,17 @@ Set up your match on the start screen — hero color, opponent count (3–23 bot
 - **Space** — jump
 - **Shift** — barrel roll (dodges projectiles)
 - **F** — open chests / take scrolls
+- **M** — full-screen map (a minimap sits top right: storm circle, next circle, you)
 - **T** — skills compendium (every spell and item with stats)
 - **Wheel** — zoom
+- After you fall: **Spectate** follows the survivors; **←/→** switch targets
 
 ## The match
 
-1. **Drop in** — steer your glide onto a 760×760 island with real geography: mountain ridges pierced by passageways, lowland basins, lakes that slow you to a wade, and thirty-six POIs (ruins, camps, groves, quarries) scattered across the whole map — no privileged center — plus creatures roaming the open fields between them.
+1. **Drop in** — steer your glide onto a 760×760 island with real geography: mountain ridges pierced by passageways, lowland basins, lakes that slow you to a wade, and five named landmarks that make the map readable at a glance — **Shipwreck Cove**, **Skyreach Spire** (the tallest peak, crowned in cliffs with two ways up), **The Stone Ring**, **The Sunken Pit** (loot-rich, but climbing out is a crawl unless you find the ramp), and **Elder Grove** — with copses, boulder fields, and roaming creatures filling the space between. Landmarks are stamped by per-piece functions, the pool a future procedural island generator will shuffle.
 2. **Loot** — chests (channel to open), creatures, and loose scrolls give spells in four ranks (common → epic). **Picking up a duplicate of an equipped spell stacks its rank**, Plunderstorm-style. Most POIs are guarded by a crowned **elite** that always drops a rare-or-epic spell. Consumable items (Chicken Coup, Smoke Bomb, Mechano-Hog, Gravity Launcher, To the Skies!) fill a single item slot. Coins fly to you from a distance, and **killed players drop their scrolls, a share of their plunder, and their item**.
 3. **Level** — coins, kills, and chests grant XP; each level adds max HP and damage.
-4. **Survive** — the storm closes in circles that always settle off-center, so the safe zone wanders across the island. Long holds between shrinks leave real time to loot and fight; the next-to-last circle is a roomy dueling arena, and the endgame is a slow creep down to almost nothing while Violent Lightnings rake whatever space is left. Last one standing wins.
+4. **Survive** — the storm converges on a random point rolled at each match's start, so the safe zone wanders toward a different part of the island every game (the minimap shows both the current circle and where it's headed). Long holds between shrinks leave real time to loot and fight, the wall never outruns a walking player, the next-to-last circle is a roomy dueling arena, and the endgame is a slow creep down to almost nothing while Violent Lightnings rake whatever space is left. Last one standing wins.
 
 The spell roster is the authentic Plunderstorm set — 11 offensive (Rime Arrow, Fire Whirl, Earthbreaker, Holy Shield, Storm Archon, Mana Sphere, Searing Axe, Slicing Winds, Star Bomb, Toxic Smackerel, Celestial Barrage) and 10 utility (Quaking Leap, Hunter's Chains, Steel Traps, Windstorm, Explosive Caltrops, Snowdrift, Lightning Bulwark, Fade to Shadow, Repel, Faeform) — implemented over the sim's behavior primitives (stun, poison, stealth, immunity, dashes, boomerangs, volleys, traps, pools). **Slicing Winds** and **Celestial Barrage** are charge-and-release casts: press to start charging, press again (or hold to max) to release — charge time scales damage and reach, and Celestial Barrage lifts you into the air before loosing a volley that pierces everything in its path. Press **T** in game for the full compendium.
 
@@ -63,4 +65,4 @@ Load-bearing rules:
 
 The sim is deterministic for a given seed + input stream (covered by a test), which keeps the door open for replays and server reconciliation.
 
-Art: the client bundles CC0 models from Kenney's Nature and Pirate kits plus MIT textures from the three.js examples (see `packages/client/public/assets/ASSETS.md`), loaded through `AssetLibrary` before the start screen unlocks.
+Art: the client bundles CC0 models from Kenney's Nature and Pirate kits plus MIT textures from the three.js examples (see `packages/client/public/assets/ASSETS.md`), loaded through `AssetLibrary` before the start screen unlocks. Characters are procedural "storm constructs" — hovering crystalline creatures built from shared low-poly geometries that tint to the hero color.
