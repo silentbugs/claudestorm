@@ -94,6 +94,49 @@ const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
   celestialBarrage: 0xd8c8ff,
 };
 
+/*
+ * Shared unit geometries for everything transient. Effects and zones fire
+ * constantly (every swing, hit, and endgame lightning); building a fresh
+ * BufferGeometry per spawn uploads to the GPU each time and, undisposed,
+ * accumulates for the whole match — the source of mid-fight lag spikes.
+ * These are built once and scaled per instance instead.
+ */
+const FLASH_GEO = new THREE.SphereGeometry(1, 12, 10);
+const BURST_GEO = new THREE.CylinderGeometry(1, 1, 0.6, 32, 1, true);
+const COLUMN_GEO = new THREE.CylinderGeometry(1, 0.4, 1, 8);
+const MELEE_ARC = (Math.PI * 2) / 3;
+const MELEE_GEO = new THREE.RingGeometry(1.1, 2.5, 18, 1, -Math.PI / 2 - MELEE_ARC / 2, MELEE_ARC);
+const ZONE_RING_GEO = new THREE.RingGeometry(0.94, 1, 48);
+const ZONE_FILL_GEO = new THREE.CircleGeometry(1, 48);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const tmpQuat = new THREE.Quaternion();
+
+/** Shared, cached materials for things whose look never animates per instance. */
+const gemMats = new Map<Rarity, THREE.MeshStandardMaterial>();
+function gemMaterial(rarity: Rarity): THREE.MeshStandardMaterial {
+  let mat = gemMats.get(rarity);
+  if (!mat) {
+    mat = new THREE.MeshStandardMaterial({
+      color: RARITY_COLORS[rarity],
+      emissive: RARITY_COLORS[rarity],
+      emissiveIntensity: 0.6,
+    });
+    gemMats.set(rarity, mat);
+  }
+  return mat;
+}
+
+const glyphMats = new Map<string, THREE.SpriteMaterial>();
+function glyphMaterial(glyph: string): THREE.SpriteMaterial {
+  let mat = glyphMats.get(glyph);
+  if (!mat) {
+    mat = new THREE.SpriteMaterial({ map: glyphTexture(glyph), transparent: true, depthWrite: false });
+    glyphMats.set(glyph, mat);
+  }
+  return mat;
+}
+
 /** Terrain height under a world position — everything dynamic stands on the hills. */
 export function groundAt(x: number, z: number): number {
   return terrainHeight(ARENA.hills, x, z);
@@ -583,70 +626,68 @@ class ChestView {
 
 interface Effect {
   obj: THREE.Object3D;
+  /** Per-effect material (opacity animates); disposed when the effect ends. */
   mat: THREE.Material & { opacity: number };
   age: number;
   ttl: number;
   growth: number;
+  /** Base scale the growth multiplies (geometries are shared unit shapes). */
+  baseX: number;
+  baseY: number;
+  baseZ: number;
   /** Upward drift in m/s (heal sparkles, smoke). */
   rise?: number;
+  /** Set when the effect owns its geometry (chain lines) and must dispose it. */
+  ownsGeometry?: boolean;
 }
 
-/** Per-ability projectile look; anything unlisted gets the default glowing orb. */
-function makeProjectileMesh(abilityId: AbilityId): THREE.Mesh {
-  const color = PROJECTILE_COLORS[abilityId] ?? 0xffffff;
+/** Per-ability projectile geometry (built once; anything unlisted is a glowing orb). */
+function buildProjectileGeometry(abilityId: AbilityId): { geo: THREE.BufferGeometry; glow: number } {
   switch (abilityId) {
     case 'rimeArrow': {
       const geo = new THREE.ConeGeometry(0.16, 0.95, 8);
       geo.rotateX(Math.PI / 2); // point along +z so rotation.y aims it
-      return new THREE.Mesh(
-        geo,
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.6 }),
-      );
+      return { geo, glow: 1.6 };
     }
     case 'holyShield': {
       // Spinning golden disc.
       const geo = new THREE.CylinderGeometry(0.55, 0.55, 0.12, 16);
       geo.rotateX(Math.PI / 2);
-      return new THREE.Mesh(
-        geo,
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3 }),
-      );
+      return { geo, glow: 1.3 };
     }
     case 'stormArchon':
-      return new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.28),
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.8 }),
-      );
+      return { geo: new THREE.OctahedronGeometry(0.28), glow: 1.8 };
     case 'manaSphere':
-      return new THREE.Mesh(
-        new THREE.SphereGeometry(0.5, 14, 12),
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3 }),
-      );
+      return { geo: new THREE.SphereGeometry(0.5, 14, 12), glow: 1.3 };
     case 'windstorm':
-      return new THREE.Mesh(
-        new THREE.TorusKnotGeometry(0.3, 0.1, 32, 6),
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }),
-      );
+      return { geo: new THREE.TorusKnotGeometry(0.3, 0.1, 32, 6), glow: 1.2 };
     case 'huntersChains':
-      return new THREE.Mesh(
-        new THREE.BoxGeometry(0.24, 0.24, 0.24),
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }),
-      );
+      return { geo: new THREE.BoxGeometry(0.24, 0.24, 0.24), glow: 1.2 };
     case 'celestialBarrage': {
       // Starlight comet: stretched octahedron streaking along its flight path.
       const geo = new THREE.OctahedronGeometry(0.34);
       geo.scale(1, 1, 2.4);
-      return new THREE.Mesh(
-        geo,
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2.0 }),
-      );
+      return { geo, glow: 2.0 };
     }
     default:
-      return new THREE.Mesh(
-        new THREE.SphereGeometry(0.32, 12, 10),
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.4 }),
-      );
+      return { geo: new THREE.SphereGeometry(0.32, 12, 10), glow: 1.4 };
   }
+}
+
+/** Projectiles share one geometry + material per ability across the whole match. */
+const projLooks = new Map<AbilityId, { geo: THREE.BufferGeometry; mat: THREE.MeshStandardMaterial }>();
+function makeProjectileMesh(abilityId: AbilityId): THREE.Mesh {
+  let look = projLooks.get(abilityId);
+  if (!look) {
+    const color = PROJECTILE_COLORS[abilityId] ?? 0xffffff;
+    const { geo, glow } = buildProjectileGeometry(abilityId);
+    look = {
+      geo,
+      mat: new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: glow }),
+    };
+    projLooks.set(abilityId, look);
+  }
+  return new THREE.Mesh(look.geo, look.mat);
 }
 
 /** Creates/updates meshes for everything dynamic in a snapshot, plus transient effects. */
@@ -658,8 +699,16 @@ export class EntityViews {
   private coins = new Map<number, THREE.Mesh>();
   private items = new Map<number, THREE.Group>();
   private projectiles = new Map<number, THREE.Mesh>();
-  private zones = new Map<number, { group: THREE.Group; fill: THREE.Mesh; kind: string }>();
+  private zones = new Map<
+    number,
+    { group: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh; radius: number; kind: string }
+  >();
   private effects: Effect[] = [];
+  /** prev-snapshot lookups, rebuilt only when a new snapshot arrives (20 Hz, not per frame). */
+  private cachedPrev: Snapshot | null = null;
+  private readonly prevPlayerMap = new Map<number, Snapshot['players'][number]>();
+  private readonly prevMobMap = new Map<number, Snapshot['mobs'][number]>();
+  private readonly prevProjMap = new Map<number, Snapshot['projectiles'][number]>();
 
   private readonly scrollGeo = new THREE.OctahedronGeometry(0.35);
   private readonly coinGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12);
@@ -681,15 +730,28 @@ export class EntityViews {
     this.selfColor = color;
   }
 
+  /** Refresh the prev-snapshot lookup maps only when `prev` actually changed. */
+  private ensurePrevMaps(prev: Snapshot): void {
+    if (prev === this.cachedPrev) return;
+    this.cachedPrev = prev;
+    this.prevPlayerMap.clear();
+    for (const p of prev.players) this.prevPlayerMap.set(p.id, p);
+    this.prevMobMap.clear();
+    for (const m of prev.mobs) this.prevMobMap.set(m.id, m);
+    this.prevProjMap.clear();
+    for (const proj of prev.projectiles) this.prevProjMap.set(proj.id, proj);
+  }
+
   sync(prev: Snapshot, next: Snapshot, t: number, selfId: number, camera: THREE.Camera, dt: number): void {
     const now = performance.now() / 1000;
     const camX = camera.position.x;
     const camZ = camera.position.z;
     const beyond = (x: number, z: number, drawDist: number): boolean =>
       (x - camX) * (x - camX) + (z - camZ) * (z - camZ) > drawDist * drawDist;
+    this.ensurePrevMaps(prev);
 
     // Players
-    const prevPlayers = new Map(prev.players.map((p) => [p.id, p]));
+    const prevPlayers = this.prevPlayerMap;
     for (const p of next.players) {
       let view = this.players.get(p.id);
       if (!view) {
@@ -727,7 +789,7 @@ export class EntityViews {
     }
 
     // Mobs
-    const prevMobs = new Map(prev.mobs.map((m) => [m.id, m]));
+    const prevMobs = this.prevMobMap;
     const liveMobs = new Set<number>();
     for (const m of next.mobs) {
       liveMobs.add(m.id);
@@ -772,22 +834,9 @@ export class EntityViews {
       let group = this.scrolls.get(s.id);
       if (!group) {
         group = new THREE.Group();
-        const gem = new THREE.Mesh(
-          this.scrollGeo,
-          new THREE.MeshStandardMaterial({
-            color: RARITY_COLORS[s.rarity],
-            emissive: RARITY_COLORS[s.rarity],
-            emissiveIntensity: 0.6,
-          }),
-        );
+        const gem = new THREE.Mesh(this.scrollGeo, gemMaterial(s.rarity));
         group.add(gem);
-        const icon = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glyphTexture(ABILITIES[s.abilityId].icon),
-            transparent: true,
-            depthWrite: false,
-          }),
-        );
+        const icon = new THREE.Sprite(glyphMaterial(ABILITIES[s.abilityId].icon));
         icon.scale.set(0.85, 0.85, 1);
         icon.position.y = 0.95;
         group.add(icon);
@@ -804,10 +853,7 @@ export class EntityViews {
     }
     for (const [id, group] of this.scrolls) {
       if (!liveScrolls.has(id)) {
-        for (const child of group.children) {
-          const mat = (child as THREE.Mesh | THREE.Sprite).material as THREE.Material;
-          mat.dispose(); // icon textures are cached and shared; only materials go
-        }
+        // Gem and glyph materials are cached and shared — nothing to dispose.
         this.scene.remove(group);
         this.scrolls.delete(id);
       }
@@ -821,13 +867,7 @@ export class EntityViews {
       if (!group) {
         group = new THREE.Group();
         group.add(this.assets.modelAtHeight('barrel', 0.75));
-        const icon = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glyphTexture(ITEMS[it.itemId].icon),
-            transparent: true,
-            depthWrite: false,
-          }),
-        );
+        const icon = new THREE.Sprite(glyphMaterial(ITEMS[it.itemId].icon));
         icon.scale.set(0.75, 0.75, 1);
         icon.position.y = 1.25;
         group.add(icon);
@@ -877,7 +917,7 @@ export class EntityViews {
     }
 
     // Projectiles
-    const prevProj = new Map(prev.projectiles.map((p) => [p.id, p]));
+    const prevProj = this.prevProjMap;
     const liveProj = new Set<number>();
     for (const proj of next.projectiles) {
       liveProj.add(proj.id);
@@ -904,7 +944,8 @@ export class EntityViews {
       }
     }
 
-    // Zones: orange telegraphs that fill in, green persistent pools.
+    // Zones: orange telegraphs that fill in, green persistent pools. Shared
+    // unit geometries, scaled per zone; only the two small materials are owned.
     const liveZones = new Set<number>();
     for (const zone of next.zones) {
       liveZones.add(zone.id);
@@ -922,12 +963,13 @@ export class EntityViews {
         }
         const group = new THREE.Group();
         const outline = new THREE.Mesh(
-          new THREE.RingGeometry(zone.radius - 0.15, zone.radius, 48),
+          ZONE_RING_GEO,
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }),
         );
         outline.rotation.x = -Math.PI / 2;
+        outline.scale.setScalar(zone.radius);
         const fill = new THREE.Mesh(
-          new THREE.CircleGeometry(zone.radius, 48),
+          ZONE_FILL_GEO,
           new THREE.MeshBasicMaterial({
             color: fillColor,
             transparent: true,
@@ -935,16 +977,17 @@ export class EntityViews {
           }),
         );
         fill.rotation.x = -Math.PI / 2;
+        fill.scale.setScalar(zone.radius);
         group.add(outline, fill);
         group.position.set(zone.x, groundAt(zone.x, zone.z) + 0.06, zone.z);
-        view = { group, fill, kind: zone.kind };
+        view = { group, fill, outline, radius: zone.radius, kind: zone.kind };
         this.zones.set(zone.id, view);
         this.scene.add(group);
       }
       if (zone.kind === 'telegraph') {
         const telegraph = ABILITIES[zone.abilityId].telegraph ?? 1;
         const progress = 1 - Math.min(1, zone.endsIn / telegraph);
-        view.fill.scale.setScalar(Math.max(0.01, progress));
+        view.fill.scale.setScalar(Math.max(0.01, progress) * view.radius);
         (view.fill.material as THREE.MeshBasicMaterial).opacity = 0.3 + 0.15 * Math.sin(now * 18);
       } else {
         (view.fill.material as THREE.MeshBasicMaterial).opacity =
@@ -954,6 +997,8 @@ export class EntityViews {
     for (const [id, view] of this.zones) {
       if (!liveZones.has(id)) {
         this.scene.remove(view.group);
+        (view.fill.material as THREE.Material).dispose();
+        (view.outline.material as THREE.Material).dispose();
         this.zones.delete(id);
       }
     }
@@ -1097,21 +1142,20 @@ export class EntityViews {
   }
 
   private spawnMeleeArc(x: number, z: number, facing: number, combo: number): void {
-    const arc = (Math.PI * 2) / 3;
     const mat = new THREE.MeshBasicMaterial({
       color: combo === 3 ? 0xffe38a : 0xe8e6d9,
       transparent: true,
       opacity: 0.75,
       side: THREE.DoubleSide,
     });
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(1.1, 2.5, 18, 1, facing - Math.PI / 2 - arc / 2, arc),
-      mat,
-    );
-    ring.rotation.x = -Math.PI / 2;
+    const ring = new THREE.Mesh(MELEE_GEO, mat);
+    // Lay the shared arc flat, then spin it to the caster's facing.
+    ring.quaternion
+      .setFromAxisAngle(X_AXIS, -Math.PI / 2)
+      .premultiply(tmpQuat.setFromAxisAngle(Y_AXIS, facing));
     ring.position.set(x, groundAt(x, z) + 1, z);
     this.scene.add(ring);
-    this.effects.push({ obj: ring, mat, age: 0, ttl: 0.16, growth: 0.15 });
+    this.effects.push({ obj: ring, mat, age: 0, ttl: 0.16, growth: 0.15, baseX: 1, baseY: 1, baseZ: 1 });
   }
 
   private spawnChainLine(x1: number, z1: number, x2: number, z2: number): void {
@@ -1122,15 +1166,15 @@ export class EntityViews {
     ]);
     const line = new THREE.Line(geo, mat);
     this.scene.add(line);
-    this.effects.push({ obj: line, mat, age: 0, ttl: 0.25, growth: 0 });
+    this.effects.push({ obj: line, mat, age: 0, ttl: 0.25, growth: 0, baseX: 1, baseY: 1, baseZ: 1, ownsGeometry: true });
   }
 
   private spawnFlash(x: number, z: number, size: number, color: number, ttl: number): void {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 10), mat);
+    const mesh = new THREE.Mesh(FLASH_GEO, mat);
     mesh.position.set(x, groundAt(x, z) + 1, z);
     this.scene.add(mesh);
-    this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 1.5 });
+    this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 1.5, baseX: size, baseY: size, baseZ: size });
   }
 
   private spawnBurst(x: number, z: number, radius: number, color: number, ttl: number, rise = 0): void {
@@ -1140,18 +1184,18 @@ export class EntityViews {
       opacity: 0.7,
       side: THREE.DoubleSide,
     });
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.6, 32, 1, true), mat);
+    const mesh = new THREE.Mesh(BURST_GEO, mat);
     mesh.position.set(x, groundAt(x, z) + 0.3, z);
     this.scene.add(mesh);
-    this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 2.2, rise });
+    this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 2.2, rise, baseX: radius, baseY: 1, baseZ: radius });
   }
 
   private spawnColumn(x: number, z: number, radius: number, height: number, color: number, ttl: number): void {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 });
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.4, height, 8), mat);
+    const mesh = new THREE.Mesh(COLUMN_GEO, mat);
     mesh.position.set(x, groundAt(x, z) + height / 2, z);
     this.scene.add(mesh);
-    this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 0.4 });
+    this.effects.push({ obj: mesh, mat, age: 0, ttl, growth: 0.4, baseX: radius, baseY: height, baseZ: radius });
   }
 
   private updateEffects(dt: number): void {
@@ -1161,15 +1205,21 @@ export class EntityViews {
       const t = fx.age / fx.ttl;
       if (t >= 1) {
         this.scene.remove(fx.obj);
+        this.disposeEffect(fx);
         continue;
       }
       const s = 1 + fx.growth * t;
-      fx.obj.scale.set(s, s, s);
+      fx.obj.scale.set(fx.baseX * s, fx.baseY * s, fx.baseZ * s);
       if (fx.rise) fx.obj.position.y += fx.rise * dt;
       fx.mat.opacity = (1 - t) * 0.85;
       survivors.push(fx);
     }
     this.effects = survivors;
+  }
+
+  private disposeEffect(fx: Effect): void {
+    fx.mat.dispose();
+    if (fx.ownsGeometry) ((fx.obj as THREE.Mesh).geometry as THREE.BufferGeometry).dispose();
   }
 
   clear(): void {
@@ -1180,8 +1230,15 @@ export class EntityViews {
     for (const mesh of this.coins.values()) this.scene.remove(mesh);
     for (const mesh of this.items.values()) this.scene.remove(mesh);
     for (const mesh of this.projectiles.values()) this.scene.remove(mesh);
-    for (const view of this.zones.values()) this.scene.remove(view.group);
-    for (const fx of this.effects) this.scene.remove(fx.obj);
+    for (const view of this.zones.values()) {
+      this.scene.remove(view.group);
+      (view.fill.material as THREE.Material).dispose();
+      (view.outline.material as THREE.Material).dispose();
+    }
+    for (const fx of this.effects) {
+      this.scene.remove(fx.obj);
+      this.disposeEffect(fx);
+    }
     this.players.clear();
     this.mobs.clear();
     this.chests.clear();

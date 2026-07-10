@@ -55,6 +55,7 @@ export class GameApp {
   private readonly raycaster = new THREE.Raycaster();
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly aimPoint = new THREE.Vector3();
+  private readonly ndc = new THREE.Vector2();
   private aimX = 0;
   private aimZ = 0;
 
@@ -236,11 +237,11 @@ export class GameApp {
   }
 
   private updateAim(selfX: number, selfZ: number): void {
-    const ndc = new THREE.Vector2(
+    this.ndc.set(
       (this.input.mouseX / window.innerWidth) * 2 - 1,
       -(this.input.mouseY / window.innerHeight) * 2 + 1,
     );
-    this.raycaster.setFromCamera(ndc, this.sceneMgr.camera);
+    this.raycaster.setFromCamera(this.ndc, this.sceneMgr.camera);
     if (this.raycaster.ray.intersectPlane(this.groundPlane, this.aimPoint)) {
       this.aimX = this.aimPoint.x;
       this.aimZ = this.aimPoint.z;

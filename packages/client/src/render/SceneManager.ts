@@ -17,6 +17,7 @@ export class SceneManager {
   private readonly clouds: { group: THREE.Group; speed: number }[] = [];
   private readonly clock = new THREE.Clock();
   private readonly sun: THREE.DirectionalLight;
+  private sky!: THREE.Mesh;
   /** Staging area for static scenery; merged into per-material meshes at the end. */
   private readonly staticStage = new THREE.Group();
 
@@ -38,6 +39,9 @@ export class SceneManager {
     );
 
     this.scene.fog = new THREE.Fog(FOG_COLOR, 280, 920);
+    // Anything past the far plane (the water plane's edge, the dome's rim)
+    // must resolve to the fog color, never the default black.
+    this.scene.background = new THREE.Color(FOG_COLOR);
     this.buildSky();
 
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
@@ -98,13 +102,21 @@ export class SceneManager {
     this.setStorm(0, 0, STORM_START_RADIUS);
     this.scene.add(this.stormWall);
 
+    // Compile every shader up front so the first frames of a match don't hitch.
+    this.renderer.compile(this.scene, this.camera);
+
     window.addEventListener('resize', () => this.resize());
   }
 
-  /** Gradient sky dome with a warm glow around the sun's side of the horizon. */
+  /**
+   * Gradient sky dome with a warm glow around the sun's side of the horizon.
+   * The dome follows the camera every frame: a world-centered dome bigger than
+   * the far plane gets clipped when you walk away from the island's middle,
+   * leaving a black hole in the sky that tracks the camera.
+   */
   private buildSky(): void {
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(1080, 24, 12),
+      new THREE.SphereGeometry(1000, 24, 12),
       new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
@@ -131,6 +143,7 @@ export class SceneManager {
           }`,
       }),
     );
+    this.sky = sky;
     this.scene.add(sky);
   }
 
@@ -442,6 +455,7 @@ export class SceneManager {
   render(): void {
     const dt = this.clock.getDelta();
     const t = this.clock.elapsedTime;
+    this.sky.position.copy(this.camera.position);
     this.stormWallMat.uniforms.uTime!.value = t;
     this.waterMat.uniforms.uTime!.value = t;
     for (const cloud of this.clouds) {
