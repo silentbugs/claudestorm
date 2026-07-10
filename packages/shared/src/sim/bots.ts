@@ -105,17 +105,34 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   const margin = Math.min(5, storm.radius * 0.3);
   const stormDanger = distFromCenter > storm.radius - margin;
 
-  if (stormDanger) {
-    // Head for a safe point on this bot's own side of the circle, not dead
-    // center, so endgame bots spread out instead of jostling on one spot.
+  // Storm retreat is a commitment: pick a point well inside the circle once
+  // and walk to it. Re-deciding every tick made bots jitter in place at the
+  // danger line, stepping in and out of the band forever.
+  if (st.retreating) {
+    const goalStillSafe =
+      dist(st.retreatX, st.retreatZ, storm.x, storm.z) < storm.radius - margin;
+    if (!goalStillSafe || dist(bot.x, bot.z, st.retreatX, st.retreatZ) < 2.5) {
+      st.retreating = false; // arrived, or the circle moved on — re-evaluate
+    }
+  }
+  if (!st.retreating && stormDanger) {
+    st.retreating = true;
+    // Deep inside, biased toward this bot's own side with lateral spread so
+    // the endgame doesn't funnel everyone onto one spot.
     const out = norm(bot.x - storm.x, bot.z - storm.z);
-    const safeR = Math.max(0, storm.radius - margin * 1.5);
-    const gx = storm.x + out.x * safeR;
-    const gz = storm.z + out.z * safeR;
-    const dir = norm(gx - bot.x, gz - bot.z);
+    const turn = rng.range(-0.9, 0.9);
+    const cos = Math.cos(turn);
+    const sin = Math.sin(turn);
+    const safeR = Math.max(0, storm.radius - Math.max(10, margin * 3)) * rng.range(0.5, 0.95);
+    st.retreatX = storm.x + (out.x * cos - out.z * sin) * safeR;
+    st.retreatZ = storm.z + (out.x * sin + out.z * cos) * safeR;
+  }
+
+  if (st.retreating) {
+    const dir = norm(st.retreatX - bot.x, st.retreatZ - bot.z);
     moveX = dir.x;
     moveZ = dir.z;
-    yaw = yawToward(bot.x, bot.z, gx, gz);
+    yaw = yawToward(bot.x, bot.z, st.retreatX, st.retreatZ);
     aimX = bot.x + dir.x * 8;
     aimZ = bot.z + dir.z * 8;
     if (distFromCenter > storm.radius && bot.rollCdTicks === 0) buttons.roll = true;
@@ -130,7 +147,7 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       }
       buttons.useItem = true;
     }
-  } else if (target && targetDist < diff.engage) {
+  } else if (target && targetDist < diff.engage && bot.healCastTicks === 0) {
     // Engage: face the target with imperfect aim that worsens with range and
     // improves with difficulty. Spells fire along facing, so the miss lives
     // in the yaw, not the aim point.

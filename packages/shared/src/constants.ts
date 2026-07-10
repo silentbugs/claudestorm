@@ -21,8 +21,12 @@ export const MELEE_INTERVAL = 0.55;
 export const MELEE_COMBO_WINDOW = 1.4;
 export const MELEE_COMBO_FINISHER_MULT = 1.8;
 
-/** Builtin heal: everyone has it, like the sword. */
-export const HEAL_AMOUNT = 40;
+/**
+ * Builtin heal: everyone has it. A channeled cast that pulses healing every
+ * second; taking any damage interrupts it and the cooldown is NOT refunded.
+ */
+export const HEAL_CAST_SECONDS = 3;
+export const HEAL_TICK_AMOUNT = 20; // one pulse per second of the cast
 export const HEAL_COOLDOWN = 20;
 
 /** Barrel roll: quick dodge with projectile immunity. */

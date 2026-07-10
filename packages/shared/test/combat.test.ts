@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  HEAL_AMOUNT,
+  HEAL_CAST_SECONDS,
+  HEAL_TICK_AMOUNT,
   MELEE_COMBO_FINISHER_MULT,
   MELEE_DAMAGE,
   PLAYER_BASE_HP,
@@ -41,15 +42,35 @@ describe('melee', () => {
 });
 
 describe('builtin heal', () => {
-  it('restores health up to max and starts its cooldown', () => {
+  it('channels: one pulse per second, full amount over the cast, cooldown starts', () => {
     const sim = makeSim([player(1, 0, 0), player(2, 40, 40)]);
     const p = sim.players.get(1)!;
-    p.hp = 30;
+    p.hp = 20;
     sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
-    const snap = sim.step();
-    expect(p.hp).toBe(30 + HEAL_AMOUNT);
-    expect(snap.players.find((s) => s.id === 1)!.healCd).toBeGreaterThan(0);
-    expect(snap.events.some((e) => e.type === 'heal' && e.playerId === 1)).toBe(true);
+    let snap = sim.step();
+    expect(snap.players.find((s) => s.id === 1)!.healCd).toBeGreaterThan(0); // committed up front
+    for (let i = 0; i < TICK_RATE; i++) snap = sim.step();
+    expect(p.hp).toBe(20 + HEAL_TICK_AMOUNT); // first pulse at 1s
+    for (let i = 0; i < TICK_RATE * (HEAL_CAST_SECONDS - 1) + 2; i++) snap = sim.step();
+    expect(p.hp).toBe(20 + HEAL_TICK_AMOUNT * HEAL_CAST_SECONDS); // full channel
+    expect(p.healCastTicks).toBe(0);
+  });
+
+  it('is interrupted by damage and the cooldown is not refunded', () => {
+    const sim = makeSim([player(1, 0, 0), player(2, 40, 40)]);
+    const p = sim.players.get(1)!;
+    p.hp = 20;
+    sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
+    for (let i = 0; i < TICK_RATE + 2; i++) sim.step(); // first pulse lands
+    expect(p.hp).toBe(20 + HEAL_TICK_AMOUNT);
+    sim.players.get(2)!.x = 0; // walk the attacker over and hit
+    sim.players.get(2)!.z = 0;
+    sim.applyInput(2, cmd({ buttons: buttons({ melee: true }) }));
+    sim.step();
+    expect(p.healCastTicks).toBe(0); // channel broken
+    for (let i = 0; i < TICK_RATE * 3; i++) sim.step();
+    expect(p.hp).toBeLessThan(20 + HEAL_TICK_AMOUNT * 2); // no further pulses
+    expect(p.healCdTicks).toBeGreaterThan(0); // and the heal stays spent
   });
 
   it('is gated by cooldown and does nothing at full health', () => {
@@ -60,11 +81,12 @@ describe('builtin heal', () => {
     expect(p.healCdTicks).toBe(0); // full hp: not consumed
     p.hp = 20;
     sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
-    sim.step();
-    expect(p.hp).toBe(20 + HEAL_AMOUNT);
+    for (let i = 0; i < TICK_RATE * (HEAL_CAST_SECONDS + 1); i++) sim.step();
+    const healed = p.hp;
+    expect(healed).toBe(20 + HEAL_TICK_AMOUNT * HEAL_CAST_SECONDS);
     sim.applyInput(1, cmd({ buttons: PRESS_HEAL }));
     sim.step();
-    expect(p.hp).toBe(20 + HEAL_AMOUNT); // still on cooldown
+    expect(p.healCastTicks).toBe(0); // still on cooldown: no new channel
   });
 });
 

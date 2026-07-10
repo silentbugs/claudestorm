@@ -17,8 +17,9 @@ import {
   ELITE_SPEED,
   GLIDE_MOVE_SPEED,
   GRAVITY,
-  HEAL_AMOUNT,
+  HEAL_CAST_SECONDS,
   HEAL_COOLDOWN,
+  HEAL_TICK_AMOUNT,
   INTERACT_RADIUS,
   JUMP_VELOCITY,
   LAKE_WADE_FACTOR,
@@ -231,6 +232,7 @@ export class GameSim {
         meleeCdTicks: 0,
         rollCdTicks: 0,
         healCdTicks: 0,
+        healCastTicks: 0,
         comboCount: 0,
         comboExpireTick: 0,
         gliding: dropping,
@@ -292,6 +294,9 @@ export class GameSim {
               waypointZ: z,
               strafeSign: 1,
               nextDecisionTick: 0,
+              retreating: false,
+              retreatX: 0,
+              retreatZ: 0,
             }
           : null,
       });
@@ -479,6 +484,21 @@ export class GameSim {
       p.hotTicks--;
       p.hp = Math.min(p.maxHp, p.hp + p.hotPerTick);
     }
+    // Channeled heal: pulses once per second of the cast. Any damage taken
+    // interrupts it (damagePlayer zeroes healCastTicks); so does attacking.
+    if (p.healCastTicks > 0) {
+      if (p.stunTicks > 0) {
+        p.healCastTicks = 0;
+      } else {
+        p.healCastTicks--;
+        const elapsed = HEAL_CAST_SECONDS * TICK_RATE - p.healCastTicks;
+        if (elapsed % TICK_RATE === 0) {
+          const amount = Math.min(HEAL_TICK_AMOUNT, p.maxHp - p.hp);
+          p.hp += amount;
+          this.events.push({ type: 'heal', playerId: p.id, amount, x: p.x, z: p.z });
+        }
+      }
+    }
     if (p.shieldTicks > 0) {
       p.shieldTicks--;
       if (p.shieldTicks === 0) p.shieldHp = 0;
@@ -521,11 +541,17 @@ export class GameSim {
       p.channel = null;
     }
     if (p.pendingButtons.has('interact') && !p.gliding && !charging) this.handleInteract(p);
-    if (canAct && p.pendingButtons.has('heal') && p.healCdTicks === 0 && p.hp < p.maxHp) {
-      const amount = Math.min(HEAL_AMOUNT, p.maxHp - p.hp);
-      p.hp += amount;
+    if (
+      canAct &&
+      p.pendingButtons.has('heal') &&
+      p.healCdTicks === 0 &&
+      p.healCastTicks === 0 &&
+      p.hp < p.maxHp
+    ) {
+      // The cooldown commits immediately: an interrupted heal is a spent heal.
+      p.healCastTicks = HEAL_CAST_SECONDS * TICK_RATE;
       p.healCdTicks = Math.round(HEAL_COOLDOWN * TICK_RATE);
-      this.events.push({ type: 'heal', playerId: p.id, amount, x: p.x, z: p.z });
+      p.channel = null;
     }
     if (canAct && p.pendingButtons.has('useItem') && p.item) this.useItem(p);
     // Rearranging the bar is always safe except mid-charge (chargeSlot is an index).
@@ -656,6 +682,7 @@ export class GameSim {
 
   private meleeSwing(p: PlayerEntity): void {
     p.stealthTicks = 0; // attacking breaks stealth
+    p.healCastTicks = 0; // and abandons the heal channel
     p.meleeCdTicks = Math.round(MELEE_INTERVAL * TICK_RATE);
     p.comboCount = p.comboCount >= 3 ? 1 : p.comboCount + 1;
     p.comboExpireTick = this.tick + Math.round(MELEE_COMBO_WINDOW * TICK_RATE);
@@ -728,6 +755,7 @@ export class GameSim {
     if (!equipped || p.slotCds[slotIndex]! > 0) return;
     const def = ABILITIES[equipped.abilityId];
     const scale = RARITY_MULT[equipped.rarity] * levelDamageMult(p.level);
+    p.healCastTicks = 0; // casting abandons the heal channel
     if (def.chargeSeconds) {
       // Charge-and-release: cooldown and effect land when the cast is released.
       p.chargeSlot = slotIndex;
@@ -1602,6 +1630,7 @@ export class GameSim {
     if (target.immuneTicks > 0) return; // Repel: the barrier turns everything away
     if (target.faeTicks > 0) amount *= 0.4; // Faeform damage reduction
     target.stealthTicks = 0; // taking damage reveals you
+    target.healCastTicks = 0; // and interrupts the heal channel (no refund)
     let remaining = amount;
     if (target.shieldHp > 0) {
       const absorbed = Math.min(target.shieldHp, remaining);
@@ -1753,7 +1782,11 @@ export class GameSim {
         immune: p.immuneTicks > 0,
         fae: p.faeTicks > 0,
         auraActive: p.auraTicks > 0,
-        channeling: p.channel ? 1 - p.channel.ticksLeft / p.channel.totalTicks : -1,
+        channeling: p.channel
+          ? 1 - p.channel.ticksLeft / p.channel.totalTicks
+          : p.healCastTicks > 0
+            ? 1 - p.healCastTicks / (HEAL_CAST_SECONDS * TICK_RATE)
+            : -1,
         charging:
           p.chargeSlot !== null && p.chargeMaxTicks > 0
             ? Math.min(1, p.chargeTicks / p.chargeMaxTicks)

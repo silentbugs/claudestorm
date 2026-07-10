@@ -7,6 +7,10 @@ export interface BotState {
   waypointZ: number;
   strafeSign: 1 | -1;
   nextDecisionTick: number;
+  /** Committed storm-retreat point; sticking to it prevents edge jitter. */
+  retreating: boolean;
+  retreatX: number;
+  retreatZ: number;
 }
 
 export interface ChestChannel {
@@ -44,6 +48,8 @@ export interface PlayerEntity {
   meleeCdTicks: number;
   rollCdTicks: number;
   healCdTicks: number;
+  /** Remaining ticks of the channeled heal (0 = not casting). */
+  healCastTicks: number;
   comboCount: number;
   comboExpireTick: number;
 

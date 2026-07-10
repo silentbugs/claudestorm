@@ -1,7 +1,8 @@
 import {
   ABILITIES,
-  HEAL_AMOUNT,
+  HEAL_CAST_SECONDS,
   HEAL_COOLDOWN,
+  HEAL_TICK_AMOUNT,
   ITEMS,
   MELEE_COMBO_FINISHER_MULT,
   MELEE_DAMAGE,
@@ -128,8 +129,9 @@ export class Hud {
       row('👋', 'Slap', 'R', 'Builtin',
         `${MELEE_DAMAGE} damage · ${MELEE_INTERVAL}s swing · 3rd hit ×${MELEE_COMBO_FINISHER_MULT}`,
         'Wind up a giant glowing hand and slap everything in a front arc. The third hit is a two-handed finisher.'),
-      row('💚', 'Heal', 'H', 'Builtin', `${HEAL_AMOUNT} healing · ${HEAL_COOLDOWN}s cooldown`,
-        'Instantly restore health. Everyone carries this — use it before it is too late.'),
+      row('💚', 'Heal', 'H', 'Builtin',
+        `${HEAL_TICK_AMOUNT * HEAL_CAST_SECONDS} healing over ${HEAL_CAST_SECONDS}s · ${HEAL_COOLDOWN}s cooldown`,
+        'Channel a mend that pulses every second. Taking damage or attacking interrupts it — and the cooldown is spent either way.'),
       row('🤸', 'Barrel Roll', 'Shift', 'Builtin', `${ROLL_DISTANCE}m · ${ROLL_COOLDOWN}s cooldown`,
         'Quick dodge roll. You are immune to projectiles while rolling.'),
     ].join('');
