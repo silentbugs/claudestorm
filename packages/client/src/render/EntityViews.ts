@@ -38,34 +38,6 @@ export const RARITY_COLORS: Record<Rarity, number> = {
   epic: 0xb05df0,
 };
 
-/**
- * Woven tunic texture, drawn in near-white so the material color tints it:
- * fabric streaks, a dark belt band, and collar stitching.
- */
-let clothTex: THREE.Texture | null = null;
-function clothTexture(): THREE.Texture {
-  if (clothTex) return clothTex;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#f4f0ea';
-  ctx.fillRect(0, 0, 128, 128);
-  // Fabric weave: faint vertical streaks.
-  for (let x = 0; x < 128; x += 2) {
-    ctx.fillStyle = `rgba(40, 30, 20, ${0.03 + (x % 6) * 0.008})`;
-    ctx.fillRect(x, 0, 1, 128);
-  }
-  // Collar stitching and belt band (drawn dark so tinting keeps them dark).
-  ctx.fillStyle = 'rgba(35, 26, 16, 0.55)';
-  ctx.fillRect(0, 14, 128, 3);
-  ctx.fillStyle = '#3a2c1c';
-  ctx.fillRect(0, 86, 128, 14);
-  ctx.fillStyle = '#c9a244';
-  ctx.fillRect(58, 87, 12, 12); // buckle
-  clothTex = new THREE.CanvasTexture(canvas);
-  return clothTex;
-}
-
 /** Glyphs rendered to textures, so drops show what they are at a glance. */
 const glyphTextures = new Map<string, THREE.Texture>();
 function glyphTexture(glyph: string): THREE.Texture {
@@ -170,138 +142,111 @@ function setBar(fill: THREE.Mesh, frac: number, width: number): void {
   fill.position.x = -(1 - f) * (width / 2);
 }
 
+/*
+ * Player characters are "storm constructs": hovering crystalline creatures —
+ * an elongated gem body, a floating head with a glowing visor, and two
+ * orbiting hand-shards, the right one carrying a crystal blade. Deliberately
+ * not humanoid: minimal, unique, and it tints cleanly per hero color. All
+ * geometries are shared; each view owns only its three tintable materials.
+ */
+const CONSTRUCT_BODY_GEO = new THREE.OctahedronGeometry(0.42);
+CONSTRUCT_BODY_GEO.scale(1, 1.5, 1);
+const CONSTRUCT_HEAD_GEO = new THREE.OctahedronGeometry(0.19);
+CONSTRUCT_HEAD_GEO.scale(1, 1.3, 1);
+const CONSTRUCT_SHARD_GEO = new THREE.OctahedronGeometry(0.12);
+CONSTRUCT_SHARD_GEO.scale(1, 1.7, 1);
+const CONSTRUCT_BLADE_GEO = new THREE.OctahedronGeometry(0.17);
+CONSTRUCT_BLADE_GEO.scale(0.32, 0.9, 3.4);
+const CONSTRUCT_VISOR_GEO = new THREE.BoxGeometry(0.24, 0.05, 0.05);
+const CONSTRUCT_RING_GEO = new THREE.TorusGeometry(0.4, 0.045, 8, 24);
+CONSTRUCT_RING_GEO.rotateX(Math.PI / 2);
+
+/** Scratch colors for per-frame tinting — never allocate in update(). */
+const TINT = new THREE.Color();
+const TINT_MIX = new THREE.Color();
+
 class PlayerView {
   readonly group = new THREE.Group();
   private readonly bodyPivot = new THREE.Group();
   private readonly bodyMat: THREE.MeshStandardMaterial;
-  private readonly limbMat: THREE.MeshStandardMaterial;
-  private readonly headMat: THREE.MeshStandardMaterial;
-  private readonly rightArm = new THREE.Group();
-  private readonly leftArm: THREE.Mesh;
-  private readonly legL: THREE.Mesh;
-  private readonly legR: THREE.Mesh;
+  private readonly shardMat: THREE.MeshStandardMaterial;
+  private readonly glowMat: THREE.MeshBasicMaterial;
+  private readonly head = new THREE.Group();
+  private readonly shardL = new THREE.Group();
+  private readonly shardR = new THREE.Group();
+  private readonly ring: THREE.Mesh;
   private readonly glider: THREE.Mesh;
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
-  private readonly cape: THREE.Mesh;
   private readonly hpGroup: THREE.Group;
   private readonly hpFill: THREE.Mesh;
   private deadFor = 0;
   private rollSpin = 0;
   private swingTimer = 0;
   private castTimer = 0;
-  private walkPhase = 0;
-  private idleTime = 0;
+  private bobPhase = 0;
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
   private readonly base: number;
+  private readonly glowBase = new THREE.Color();
 
   constructor(isSelf: boolean, isBot: boolean, selfColor: number = SELF_COLOR) {
     this.base = isSelf || !isBot ? selfColor : BOT_COLOR;
     this.bodyMat = new THREE.MeshStandardMaterial({
       color: this.base,
-      roughness: 0.75,
-      map: clothTexture(),
+      roughness: 0.45,
+      metalness: 0.15,
+      flatShading: true,
     });
-    // Limbs: same hue, a shade darker (the cloth belt band stays torso-only).
-    this.limbMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(this.base).multiplyScalar(0.8),
-      roughness: 0.75,
+    this.shardMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(this.base).multiplyScalar(0.7),
+      roughness: 0.5,
+      flatShading: true,
     });
-    this.headMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, roughness: 0.7 });
-
-    // A slim, clean adventurer: hooded head, tapered tunic, light limbs, a
-    // slender sword, and a cape. Pivot at hip height so roll spins and the
-    // death fall-over read naturally.
-    this.bodyPivot.position.y = 0.95;
-
-    const bootMat = new THREE.MeshStandardMaterial({ color: 0x3a2c1c, roughness: 0.9 });
-    const legGeo = new THREE.CapsuleGeometry(0.095, 0.34, 3, 8);
-    // Legs pivot at the hip so walk swings look right.
-    legGeo.translate(0, -0.2, 0);
-    this.legL = new THREE.Mesh(legGeo, this.limbMat);
-    this.legL.position.set(-0.14, -0.42, 0);
-    this.legL.castShadow = true;
-    this.legR = new THREE.Mesh(legGeo, this.limbMat);
-    this.legR.position.set(0.14, -0.42, 0);
-    this.legR.castShadow = true;
-    // Boots hang off the leg meshes so they swing with the walk.
-    for (const leg of [this.legL, this.legR]) {
-      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.11, 0.24), bootMat);
-      boot.position.set(0, -0.43, 0.04);
-      leg.add(boot);
-    }
-    this.bodyPivot.add(this.legL, this.legR);
-
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.55, 4, 12), this.bodyMat);
-    torso.position.y = -0.05;
-    torso.castShadow = true;
-    this.bodyPivot.add(torso);
-
-    // A deep-shaded hood and cape are the only dressing — quiet silhouette.
-    const trimMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(this.base).multiplyScalar(0.45),
-      roughness: 0.8,
+    // Visor and hover ring share one unlit glow tint.
+    this.glowBase.setHex(this.base).lerp(TINT_MIX.setHex(0xffffff), 0.55);
+    this.glowMat = new THREE.MeshBasicMaterial({
+      color: this.glowBase,
+      transparent: true,
+      opacity: 0.85,
     });
-    this.cape = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.8, 0.04), trimMat);
-    this.cape.geometry.translate(0, -0.4, 0); // hang from the shoulders
-    this.cape.position.set(0, 0.34, -0.26);
-    this.cape.rotation.x = 0.12;
-    this.bodyPivot.add(this.cape);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 14, 12), this.headMat);
-    head.position.y = 0.6;
-    head.castShadow = true;
-    this.bodyPivot.add(head);
-    const eyeGeo = new THREE.SphereGeometry(0.032, 8, 6);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1c1a22, roughness: 0.35 });
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(eyeGeo, eyeMat);
-      eye.position.set(side * 0.08, 0.64, 0.195);
-      this.bodyPivot.add(eye);
-    }
-    const hood = new THREE.Mesh(
-      new THREE.SphereGeometry(0.245, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.52),
-      trimMat,
-    );
-    hood.position.y = 0.615;
-    hood.rotation.x = -0.12; // pulled slightly over the brow
-    this.bodyPivot.add(hood);
+    // Pivot at mid-body so roll spins and the death topple read naturally.
+    this.bodyPivot.position.y = 1.0;
 
-    const armGeo = new THREE.CapsuleGeometry(0.075, 0.32, 3, 8);
-    this.leftArm = new THREE.Mesh(armGeo, this.limbMat);
-    this.leftArm.position.set(-0.36, 0.08, 0);
-    this.leftArm.castShadow = true;
-    this.bodyPivot.add(this.leftArm);
+    const body = new THREE.Mesh(CONSTRUCT_BODY_GEO, this.bodyMat);
+    body.position.y = -0.05;
+    body.castShadow = true;
+    this.bodyPivot.add(body);
 
-    // Right arm is a pivot group so the sword swings with it.
-    this.rightArm.position.set(0.36, 0.22, 0);
-    const rArmMesh = new THREE.Mesh(armGeo, this.limbMat);
-    rArmMesh.position.y = -0.14;
-    rArmMesh.castShadow = true;
-    this.rightArm.add(rArmMesh);
+    // Floating head with the glowing visor marking the facing.
+    const skull = new THREE.Mesh(CONSTRUCT_HEAD_GEO, this.bodyMat);
+    skull.castShadow = true;
+    const visor = new THREE.Mesh(CONSTRUCT_VISOR_GEO, this.glowMat);
+    visor.position.set(0, 0.02, 0.15);
+    this.head.add(skull, visor);
+    this.head.position.y = 0.75;
+    this.bodyPivot.add(this.head);
 
-    // A slender, elegant blade.
-    const steel = new THREE.MeshStandardMaterial({ color: 0xcfd2dd, metalness: 0.7, roughness: 0.35 });
-    const goldHilt = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35 });
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.85), steel);
-    blade.position.set(0, -0.36, 0.55);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.062, 0.16, 4), steel);
-    tip.rotation.x = Math.PI / 2;
-    tip.rotation.y = Math.PI / 4;
-    tip.scale.set(0.75, 1, 1.9);
-    tip.position.set(0, -0.36, 1.05);
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.06), goldHilt);
-    guard.position.set(0, -0.36, 0.1);
-    const grip = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 0.16, 8),
-      new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.85 }),
-    );
-    grip.rotation.x = Math.PI / 2;
-    grip.position.set(0, -0.36, -0.02);
-    this.rightArm.add(blade, tip, guard, grip);
-    this.rightArm.rotation.x = 0.35; // resting: sword low, forward
-    this.bodyPivot.add(this.rightArm);
+    // Hand-shards orbiting at the sides; the right one carries the blade.
+    const shardMeshL = new THREE.Mesh(CONSTRUCT_SHARD_GEO, this.shardMat);
+    shardMeshL.castShadow = true;
+    this.shardL.add(shardMeshL);
+    this.shardL.position.set(-0.45, 0.1, 0);
+    const shardMeshR = new THREE.Mesh(CONSTRUCT_SHARD_GEO, this.shardMat);
+    shardMeshR.castShadow = true;
+    const blade = new THREE.Mesh(CONSTRUCT_BLADE_GEO, this.shardMat);
+    blade.position.set(0, -0.04, 0.72);
+    blade.castShadow = true;
+    this.shardR.add(shardMeshR, blade);
+    this.shardR.position.set(0.45, 0.1, 0);
+    this.shardR.rotation.x = 0.25; // resting: blade low, forward
+    this.bodyPivot.add(this.shardL, this.shardR);
+
+    // A soft ring hovering under the construct sells the levitation.
+    this.ring = new THREE.Mesh(CONSTRUCT_RING_GEO, this.glowMat);
+    this.ring.position.y = 0.14;
+    this.group.add(this.ring);
 
     this.group.add(this.bodyPivot);
 
@@ -368,12 +313,14 @@ class PlayerView {
   ): void {
     this.group.position.set(p.x, p.y, p.z);
     if (!p.alive) {
+      // The construct dies: topples, dims, and gutters out.
       this.deadFor += dt;
       this.bodyPivot.rotation.x = Math.PI / 2;
-      this.bodyPivot.position.y = 0.5;
+      this.bodyPivot.position.y = 0.45;
       this.bodyMat.color.setHex(DEAD_COLOR);
-      this.limbMat.color.setHex(DEAD_COLOR);
-      this.headMat.color.setHex(0x8a8070);
+      this.shardMat.color.setHex(DEAD_COLOR);
+      this.glowMat.color.setHex(0x555560);
+      this.ring.visible = false;
       this.hpGroup.visible = false;
       this.shield.visible = false;
       this.aura.visible = false;
@@ -383,17 +330,6 @@ class PlayerView {
     }
 
     this.group.rotation.y = p.facing;
-    if (p.rolling) {
-      this.rollSpin += dt * 18;
-      this.bodyPivot.rotation.x = this.rollSpin;
-    } else if (p.gliding) {
-      this.rollSpin = 0;
-      this.bodyPivot.rotation.x = -0.9;
-    } else {
-      this.rollSpin = 0;
-      this.bodyPivot.rotation.x = 0;
-    }
-    this.bodyPivot.position.y = 0.95;
     this.glider.visible = p.gliding;
     this.shield.visible = p.shielded || p.immune;
     (this.shield.material as THREE.MeshBasicMaterial).color.setHex(
@@ -405,67 +341,63 @@ class PlayerView {
       this.aura.rotation.z += dt * 6;
     }
 
-    // Walk cycle driven by observed horizontal speed.
+    // Hover cycle driven by observed horizontal speed: faster bob on the move.
     const moved = Number.isNaN(this.lastX) ? 0 : Math.hypot(p.x - this.lastX, p.z - this.lastZ);
     this.lastX = p.x;
     this.lastZ = p.z;
     const speed = dt > 0 ? moved / dt : 0;
     const airborne = p.y > 0.08 && !p.gliding;
-    if (airborne) {
-      // Jump pose: legs tucked, slight lean.
-      this.legL.rotation.x = 0.55;
-      this.legR.rotation.x = -0.35;
-    } else if (speed > 0.6) {
-      this.walkPhase += dt * Math.min(14, speed * 1.5);
-      const swing = Math.sin(this.walkPhase) * 0.65;
-      this.legL.rotation.x = swing;
-      this.legR.rotation.x = -swing;
-      // Running: lean into the sprint and bob with the stride.
-      this.bodyPivot.position.y = 0.95 + Math.abs(Math.sin(this.walkPhase)) * 0.05;
-      if (!p.rolling && !p.gliding) this.bodyPivot.rotation.x = Math.min(0.16, speed * 0.014);
+    this.bobPhase += dt * (3 + Math.min(10, speed * 1.2));
+    this.bodyPivot.position.y = 1.0 + Math.sin(this.bobPhase) * (speed > 0.6 ? 0.07 : 0.035);
+    if (p.rolling) {
+      this.rollSpin += dt * 18;
+      this.bodyPivot.rotation.x = this.rollSpin;
+    } else if (p.gliding) {
+      this.rollSpin = 0;
+      this.bodyPivot.rotation.x = -0.9;
     } else {
-      this.walkPhase = 0;
-      this.legL.rotation.x *= 0.7;
-      this.legR.rotation.x *= 0.7;
-      // Idle breathing: a barely-there bob so standing still doesn't look frozen.
-      this.idleTime += dt;
-      this.bodyPivot.position.y = 0.95 + Math.sin(this.idleTime * 2.4) * 0.02;
+      this.rollSpin = 0;
+      // Lean into the glide of travel; pull up a touch mid-jump.
+      this.bodyPivot.rotation.x = airborne ? -0.15 : Math.min(0.22, speed * 0.02);
     }
+    this.ring.visible = !airborne;
+    const ringPulse = 1 + Math.sin(this.bobPhase) * 0.06;
+    this.ring.scale.set(ringPulse, 1, ringPulse);
 
-    // The cape trails out with speed and settles when standing.
-    const capeLift = Math.min(0.85, speed * 0.07);
-    this.cape.rotation.x = 0.12 + capeLift + (speed > 0.6 ? Math.sin(this.walkPhase * 0.5) * 0.05 : 0);
+    // The head and hand-shards float on their own slightly offset rhythms.
+    this.head.position.y = 0.75 + Math.sin(this.bobPhase * 1.1 + 0.8) * 0.03;
+    this.shardL.position.y = 0.1 + Math.sin(this.bobPhase + 1.7) * 0.05;
+    if (this.swingTimer <= 0) this.shardR.position.y = 0.1 + Math.sin(this.bobPhase) * 0.05;
 
-    // Sword swing: raise fast, follow through back to rest.
+    // Blade swing: the right shard whips forward, then floats back to rest.
     if (this.swingTimer > 0) {
       this.swingTimer = Math.max(0, this.swingTimer - dt);
       const t = 1 - this.swingTimer / SWING_DURATION;
-      this.rightArm.rotation.x = t < 0.4 ? lerp(0.35, -1.7, t / 0.4) : lerp(-1.7, 0.35, (t - 0.4) / 0.6);
-    } else if (!airborne && speed > 0.6) {
-      this.rightArm.rotation.x = 0.35 + Math.sin(this.walkPhase) * 0.3; // counter-swing
+      this.shardR.rotation.x = t < 0.4 ? lerp(0.25, -1.9, t / 0.4) : lerp(-1.9, 0.25, (t - 0.4) / 0.6);
     } else {
-      this.rightArm.rotation.x = 0.35;
+      this.shardR.rotation.x = 0.25;
     }
-    // Off-hand raise while casting, counter-swinging on the move otherwise.
+    // The off-shard rises while casting.
     if (this.castTimer > 0) {
       this.castTimer = Math.max(0, this.castTimer - dt);
-      this.leftArm.rotation.x = -1.9;
-    } else if (!airborne && speed > 0.6) {
-      this.leftArm.rotation.x = -Math.sin(this.walkPhase) * 0.3;
+      this.shardL.rotation.x = -1.6;
+      this.shardL.position.y += 0.18;
     } else {
-      this.leftArm.rotation.x = 0;
+      this.shardL.rotation.x = 0;
     }
 
-    const color = new THREE.Color(this.base);
-    if (p.slowed) color.lerp(new THREE.Color(SLOW_COLOR), 0.55);
-    if (p.poisoned) color.lerp(new THREE.Color(0x5fce6a), 0.4);
-    if (p.fae) color.lerp(new THREE.Color(0xe98fd8), 0.7);
-    this.bodyMat.color.copy(color);
-    this.limbMat.color.copy(color).multiplyScalar(0.8);
+    TINT.setHex(this.base);
+    if (p.slowed) TINT.lerp(TINT_MIX.setHex(SLOW_COLOR), 0.55);
+    if (p.poisoned) TINT.lerp(TINT_MIX.setHex(0x5fce6a), 0.4);
+    if (p.fae) TINT.lerp(TINT_MIX.setHex(0xe98fd8), 0.7);
+    this.bodyMat.color.copy(TINT);
+    this.shardMat.color.copy(TINT).multiplyScalar(0.7);
+    this.glowMat.color.copy(this.glowBase);
     // Stealth: nearly invisible to enemies, ghostly to yourself.
     const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
-    this.bodyMat.transparent = this.limbMat.transparent = this.headMat.transparent = opacity < 1;
-    this.bodyMat.opacity = this.limbMat.opacity = this.headMat.opacity = opacity;
+    this.bodyMat.transparent = this.shardMat.transparent = opacity < 1;
+    this.bodyMat.opacity = this.shardMat.opacity = opacity;
+    this.glowMat.opacity = 0.85 * opacity;
     this.hpGroup.visible = !p.stealthed;
     setBar(this.hpFill, p.hpFrac, 1.3);
     // Billboard: cancel the parent's facing rotation so the bar always faces the camera.
