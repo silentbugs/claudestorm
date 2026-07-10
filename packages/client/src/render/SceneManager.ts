@@ -143,9 +143,9 @@ export class SceneManager {
     groundGeo.rotateX(-Math.PI / 2);
     const pos = groundGeo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
-    const low = new THREE.Color(0x86b06e);
-    const high = new THREE.Color(0xc0bd7e);
-    const sand = new THREE.Color(0xd8c491);
+    const low = new THREE.Color(0x76b356);
+    const high = new THREE.Color(0xc3bd66);
+    const sand = new THREE.Color(0xe0c684);
     const tmp = new THREE.Color();
     const half = ARENA.size / 2;
     for (let i = 0; i < pos.count; i++) {
@@ -303,7 +303,11 @@ export class SceneManager {
           const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > ARENA.size / 2 - 44;
           const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
           // Canopy overshoots the collision cylinder; trunks match its radius.
-          this.place(this.assets.modelAtHeight(name, ob.height * 1.45), ob.x, ob.z, rot);
+          // Widened for the chunky, painterly WoW silhouette.
+          const tree = this.assets.modelAtHeight(name, ob.height * 1.45);
+          tree.scale.x *= 1.2;
+          tree.scale.z *= 1.2;
+          this.place(tree, ob.x, ob.z, rot);
         } else {
           this.place(this.assets.modelAtHeight(rockPick[i % 3]!, ob.height * 1.1), ob.x, ob.z, rot);
         }

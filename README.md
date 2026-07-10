@@ -29,7 +29,7 @@ Pick your opponent count on the start screen (3–23 bots), then hit Start Game.
 
 ## The match
 
-1. **Drop in** — steer your glide onto a 420×420 island of rolling hills with eighteen POIs (ruins, camps, groves, quarries) scattered across the whole map — no privileged center — plus creatures roaming the open fields between them.
+1. **Drop in** — steer your glide onto a 560×560 island of rolling hills with twenty-six POIs (ruins, camps, groves, quarries) scattered across the whole map — no privileged center — plus creatures roaming the open fields between them.
 2. **Loot** — chests (channel to open), creatures, and loose scrolls give spells in four ranks (common → epic). **Picking up a duplicate of an equipped spell stacks its rank**, Plunderstorm-style. Most POIs are guarded by a crowned **elite** that always drops a rare-or-epic spell. Consumable items (Chicken Coup, Smoke Bomb, Mechano-Hog, Gravity Launcher, To the Skies!) fill a single item slot. Coins fly to you from a distance, and **killed players drop their scrolls, a share of their plunder, and their item**.
 3. **Level** — coins, kills, and chests grant XP; each level adds max HP and damage.
 4. **Survive** — the storm closes in circles that always settle off-center, so the safe zone wanders across the island. Long holds between shrinks leave real time to loot and fight; the next-to-last circle is a roomy dueling arena, and the endgame is a slow creep down to almost nothing while Violent Lightnings rake whatever space is left. Last one standing wins.

@@ -182,37 +182,54 @@ class PlayerView {
     this.legR.castShadow = true;
     // Boots hang off the leg meshes so they swing with the walk.
     for (const leg of [this.legL, this.legR]) {
-      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.14, 0.26), bootMat);
-      boot.position.set(0, -0.42, 0.04);
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.17, 0.3), bootMat);
+      boot.position.set(0, -0.42, 0.05);
       leg.add(boot);
     }
     this.bodyPivot.add(this.legL, this.legR);
 
+    // Chunky WoW proportions: a broad chest tapering to the belt.
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.5, 4, 12), this.bodyMat);
     torso.position.y = -0.05;
+    torso.scale.set(1.18, 1, 0.95);
     torso.castShadow = true;
     this.bodyPivot.add(torso);
 
-    // Dressing: shoulder pads, belt, and a little cape.
+    // Dressing: massive spiked pauldrons, belt, and a long cape.
     const trimMat = new THREE.MeshStandardMaterial({
       color: isSelf ? 0x2a5a8c : isBot ? 0x7a2e2e : 0x2a5a8c,
       roughness: 0.7,
     });
-    const padGeo = new THREE.SphereGeometry(0.16, 10, 8);
+    const goldTrim = new THREE.MeshStandardMaterial({
+      color: 0xd4af37,
+      metalness: 0.6,
+      roughness: 0.35,
+    });
+    const padGeo = new THREE.SphereGeometry(0.24, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62);
+    const spikeGeo = new THREE.ConeGeometry(0.06, 0.22, 8);
     for (const side of [-1, 1]) {
       const pad = new THREE.Mesh(padGeo, trimMat);
-      pad.position.set(side * 0.42, 0.36, 0);
-      pad.scale.y = 0.75;
+      pad.position.set(side * 0.44, 0.38, 0);
+      pad.scale.y = 0.8;
+      pad.rotation.z = side * -0.25; // flare outward, WoW-style
+      pad.castShadow = true;
       this.bodyPivot.add(pad);
+      const spike = new THREE.Mesh(spikeGeo, goldTrim);
+      spike.position.set(side * 0.52, 0.58, 0);
+      spike.rotation.z = side * -0.5;
+      this.bodyPivot.add(spike);
     }
     const belt = new THREE.Mesh(
-      new THREE.BoxGeometry(0.66, 0.1, 0.52),
+      new THREE.BoxGeometry(0.72, 0.11, 0.54),
       new THREE.MeshStandardMaterial({ color: 0x4a331f, roughness: 0.9 }),
     );
     belt.position.y = -0.34;
     this.bodyPivot.add(belt);
-    this.cape = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.78, 0.05), trimMat);
-    this.cape.geometry.translate(0, -0.39, 0); // hang from the shoulders
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.05), goldTrim);
+    buckle.position.set(0, -0.34, 0.28);
+    this.bodyPivot.add(buckle);
+    this.cape = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.95, 0.05), trimMat);
+    this.cape.geometry.translate(0, -0.475, 0); // hang from the shoulders
     this.cape.position.set(0, 0.31, -0.32);
     this.cape.rotation.x = 0.12;
     this.bodyPivot.add(this.cape);
@@ -244,7 +261,7 @@ class PlayerView {
     this.leftArm = new THREE.Mesh(armGeo, this.limbMat);
     this.leftArm.position.set(-0.47, 0.08, 0);
     this.leftArm.castShadow = true;
-    const gloveL = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 7), gloveMat);
+    const gloveL = new THREE.Mesh(new THREE.SphereGeometry(0.135, 8, 7), gloveMat);
     gloveL.position.y = -0.3;
     this.leftArm.add(gloveL);
     this.bodyPivot.add(this.leftArm);
@@ -255,25 +272,31 @@ class PlayerView {
     rArmMesh.position.y = -0.14;
     rArmMesh.castShadow = true;
     this.rightArm.add(rArmMesh);
-    const gloveR = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 7), gloveMat);
+    const gloveR = new THREE.Mesh(new THREE.SphereGeometry(0.135, 8, 7), gloveMat);
     gloveR.position.y = -0.44;
     this.rightArm.add(gloveR);
 
+    // An absurdly oversized blade — the WoW way.
     const steel = new THREE.MeshStandardMaterial({ color: 0xcfd2dd, metalness: 0.7, roughness: 0.35 });
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.13, 0.78), steel);
-    blade.position.set(0, -0.36, 0.5);
-    const guard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.26, 0.06, 0.08),
-      new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35 }),
-    );
-    guard.position.set(0, -0.36, 0.1);
+    const goldHilt = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35 });
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.2, 1.05), steel);
+    blade.position.set(0, -0.36, 0.66);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.22, 4), steel);
+    tip.rotation.x = Math.PI / 2;
+    tip.rotation.y = Math.PI / 4;
+    tip.scale.set(0.9, 1, 2);
+    tip.position.set(0, -0.36, 1.29);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.09, 0.1), goldHilt);
+    guard.position.set(0, -0.36, 0.12);
     const grip = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.04, 0.04, 0.16, 8),
+      new THREE.CylinderGeometry(0.045, 0.045, 0.2, 8),
       new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.85 }),
     );
     grip.rotation.x = Math.PI / 2;
-    grip.position.set(0, -0.36, 0.0);
-    this.rightArm.add(blade, guard, grip);
+    grip.position.set(0, -0.36, -0.02);
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), goldHilt);
+    pommel.position.set(0, -0.36, -0.14);
+    this.rightArm.add(blade, tip, guard, grip, pommel);
     this.rightArm.rotation.x = 0.35; // resting: sword low, forward
     this.bodyPivot.add(this.rightArm);
 
@@ -481,12 +504,28 @@ class MobView {
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.55, 4, 10), hideMat);
     body.rotation.x = Math.PI / 2;
     body.position.y = 0.52;
+    body.scale.set(1.15, 1, 1.05); // chunky, boar-like bulk
     body.castShadow = true;
     beast.add(body);
+    // A shoulder hump behind the head, the classic WoW boar silhouette.
+    const hump = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), hideMat);
+    hump.position.set(0, 0.74, 0.28);
+    hump.scale.set(1.15, 0.8, 1);
+    beast.add(hump);
     const snout = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.4, 8), darkMat);
     snout.rotation.x = Math.PI / 2;
     snout.position.set(0, 0.45, 0.78);
     beast.add(snout);
+    // Tusks.
+    const tuskMat = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.5 });
+    const tuskGeo = new THREE.ConeGeometry(0.05, 0.24, 6);
+    for (const side of [-1, 1]) {
+      const tusk = new THREE.Mesh(tuskGeo, tuskMat);
+      tusk.position.set(side * 0.16, 0.38, 0.82);
+      tusk.rotation.x = -0.7;
+      tusk.rotation.z = side * -0.35;
+      beast.add(tusk);
+    }
     // Stub legs at the four corners, pivoting at the shoulder for the scurry.
     const legGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.3, 8);
     legGeo.translate(0, -0.15, 0);
@@ -515,13 +554,19 @@ class MobView {
     tail.position.set(0, 0.6, -0.82);
     beast.add(tail);
     if (elite) {
-      beast.scale.setScalar(1.55);
-      const crown = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.24, 0.3, 0.22, 6),
-        new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.3 }),
-      );
-      crown.position.set(0, 1.0, 0.3);
+      beast.scale.setScalar(1.6);
+      const gold = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.3 });
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.24, 6), gold);
+      crown.position.set(0, 1.02, 0.3);
       beast.add(crown);
+      // Crown points, so the boss reads from across a field.
+      const pointGeo = new THREE.ConeGeometry(0.05, 0.16, 4);
+      for (let k = 0; k < 4; k++) {
+        const point = new THREE.Mesh(pointGeo, gold);
+        const a = (k / 4) * Math.PI * 2;
+        point.position.set(Math.cos(a) * 0.24, 1.18, 0.3 + Math.sin(a) * 0.24);
+        beast.add(point);
+      }
     }
     this.group.add(beast);
 

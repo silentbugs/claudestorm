@@ -38,9 +38,18 @@ export class AssetLibrary {
       ...MODEL_NAMES.map(async (name) => {
         const gltf = await gltfLoader.loadAsync(`/assets/models/${name}.glb`);
         const scene = gltf.scene;
+        const seen = new Set<THREE.Material>();
+        const hsl = { h: 0, s: 0, l: 0 };
         scene.traverse((o) => {
           o.castShadow = true;
           o.receiveShadow = true;
+          if (!(o instanceof THREE.Mesh)) return;
+          // Push the flat kit colors toward WoW's saturated hand-painted look.
+          const mat = o.material as THREE.MeshStandardMaterial;
+          if (seen.has(mat) || mat.map) return;
+          seen.add(mat);
+          mat.color.getHSL(hsl);
+          mat.color.setHSL(hsl.h, Math.min(1, hsl.s * 1.35 + 0.04), Math.min(1, hsl.l * 1.05));
         });
         const size = new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3());
         models.set(name, { scene, size });
