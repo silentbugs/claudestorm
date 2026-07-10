@@ -827,8 +827,9 @@ export class GameSim {
 
   /** Fire a projectile (or fan volley) along the caster's facing. reachMult stretches lifetime (charged casts). */
   private spawnProjectiles(p: PlayerEntity, def: AbilityDef, scale: number, reachMult: number): void {
-    // Plunderstorm-style: spells launch where the character looks; only
-    // aimAtCursor spells (Celestial Barrage) track the cursor's ground point.
+    // Plunderstorm-style: spells launch where the character looks; a spell
+    // flagged aimAtCursor would track the cursor's ground point instead
+    // (none currently do).
     let dir = def.aimAtCursor
       ? norm(p.aimX - p.x, p.aimZ - p.z)
       : { x: Math.sin(p.facing), z: Math.cos(p.facing) };

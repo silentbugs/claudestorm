@@ -17,7 +17,7 @@ Set up your match on the start screen — hero color, opponent count (3–23 bot
 - **R** — sword auto-attack (3-hit combo, big finisher)
 - **1 / 2** — offense spell slots (looted); charge-and-release spells cast on press, release on re-press
 - **3 / 4** — utility spell slots (looted)
-- Spells fire **where your character faces** (turn to aim, Plunderstorm-style); ground circles land in your facing at the cursor's distance. Celestial Barrage is the exception — it tracks the cursor.
+- Spells fire **where your character faces** (turn to aim, Plunderstorm-style); ground circles land in your facing at the cursor's distance.
 - **Z / X** — swap the offense pair / the utility pair
 - **G** — use held item (one consumable at a time)
 - **H** — heal (builtin, 20s cooldown)

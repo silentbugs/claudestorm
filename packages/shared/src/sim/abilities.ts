@@ -278,7 +278,6 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
     volley: 3,
     volleySpreadRad: 0.16,
     pierce: true,
-    aimAtCursor: true,
     chargeSeconds: 1.6,
     chargeMinFraction: 0.35,
     chargeAir: true,
