@@ -3,7 +3,6 @@ import {
   ABILITIES,
   ARENA,
   INTERACT_RADIUS,
-  TICK_DT,
   buildStormPhases,
   dist,
   lerp,
@@ -61,7 +60,6 @@ export class GameApp {
   private aimX = 0;
   private aimZ = 0;
 
-  private lastInputSend = 0;
   private lastFrame = performance.now();
   private endShown = false;
   private deadShown = false;
@@ -288,8 +286,9 @@ export class GameApp {
         }
       }
 
-      if (this.spectateId === null && now - this.lastInputSend >= TICK_DT * 1000) {
-        this.lastInputSend = now;
+      // Send input every frame: the sim coalesces per tick (edge presses
+      // accumulate), and unthrottled sends shave up to 50ms off input lag.
+      if (this.spectateId === null) {
         this.transport?.sendInput(this.input.buildCommand(this.rig.yaw, this.aimX, this.aimZ));
       }
     }

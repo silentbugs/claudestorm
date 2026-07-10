@@ -5,7 +5,12 @@ export const PLAYER_RADIUS = 0.5;
 export const PLAYER_SPEED = 8;
 export const PLAYER_BASE_HP = 100;
 
-export const SNAPSHOT_INTERP_TICKS = 2;
+/**
+ * How far behind the newest snapshot the render clock sits. One tick (50ms)
+ * is enough for the in-process worker and keeps controls feeling immediate;
+ * a jittery real network transport would want this higher.
+ */
+export const SNAPSHOT_INTERP_TICKS = 1;
 
 /** Sword auto-attack. */
 export const MELEE_RANGE = 2.6;
