@@ -10,18 +10,34 @@ export interface StormPhaseDef {
   lightnings?: boolean;
 }
 
-export const STORM_START_RADIUS = 396; // covers the 560×560 island corner to corner
+export const STORM_START_RADIUS = 537; // covers the 760×760 island corner to corner
 
 /**
- * Long holds are the "cooldowns" between closes — time to loot and fight.
- * The next-to-last circle is the endgame arena with real room to duel; the
- * last phase is a slow, inescapable creep down to almost nothing while
- * Violent Lightnings hammer whatever space is left.
+ * Build a storm script. Long holds are the "cooldowns" between closes — time
+ * to loot and fight; holds and shrinks get shorter as the match tightens. The
+ * next-to-last circle stays roomy enough to duel in, and the last phase is a
+ * slow, inescapable creep down to almost nothing under Violent Lightnings.
+ *
+ * @param circles   How many circles the match has (clamped 2–8).
+ * @param paceMult  Scales every hold/shrink duration: <1 faster, >1 slower.
  */
-export const STORM_PHASES: StormPhaseDef[] = [
-  { hold: 35, shrink: 40, targetRadius: 170, dps: 4 },
-  { hold: 25, shrink: 30, targetRadius: 100, dps: 8 },
-  { hold: 22, shrink: 24, targetRadius: 55, dps: 14 },
-  { hold: 20, shrink: 18, targetRadius: 28, dps: 20 },
-  { hold: 14, shrink: 75, targetRadius: 4, dps: 32, lightnings: true },
-];
+export function buildStormPhases(circles = 5, paceMult = 1): StormPhaseDef[] {
+  const n = Math.max(2, Math.min(8, Math.round(circles)));
+  const first = STORM_START_RADIUS * 0.42;
+  const phases: StormPhaseDef[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const last = i === n - 1;
+    phases.push({
+      hold: Math.round((35 - 21 * t) * paceMult),
+      shrink: Math.round((last ? 80 : 45 - 25 * t) * paceMult),
+      // Radii fall geometrically; the 0.8 exponent keeps the late circles roomy.
+      targetRadius: last ? 4 : Math.round(first * Math.pow(4 / first, t * 0.8)),
+      dps: Math.round(4 + 28 * t),
+      ...(last ? { lightnings: true } : {}),
+    });
+  }
+  return phases;
+}
+
+export const STORM_PHASES: StormPhaseDef[] = buildStormPhases();

@@ -33,6 +33,13 @@ export interface Hill {
   h: number;
 }
 
+/** A lake: wading through it slows movement; rendered as water in a terrain bowl. */
+export interface LakeDef {
+  x: number;
+  z: number;
+  r: number;
+}
+
 export interface MapDef {
   /** Square side length; playable area is [-size/2, size/2] on both axes. */
   size: number;
@@ -47,6 +54,8 @@ export interface MapDef {
   items: Point[];
   /** Rolling terrain. Purely cosmetic for combat: entities stand on top of it. */
   hills: Hill[];
+  /** Lakes slow anyone wading through them. */
+  lakes: LakeDef[];
 }
 
 /**
@@ -92,10 +101,12 @@ function scatterPoints(
 }
 
 /**
- * 560×560 island. Twenty-six named POIs scattered across the whole map — no
- * special center — plus lone loot, mobs roaming the open fields, and cover
- * between them. Built from a fixed-seed Rng, so the layout is identical
- * every match.
+ * 760×760 island with real geography. Mountain ridges (impassable cliff walls
+ * over tall massifs) are broken by deliberate gaps — passageways that funnel
+ * fights. Lowland basins dip below the plain, five of them holding lakes that
+ * slow anyone wading through. Thirty-six named POIs fill the space between —
+ * no special center — plus lone loot, roaming mobs, and field cover. Built
+ * from a fixed-seed Rng, so the layout is identical every match.
  */
 function buildArena(): MapDef {
   const rng = new Rng(0x15_1a_9d); // island seed — change for a new layout
@@ -105,17 +116,59 @@ function buildArena(): MapDef {
   const elites: Point[] = [];
   const scrolls: Point[] = [];
   const items: Point[] = [];
+  const hills: Hill[] = [];
+  const lakes: LakeDef[] = [];
+  /** Anchors that POIs, cover, and loot must keep clear of. */
+  const keepOut: Point[] = [];
 
-  // Rolling hills, everywhere rather than radiating from the middle.
-  const hills: Hill[] = scatterPoints(rng, 34, 42, 232).map((p) => ({
-    x: p.x,
-    z: p.z,
-    r: rng.range(24, 42),
-    h: rng.range(2.5, 7),
-  }));
+  // ── Mountain ridges: cliff-wall segments over tall massifs, with gaps ──
+  const ridges = scatterPoints(rng, 6, 170, 300);
+  for (const ridge of ridges) {
+    const angle = rng.range(0, Math.PI);
+    const len = rng.range(75, 115);
+    const dirX = Math.cos(angle);
+    const dirZ = Math.sin(angle);
+    // The massif the wall rides on.
+    for (const t of [-0.28, 0.05, 0.32]) {
+      hills.push({
+        x: ridge.x + dirX * t * len,
+        z: ridge.z + dirZ * t * len,
+        r: rng.range(30, 44),
+        h: rng.range(8, 14),
+      });
+    }
+    const segs = Math.round(len / 9);
+    const gapAt = rng.int(2, segs - 3); // the pass through this ridge
+    const secondGap = rng.next() < 0.4 ? rng.int(2, segs - 3) : -10;
+    for (let s = 0; s <= segs; s++) {
+      if (Math.abs(s - gapAt) <= 1 || Math.abs(s - secondGap) <= 1) continue; // passageway
+      const t = s / segs - 0.5;
+      const x = ridge.x + dirX * t * len + rng.range(-2, 2);
+      const z = ridge.z + dirZ * t * len + rng.range(-2, 2);
+      obstacles.push({ kind: 'circle', x, z, r: rng.range(5, 7.5), height: rng.range(12, 17) });
+      keepOut.push({ x, z });
+    }
+  }
 
-  // ── Twenty-six POIs spread over the island, each a different kit ──
-  const pois = scatterPoints(rng, 26, 58, 242);
+  // ── Lowland basins; the first five hold lakes ──
+  const basins = scatterPoints(rng, 7, 130, 310, keepOut);
+  basins.forEach((b, i) => {
+    hills.push({ x: b.x, z: b.z, r: rng.range(36, 52), h: rng.range(-1.6, -1.0) });
+    if (i < 5) {
+      const r = rng.range(13, 20);
+      lakes.push({ x: b.x, z: b.z, r });
+      hills.push({ x: b.x, z: b.z, r: r * 2.1, h: -0.9 }); // deepen the bowl
+      keepOut.push(b);
+    }
+  });
+
+  // Rolling hills across the rest of the island.
+  for (const p of scatterPoints(rng, 40, 44, 330, keepOut)) {
+    hills.push({ x: p.x, z: p.z, r: rng.range(24, 42), h: rng.range(2.5, 7) });
+  }
+
+  // ── Thirty-six POIs spread over the island, each a different kit ──
+  const pois = scatterPoints(rng, 36, 62, 330, keepOut);
   pois.forEach((poi, i) => {
     const { x: px, z: pz } = poi;
     const s = i % 2 === 0 ? 1 : -1;
@@ -159,8 +212,8 @@ function buildArena(): MapDef {
     if (i % 2 === 1) items.push({ x: px + 3 * s, z: pz - 5 });
   });
 
-  // ── Field cover between the POIs (kept clear of them) ──
-  const cover = scatterPoints(rng, 74, 16, 262, pois);
+  // ── Field cover between the POIs (kept clear of them and the geography) ──
+  const cover = scatterPoints(rng, 104, 16, 352, [...pois, ...keepOut]);
   cover.forEach((p, i) => {
     if (i % 3 === 0) {
       obstacles.push({ kind: 'box', x: p.x, z: p.z, hx: 2, hz: 1.6, height: 3 });
@@ -170,12 +223,13 @@ function buildArena(): MapDef {
   });
 
   // ── Loose pickings and roaming packs for the space between POIs ──
-  for (const p of scatterPoints(rng, 20, 28, 252, pois)) chests.push(p);
-  for (const p of scatterPoints(rng, 34, 20, 258, pois)) mobs.push(p);
-  for (const p of scatterPoints(rng, 13, 32, 248, pois)) scrolls.push(p);
-  for (const p of scatterPoints(rng, 15, 28, 252, pois)) items.push(p);
+  const avoid = [...pois, ...keepOut];
+  for (const p of scatterPoints(rng, 28, 30, 340, avoid)) chests.push(p);
+  for (const p of scatterPoints(rng, 46, 22, 348, avoid)) mobs.push(p);
+  for (const p of scatterPoints(rng, 18, 34, 336, avoid)) scrolls.push(p);
+  for (const p of scatterPoints(rng, 20, 30, 340, avoid)) items.push(p);
 
-  return { size: 560, obstacles, chests, mobs, elites, scrolls, items, hills };
+  return { size: 760, obstacles, chests, mobs, elites, scrolls, items, hills, lakes };
 }
 
 export const ARENA: MapDef = buildArena();

@@ -21,6 +21,7 @@ import {
   HEAL_COOLDOWN,
   INTERACT_RADIUS,
   JUMP_VELOCITY,
+  LAKE_WADE_FACTOR,
   LEVEL_HP_BONUS,
   MAX_LEVEL,
   MELEE_ARC_COS,
@@ -615,7 +616,8 @@ export class GameSim {
         PLAYER_SPEED *
         (p.slowTicks > 0 ? p.slowFactor : 1) *
         (p.speedBuffTicks > 0 ? p.speedBuffMult : 1) *
-        (p.faeTicks > 0 ? 1.4 : 1);
+        (p.faeTicks > 0 ? 1.4 : 1) *
+        (this.inLake(p.x, p.z) ? LAKE_WADE_FACTOR : 1);
       vx = p.moveX * speed;
       vz = p.moveZ * speed;
     }
@@ -656,6 +658,13 @@ export class GameSim {
       if (!this.inMeleeArc(p.x, p.z, fx, fz, mob.x, mob.z, mob.radius)) continue;
       this.damageMob(mob, damage, p.id);
     }
+  }
+
+  private inLake(x: number, z: number): boolean {
+    for (const lake of this.map.lakes) {
+      if (dist(x, z, lake.x, lake.z) < lake.r) return true;
+    }
+    return false;
   }
 
   private inMeleeArc(

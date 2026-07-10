@@ -34,10 +34,10 @@ export class SceneManager {
       55,
       window.innerWidth / window.innerHeight,
       0.1,
-      1000,
+      1150,
     );
 
-    this.scene.fog = new THREE.Fog(FOG_COLOR, 260, 840);
+    this.scene.fog = new THREE.Fog(FOG_COLOR, 280, 920);
     this.buildSky();
 
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
@@ -58,6 +58,7 @@ export class SceneManager {
 
     this.buildGround();
     this.waterMat = this.buildWater();
+    this.buildLakes();
     this.buildObstacles();
     this.scatterFoliage();
     this.buildShoreline();
@@ -103,7 +104,7 @@ export class SceneManager {
   /** Gradient sky dome with a warm glow around the sun's side of the horizon. */
   private buildSky(): void {
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(940, 24, 12),
+      new THREE.SphereGeometry(1080, 24, 12),
       new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
@@ -145,6 +146,9 @@ export class SceneManager {
     const colors = new Float32Array(pos.count * 3);
     const low = new THREE.Color(0x76b356);
     const high = new THREE.Color(0xc3bd66);
+    const rock = new THREE.Color(0x8d8a80);
+    const marsh = new THREE.Color(0x5e7f4e);
+    const mud = new THREE.Color(0x9a835c);
     const sand = new THREE.Color(0xe0c684);
     const tmp = new THREE.Color();
     const half = ARENA.size / 2;
@@ -154,6 +158,14 @@ export class SceneManager {
       const h = terrainHeight(ARENA.hills, x, z);
       pos.setY(i, h);
       tmp.copy(low).lerp(high, Math.min(1, h / 6));
+      // High massifs go stony; lowland basins go marshy.
+      if (h > 7) tmp.lerp(rock, Math.min(1, (h - 7) / 5));
+      if (h < -0.3) tmp.lerp(marsh, Math.min(1, -(h + 0.3) / 1.5));
+      // Muddy shores around the lakes.
+      for (const lake of ARENA.lakes) {
+        const d = Math.hypot(x - lake.x, z - lake.z);
+        if (d < lake.r + 7) tmp.lerp(mud, 0.6 * Math.min(1, (lake.r + 7 - d) / 9));
+      }
       // Beach ring toward the water's edge.
       const edge = Math.max(Math.abs(x), Math.abs(z)) / half;
       if (edge > 0.9) tmp.lerp(sand, Math.min(1, (edge - 0.9) / 0.08));
@@ -219,15 +231,26 @@ export class SceneManager {
           vec3 col = mix(deep, skyTint, fresnel * 0.8);
           float spec = pow(max(dot(n, normalize(viewDir + uSunDir)), 0.0), 70.0);
           col += vec3(1.0, 0.82, 0.55) * spec * 0.9;
-          col = mix(col, uFogColor, smoothstep(260.0, 840.0, vDist));
+          col = mix(col, uFogColor, smoothstep(280.0, 920.0, vDist));
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000, 32, 32), mat);
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3800, 32, 32), mat);
     water.geometry.rotateX(-Math.PI / 2);
     water.position.y = -0.55;
     this.scene.add(water);
     return mat;
+  }
+
+  /** Water discs sitting in the lowland bowls, sharing the sea's shader. */
+  private buildLakes(): void {
+    for (const lake of ARENA.lakes) {
+      const bottom = terrainHeight(ARENA.hills, lake.x, lake.z);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(lake.r * 1.15, 28), this.waterMat);
+      disc.geometry.rotateX(-Math.PI / 2);
+      disc.position.set(lake.x, bottom * 0.45, lake.z);
+      this.scene.add(disc);
+    }
   }
 
   /** Stage a model clone on the terrain; mergeStatics() bakes the stage down. */
@@ -296,9 +319,27 @@ export class SceneManager {
     const palmPick: ModelName[] = ['tree_palm', 'tree_palmTall'];
     const rockPick: ModelName[] = ['rock_tallA', 'rock_tallB', 'rock_tallC'];
 
+    const cliffPick: ModelName[] = ['cliff_block_rock', 'cliff_blockDiagonal_rock'];
     ARENA.obstacles.forEach((ob, i) => {
       const rot = i * 2.39; // deterministic "random" facing
       if (ob.kind === 'circle') {
+        if (ob.height >= 10) {
+          // Mountain-wall segment: a giant cliff block spanning the collision circle.
+          const name = cliffPick[i % 2]!;
+          const cliff = this.assets.model(name);
+          const size = this.assets.size(name);
+          cliff.scale.set(
+            (ob.r * 2.4) / Math.max(0.001, size.x),
+            ob.height / Math.max(0.001, size.y),
+            (ob.r * 2.4) / Math.max(0.001, size.z),
+          );
+          // Sink slightly so jittered segments knit into a continuous wall.
+          cliff.position.y = -0.6;
+          const holder = new THREE.Group();
+          holder.add(cliff);
+          this.place(holder, ob.x, ob.z, rot);
+          return;
+        }
         if (ob.height >= 5) {
           const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > ARENA.size / 2 - 44;
           const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
@@ -338,6 +379,9 @@ export class SceneManager {
         const clearance = ob.kind === 'box' ? Math.max(ob.hx, ob.hz) + 1.5 : ob.r + 1.5;
         if (Math.hypot(x - ob.x, z - ob.z) < clearance) return true;
       }
+      for (const lake of ARENA.lakes) {
+        if (Math.hypot(x - lake.x, z - lake.z) < lake.r + 2) return true; // no grass in water
+      }
       return false;
     };
     const placements = (count: number): { x: number; z: number; s: number; rot: number }[] => {
@@ -370,18 +414,18 @@ export class SceneManager {
       }
     };
 
-    stamp('grass', 720, 0.5, false);
-    stamp('grass_large', 420, 0.55, false);
-    stamp('plant_bush', 260, 0.8, true);
-    stamp('plant_bushLarge', 120, 1.1, true);
-    stamp('rock_largeA', 100, 0.7, true);
-    stamp('flower_redA', 85, 0.5, false);
-    stamp('flower_purpleA', 85, 0.5, false);
-    stamp('flower_yellowA', 85, 0.5, false);
-    stamp('mushroom_red', 50, 0.35, false);
-    stamp('mushroom_tanGroup', 42, 0.3, false);
-    stamp('stump_round', 42, 0.5, true);
-    stamp('log', 34, 0.55, true);
+    stamp('grass', 1300, 0.5, false);
+    stamp('grass_large', 760, 0.55, false);
+    stamp('plant_bush', 470, 0.8, true);
+    stamp('plant_bushLarge', 220, 1.1, true);
+    stamp('rock_largeA', 180, 0.7, true);
+    stamp('flower_redA', 150, 0.5, false);
+    stamp('flower_purpleA', 150, 0.5, false);
+    stamp('flower_yellowA', 150, 0.5, false);
+    stamp('mushroom_red', 90, 0.35, false);
+    stamp('mushroom_tanGroup', 75, 0.3, false);
+    stamp('stump_round', 75, 0.5, true);
+    stamp('log', 60, 0.55, true);
   }
 
   /** Wrecks and rowboats beached on the sand ring. */

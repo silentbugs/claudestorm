@@ -6,6 +6,7 @@ import {
   PLAYER_BASE_HP,
   TICK_RATE,
 } from '../src/constants.js';
+import { buildStormPhases } from '../src/sim/storm.js';
 import { buttons, cmd, loadout, makeSim, player, CALM_STORM, FLAT_MAP } from './helpers.js';
 
 describe('drop phase', () => {
@@ -143,6 +144,32 @@ describe('storm', () => {
       if (snap.zones.some((z) => z.kind === 'telegraph')) sawLightning = true;
     }
     expect(sawLightning).toBe(true);
+  });
+});
+
+describe('storm script generator', () => {
+  it('builds the requested number of circles, ending in a slow lightning creep', () => {
+    for (const n of [3, 5, 8]) {
+      const phases = buildStormPhases(n);
+      expect(phases).toHaveLength(n);
+      const last = phases[phases.length - 1]!;
+      expect(last.lightnings).toBe(true);
+      expect(last.targetRadius).toBe(4);
+      expect(last.shrink).toBeGreaterThan(phases[phases.length - 2]!.shrink); // the slow creep
+      for (let i = 1; i < n; i++) {
+        expect(phases[i]!.targetRadius).toBeLessThan(phases[i - 1]!.targetRadius);
+      }
+    }
+  });
+
+  it('paceMult stretches every hold and shrink', () => {
+    const normal = buildStormPhases(5, 1);
+    const slow = buildStormPhases(5, 1.5);
+    for (let i = 0; i < 5; i++) {
+      expect(slow[i]!.hold).toBeGreaterThan(normal[i]!.hold);
+      expect(slow[i]!.shrink).toBeGreaterThan(normal[i]!.shrink);
+      expect(slow[i]!.targetRadius).toBe(normal[i]!.targetRadius);
+    }
   });
 });
 

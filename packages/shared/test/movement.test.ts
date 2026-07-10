@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { JUMP_VELOCITY, PLAYER_RADIUS, PLAYER_SPEED, TICK_RATE } from '../src/constants.js';
+import { JUMP_VELOCITY, LAKE_WADE_FACTOR, PLAYER_RADIUS, PLAYER_SPEED, TICK_RATE } from '../src/constants.js';
 import type { MapDef } from '../src/maps/arena.js';
 import { buttons, cmd, makeSim, player, FLAT_MAP } from './helpers.js';
 
@@ -29,6 +29,14 @@ describe('movement', () => {
     sim.applyInput(1, cmd({ moveX: 1 }));
     for (let i = 0; i < TICK_RATE * 3; i++) sim.step();
     expect(sim.players.get(1)!.x).toBeCloseTo(5 - 1 - PLAYER_RADIUS, 3);
+  });
+
+  it('wades slowly through lakes', () => {
+    const map: MapDef = { ...FLAT_MAP, lakes: [{ x: 0, z: 0, r: 30 }] };
+    const sim = makeSim([player(1, 0, 0)], { map });
+    sim.applyInput(1, cmd({ moveX: 1 }));
+    for (let i = 0; i < TICK_RATE; i++) sim.step();
+    expect(sim.players.get(1)!.x).toBeCloseTo(PLAYER_SPEED * LAKE_WADE_FACTOR, 5);
   });
 
   it('faces the commanded yaw', () => {
