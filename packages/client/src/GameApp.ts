@@ -6,8 +6,8 @@ import {
   STORM_START_RADIUS,
   buildStormPhases,
   dist,
+  groundHeight,
   lerp,
-  terrainHeight,
   type BotDifficulty,
   type Snapshot,
 } from '@claudestorm/shared';
@@ -298,7 +298,7 @@ export class GameApp {
       if (focusNext && focusPrev) {
         const x = lerp(focusPrev.x, focusNext.x, t);
         const z = lerp(focusPrev.z, focusNext.z, t);
-        const y = lerp(focusPrev.y, focusNext.y, t) + terrainHeight(ARENA.hills, x, z);
+        const y = lerp(focusPrev.y, focusNext.y, t) + groundHeight(ARENA, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.sceneMgr.setFocus(x, z);
         sfx.setListener(x, z, this.rig.camYaw);

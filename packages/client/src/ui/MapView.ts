@@ -1,4 +1,4 @@
-import { ARENA, terrainHeight, type StormSnapshot } from '@claudestorm/shared';
+import { ARENA, coastRadius, groundHeight, type StormSnapshot } from '@claudestorm/shared';
 
 /** Background paint resolution; upscaled smoothly onto both canvases. */
 const BG_RES = 256;
@@ -66,21 +66,22 @@ export class MapView {
     const img = ctx.createImageData(BG_RES, BG_RES);
     const half = ARENA.size / 2;
     const c: [number, number, number] = [0, 0, 0];
+    const coastBase = ARENA.coastR ?? half;
     for (let py = 0; py < BG_RES; py++) {
       const z = half - ((py + 0.5) / BG_RES) * ARENA.size;
       for (let px = 0; px < BG_RES; px++) {
         const x = -half + ((px + 0.5) / BG_RES) * ARENA.size;
-        if (Math.max(Math.abs(x), Math.abs(z)) >= half) {
+        const over = Math.hypot(x, z) - coastRadius(coastBase, Math.atan2(x, z));
+        if (over > 0) {
           c[0] = SEA[0]; c[1] = SEA[1]; c[2] = SEA[2];
         } else {
-          const h = terrainHeight(ARENA.hills, x, z);
+          const h = groundHeight(ARENA, x, z);
           c[0] = GRASS_LOW[0]; c[1] = GRASS_LOW[1]; c[2] = GRASS_LOW[2];
           mix(c, GRASS_HIGH, h / 6);
           if (h > 7) mix(c, ROCK, (h - 7) / 5);
           if (h < -0.3) mix(c, MARSH, -(h + 0.3) / 1.5);
           if (h < -2.5) mix(c, ROCK, -(h + 2.5) / 3);
-          const edge = Math.max(Math.abs(x), Math.abs(z)) / half;
-          if (edge > 0.9) mix(c, SAND, (edge - 0.9) / 0.08);
+          if (over > -12) mix(c, SAND, (over + 12) / 10);
           for (const lake of ARENA.lakes) {
             if (Math.hypot(x - lake.x, z - lake.z) < lake.r) {
               c[0] = LAKE[0]; c[1] = LAKE[1]; c[2] = LAKE[2];

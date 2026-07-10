@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { JUMP_VELOCITY, LAKE_WADE_FACTOR, PLAYER_RADIUS, PLAYER_SPEED, TICK_RATE } from '../src/constants.js';
-import type { MapDef } from '../src/maps/arena.js';
+import { coastRadius, type MapDef } from '../src/maps/arena.js';
 import { buttons, cmd, makeSim, player, FLAT_MAP } from './helpers.js';
 
 describe('movement', () => {
@@ -18,6 +18,16 @@ describe('movement', () => {
     sim.applyInput(1, cmd({ moveX: 1 }));
     for (let i = 0; i < TICK_RATE * 2; i++) sim.step();
     expect(sim.players.get(1)!.x).toBeCloseTo(50 - PLAYER_RADIUS, 5);
+  });
+
+  it('clamps to the coastline on island maps', () => {
+    const map: MapDef = { ...FLAT_MAP, coastR: 40 };
+    const sim = makeSim([player(1, 0, 0)], { map });
+    sim.applyInput(1, cmd({ moveX: 1 }));
+    for (let i = 0; i < TICK_RATE * 7; i++) sim.step();
+    // Walking due east (+x): held at the sea's edge, not the square bound.
+    expect(sim.players.get(1)!.x).toBeCloseTo(coastRadius(40, Math.PI / 2) - PLAYER_RADIUS, 5);
+    expect(sim.players.get(1)!.z).toBeCloseTo(0, 5);
   });
 
   it('is pushed out of box obstacles', () => {

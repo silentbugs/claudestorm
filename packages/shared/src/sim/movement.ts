@@ -1,4 +1,4 @@
-import type { MapDef } from '../maps/arena.js';
+import { coastRadius, type MapDef } from '../maps/arena.js';
 import { clamp } from '../math/vec.js';
 
 /** Push a circle of the given radius out of arena bounds and all obstacles. */
@@ -11,6 +11,15 @@ export function resolveCollisions(
   const half = map.size / 2 - radius;
   x = clamp(x, -half, half);
   z = clamp(z, -half, half);
+  if (map.coastR) {
+    // Island maps: the sea is the boundary, not the square.
+    const maxR = coastRadius(map.coastR, Math.atan2(x, z)) - radius;
+    const r = Math.hypot(x, z);
+    if (r > maxR) {
+      x *= maxR / r;
+      z *= maxR / r;
+    }
+  }
 
   for (const ob of map.obstacles) {
     if (ob.kind === 'circle') {
@@ -59,6 +68,7 @@ export function resolveCollisions(
 export function circleBlocked(x: number, z: number, radius: number, map: MapDef): boolean {
   const half = map.size / 2;
   if (Math.abs(x) > half || Math.abs(z) > half) return true;
+  if (map.coastR && Math.hypot(x, z) > coastRadius(map.coastR, Math.atan2(x, z))) return true;
   for (const ob of map.obstacles) {
     if (ob.kind === 'circle') {
       const minDist = ob.r + radius;

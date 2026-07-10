@@ -3,8 +3,8 @@ import {
   ABILITIES,
   ARENA,
   ITEMS,
+  groundHeight,
   lerp,
-  terrainHeight,
   type AbilityId,
   type GameEvent,
   type Rarity,
@@ -111,7 +111,7 @@ function glyphMaterial(glyph: string): THREE.SpriteMaterial {
 
 /** Terrain height under a world position — everything dynamic stands on the hills. */
 export function groundAt(x: number, z: number): number {
-  return terrainHeight(ARENA.hills, x, z);
+  return groundHeight(ARENA, x, z);
 }
 
 function lerpAngle(a: number, b: number, t: number): number {

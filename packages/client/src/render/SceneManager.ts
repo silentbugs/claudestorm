@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { ARENA, Rng, STORM_START_RADIUS, terrainHeight } from '@claudestorm/shared';
+import { ARENA, Rng, STORM_START_RADIUS, coastRadius, groundHeight } from '@claudestorm/shared';
 import type { AssetLibrary, ModelName } from './assets.js';
 
 const SUN_DIR = new THREE.Vector3(0.55, 0.5, 0.32).normalize();
@@ -235,10 +235,11 @@ export class SceneManager {
     const lush = new THREE.Color(0x4b9a4e);
     const tmp = new THREE.Color();
     const half = ARENA.size / 2;
+    const coastBase = ARENA.coastR ?? half;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
-      const h = terrainHeight(ARENA.hills, x, z);
+      const h = groundHeight(ARENA, x, z);
       pos.setY(i, h);
       tmp.copy(low).lerp(high, Math.min(1, h / 6));
       // Meadow patchiness: broad dry/lush blotches plus fine brightness
@@ -256,9 +257,9 @@ export class SceneManager {
         const d = Math.hypot(x - lake.x, z - lake.z);
         if (d < lake.r + 7) tmp.lerp(mud, 0.6 * Math.min(1, (lake.r + 7 - d) / 9));
       }
-      // Beach ring toward the water's edge.
-      const edge = Math.max(Math.abs(x), Math.abs(z)) / half;
-      if (edge > 0.9) tmp.lerp(sand, Math.min(1, (edge - 0.9) / 0.08));
+      // Beach where the land meets the sea; the drowned skirt is all sand.
+      const over = Math.hypot(x, z) - coastRadius(coastBase, Math.atan2(x, z));
+      if (over > -12) tmp.lerp(sand, Math.min(1, (over + 12) / 10));
       colors[i * 3] = tmp.r;
       colors[i * 3 + 1] = tmp.g;
       colors[i * 3 + 2] = tmp.b;
@@ -350,7 +351,7 @@ export class SceneManager {
   /** Water discs sitting in the lowland bowls, sharing the sea's shader. */
   private buildLakes(): void {
     for (const lake of ARENA.lakes) {
-      const bottom = terrainHeight(ARENA.hills, lake.x, lake.z);
+      const bottom = groundHeight(ARENA, lake.x, lake.z);
       const disc = new THREE.Mesh(new THREE.CircleGeometry(lake.r * 1.15, 28), this.waterMat);
       disc.geometry.rotateX(-Math.PI / 2);
       disc.position.set(lake.x, bottom * 0.45, lake.z);
@@ -360,7 +361,7 @@ export class SceneManager {
 
   /** Stage a model clone on the terrain; mergeStatics() bakes the stage down. */
   private place(model: THREE.Group, x: number, z: number, rotY = 0): void {
-    model.position.set(x, terrainHeight(ARENA.hills, x, z), z);
+    model.position.set(x, groundHeight(ARENA, x, z), z);
     model.rotation.y = rotY;
     this.staticStage.add(model);
   }
@@ -429,7 +430,9 @@ export class SceneManager {
       const rot = i * 2.39; // deterministic "random" facing
       const look = ob.look ?? (ob.height >= 5 ? 'tree' : 'rock');
       if (look === 'tree') {
-        const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > ARENA.size / 2 - 44;
+        const nearShore =
+          Math.hypot(ob.x, ob.z) >
+          coastRadius(ARENA.coastR ?? ARENA.size / 2, Math.atan2(ob.x, ob.z)) - 50;
         const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
         // Canopy overshoots the collision cylinder; trunks match its radius.
         const tree = this.assets.modelAtHeight(name, ob.height * 1.45);
@@ -480,13 +483,17 @@ export class SceneManager {
     }
   }
 
-  /** Rowboats beached on the sand ring. */
+  /** Rowboats beached on the sand. */
   private buildShoreline(): void {
-    const shore = ARENA.size / 2 - 18; // in the sand ring
-    const boatA = this.assets.modelAtHeight('boat-row-small', 1.4);
-    this.place(boatA, -shore, 118, 0.8);
-    const boatB = this.assets.modelAtHeight('boat-row-small', 1.4);
-    this.place(boatB, 64, shore, -1.9);
+    const base = ARENA.coastR ?? ARENA.size / 2;
+    for (const [angle, rot] of [
+      [-1.1, 0.8],
+      [3.0, -1.9],
+    ] as const) {
+      const r = coastRadius(base, angle) - 10;
+      const boat = this.assets.modelAtHeight('boat-row-small', 1.4);
+      this.place(boat, Math.sin(angle) * r, Math.cos(angle) * r, rot);
+    }
   }
 
   /** Puffy low-poly clouds drifting high over the island. */

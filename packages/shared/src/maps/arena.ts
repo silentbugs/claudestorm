@@ -69,8 +69,13 @@ export interface LandmarkDef {
 }
 
 export interface MapDef {
-  /** Square side length; playable area is [-size/2, size/2] on both axes. */
+  /** Square side length; the world (and sea) spans [-size/2, size/2]. */
   size: number;
+  /**
+   * Base radius of the island's irregular coastline (see coastRadius).
+   * When set, movement clamps to the coast instead of the square bounds.
+   */
+  coastR?: number;
   obstacles: Obstacle[];
   chests: Point[];
   mobs: Point[];
@@ -104,6 +109,40 @@ export function terrainHeight(hills: Hill[], x: number, z: number): number {
 }
 
 /**
+ * Where the island meets the sea in a given direction (angle in the sim's
+ * atan2(x, z) convention): the base radius modulated by fixed sine bands —
+ * bays and headlands instead of a square slab.
+ */
+export function coastRadius(base: number, angle: number): number {
+  return (
+    base *
+    (1 +
+      0.08 * Math.sin(angle * 3 + 1.7) +
+      0.055 * Math.sin(angle * 5 - 0.8) +
+      0.028 * Math.sin(angle * 9 + 3.1))
+  );
+}
+
+/**
+ * Render/placement ground height: the hills, flattening into a beach at the
+ * coastline and diving under the sea beyond it. The sim itself stays flat —
+ * players simply can't cross the coast (see resolveCollisions).
+ */
+export function groundHeight(map: MapDef, x: number, z: number): number {
+  let h = terrainHeight(map.hills, x, z);
+  if (map.coastR) {
+    const over = Math.hypot(x, z) - coastRadius(map.coastR, Math.atan2(x, z));
+    if (over > -16) {
+      const fade = Math.min(1, Math.max(0, (over + 16) / 16));
+      h *= 1 - fade; // hills flatten toward the waterline
+      const dive = Math.min(1, Math.max(0, over / 12));
+      h -= dive * dive * 5; // then the seabed drops away
+    }
+  }
+  return h;
+}
+
+/**
  * Scatter `count` points across [-half, half]² keeping `minSep` distance from
  * each other and from `existing`. Deterministic for a given Rng; if space runs
  * tight the separation relaxes rather than looping forever.
@@ -114,6 +153,7 @@ function scatterPoints(
   minSep: number,
   half: number,
   existing: Point[] = [],
+  valid?: (x: number, z: number) => boolean,
 ): Point[] {
   const pts: Point[] = [];
   let sep = minSep;
@@ -125,6 +165,7 @@ function scatterPoints(
     }
     const x = rng.range(-half, half);
     const z = rng.range(-half, half);
+    if (valid && !valid(x, z)) continue;
     if ([...existing, ...pts].every((p) => Math.hypot(p.x - x, p.z - z) >= sep)) {
       pts.push({ x, z });
     }
@@ -292,8 +333,15 @@ function buildArena(): MapDef {
   /** Anchors that POIs, cover, and loot must keep clear of. */
   const keepOut: Point[] = [];
 
+  // The irregular coastline everything must stay inside of.
+  const COAST = 320;
+  const inland =
+    (margin: number) =>
+    (x: number, z: number): boolean =>
+      Math.hypot(x, z) < coastRadius(COAST, Math.atan2(x, z)) - margin;
+
   // ── Mountain ridges: chains of tall massifs — open high ground, no walls ──
-  const ridges = scatterPoints(rng, 6, 170, 300);
+  const ridges = scatterPoints(rng, 6, 170, 300, [], inland(45));
   for (const ridge of ridges) {
     const angle = rng.range(0, Math.PI);
     const len = rng.range(75, 115);
@@ -316,7 +364,7 @@ function buildArena(): MapDef {
   }
 
   // ── Lowland basins; the first five hold lakes ──
-  const basins = scatterPoints(rng, 7, 130, 310, keepOut);
+  const basins = scatterPoints(rng, 7, 130, 310, keepOut, inland(48));
   basins.forEach((b, i) => {
     hills.push({ x: b.x, z: b.z, r: rng.range(36, 52), h: rng.range(-1.6, -1.0) });
     if (i < 5) {
@@ -327,23 +375,25 @@ function buildArena(): MapDef {
     }
   });
 
-  // ── Landmarks: the wreck hugs the east shore, the rest spread inland ──
-  const inland = scatterPoints(rng, 4, 180, 250, keepOut);
-  stampWreck(ctx, 330, rng.range(-160, 160));
-  stampSpire(ctx, inland[0]!.x, inland[0]!.z);
-  stampStoneRing(ctx, inland[1]!.x, inland[1]!.z);
-  stampPit(ctx, inland[2]!.x, inland[2]!.z);
-  stampGroveLandmark(ctx, inland[3]!.x, inland[3]!.z);
+  // ── Landmarks: the wreck sits right on the east coast, the rest inland ──
+  const spots = scatterPoints(rng, 4, 180, 250, keepOut, inland(62));
+  const wreckAngle = rng.range(1.2, 1.9); // roughly east, atan2(x, z) convention
+  const wreckR = coastRadius(COAST, wreckAngle) - 22;
+  stampWreck(ctx, Math.sin(wreckAngle) * wreckR, Math.cos(wreckAngle) * wreckR);
+  stampSpire(ctx, spots[0]!.x, spots[0]!.z);
+  stampStoneRing(ctx, spots[1]!.x, spots[1]!.z);
+  stampPit(ctx, spots[2]!.x, spots[2]!.z);
+  stampGroveLandmark(ctx, spots[3]!.x, spots[3]!.z);
   const landmarkAnchors = ctx.landmarks.map((l) => ({ x: l.x, z: l.z }));
   keepOut.push(...landmarkAnchors);
 
   // Rolling hills across the rest of the island.
-  for (const p of scatterPoints(rng, 40, 44, 330, keepOut)) {
+  for (const p of scatterPoints(rng, 40, 44, 330, keepOut, inland(28))) {
     hills.push({ x: p.x, z: p.z, r: rng.range(24, 42), h: rng.range(2.5, 7) });
   }
 
   // ── Minor sites: copses and boulder fields with loot tucked inside ──
-  const sites = scatterPoints(rng, 20, 65, 330, keepOut);
+  const sites = scatterPoints(rng, 20, 65, 330, keepOut, inland(30));
   sites.forEach((site, i) => {
     const { x: px, z: pz } = site;
     const s = i % 2 === 0 ? 1 : -1;
@@ -358,7 +408,7 @@ function buildArena(): MapDef {
   });
 
   // ── Field cover between the sites (kept clear of them and the geography) ──
-  const cover = scatterPoints(rng, 104, 16, 352, [...sites, ...keepOut]);
+  const cover = scatterPoints(rng, 104, 16, 352, [...sites, ...keepOut], inland(16));
   cover.forEach((p, i) => {
     if (i % 3 === 0) {
       obstacles.push({ kind: 'circle', x: p.x, z: p.z, r: 2 + (i % 3) * 0.3, height: 3.4, look: 'rock' });
@@ -369,13 +419,14 @@ function buildArena(): MapDef {
 
   // ── Loose pickings and roaming packs for the space between sites ──
   const avoid = [...sites, ...keepOut];
-  for (const p of scatterPoints(rng, 44, 28, 340, avoid)) chests.push(p);
-  for (const p of scatterPoints(rng, 52, 22, 348, avoid)) mobs.push(p);
-  for (const p of scatterPoints(rng, 26, 32, 336, avoid)) scrolls.push(p);
-  for (const p of scatterPoints(rng, 24, 30, 340, avoid)) items.push(p);
+  for (const p of scatterPoints(rng, 44, 28, 340, avoid, inland(18))) chests.push(p);
+  for (const p of scatterPoints(rng, 52, 22, 348, avoid, inland(18))) mobs.push(p);
+  for (const p of scatterPoints(rng, 26, 32, 336, avoid, inland(18))) scrolls.push(p);
+  for (const p of scatterPoints(rng, 24, 30, 340, avoid, inland(18))) items.push(p);
 
   return {
     size: 760,
+    coastR: COAST,
     obstacles,
     chests,
     mobs,
