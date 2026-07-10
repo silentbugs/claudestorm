@@ -238,6 +238,14 @@ body {
   text-align: right;
 }
 
+.setting-desc {
+  margin: -6px 0 4px 106px;
+  max-width: 330px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #78758a;
+}
+
 .setting-row input[type='range'] {
   width: 180px;
   accent-color: #ffd75e;

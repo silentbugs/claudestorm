@@ -54,9 +54,10 @@ export class Hud {
 
   private readonly skillsOverlay = document.getElementById('skills-overlay')!;
 
-  constructor(onRestart: () => void, onSpectate: () => void) {
+  constructor(onRestart: () => void, onSpectate: () => void, onMenu: () => void) {
     document.getElementById('restart-btn')!.addEventListener('click', onRestart);
     this.spectateBtn.addEventListener('click', onSpectate);
+    document.getElementById('menu-btn')!.addEventListener('click', onMenu);
     for (const el of document.querySelectorAll<HTMLElement>('.slot')) {
       this.slotEls.set(el.dataset.slot!, {
         root: el,

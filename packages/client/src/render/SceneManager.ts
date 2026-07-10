@@ -5,6 +5,23 @@ import type { AssetLibrary, ModelName } from './assets.js';
 
 const SUN_DIR = new THREE.Vector3(0.55, 0.5, 0.32).normalize();
 
+/** Deterministic smooth value noise in [0, 1] — patchiness for the ground. */
+function hash2(x: number, z: number): number {
+  const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function valueNoise(x: number, z: number): number {
+  const xi = Math.floor(x);
+  const zi = Math.floor(z);
+  const u = (x - xi) * (x - xi) * (3 - 2 * (x - xi));
+  const v = (z - zi) * (z - zi) * (3 - 2 * (z - zi));
+  const a = hash2(xi, zi);
+  const b = hash2(xi + 1, zi);
+  const c = hash2(xi, zi + 1);
+  const d = hash2(xi + 1, zi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
 /** Start-screen time-of-day choices. */
 export type EnvironmentId = 'day' | 'dusk' | 'night';
 
@@ -214,6 +231,8 @@ export class SceneManager {
     const marsh = new THREE.Color(0x5e7f4e);
     const mud = new THREE.Color(0x9a835c);
     const sand = new THREE.Color(0xe0c684);
+    const dry = new THREE.Color(0xb3a95e);
+    const lush = new THREE.Color(0x4b9a4e);
     const tmp = new THREE.Color();
     const half = ARENA.size / 2;
     for (let i = 0; i < pos.count; i++) {
@@ -222,6 +241,12 @@ export class SceneManager {
       const h = terrainHeight(ARENA.hills, x, z);
       pos.setY(i, h);
       tmp.copy(low).lerp(high, Math.min(1, h / 6));
+      // Meadow patchiness: broad dry/lush blotches plus fine brightness
+      // jitter, so the plain never reads as one repeating green.
+      const patch = valueNoise(x * 0.016, z * 0.016) * 0.65 + valueNoise(x * 0.055, z * 0.055) * 0.35;
+      if (patch > 0.58) tmp.lerp(dry, Math.min(1, (patch - 0.58) * 2.2));
+      else if (patch < 0.42) tmp.lerp(lush, Math.min(1, (0.42 - patch) * 2.2));
+      tmp.multiplyScalar(0.93 + valueNoise(x * 0.14 + 41, z * 0.14 - 17) * 0.14);
       // High massifs go stony; lowland basins go marshy; pits go bare rock.
       if (h > 7) tmp.lerp(rock, Math.min(1, (h - 7) / 5));
       if (h < -0.3) tmp.lerp(marsh, Math.min(1, -(h + 0.3) / 1.5));
@@ -243,10 +268,23 @@ export class SceneManager {
 
     const grassTex = this.assets.grassTexture;
     grassTex.repeat.set(56, 56);
-    const ground = new THREE.Mesh(
-      groundGeo,
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: grassTex }),
-    );
+    const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: grassTex });
+    // Anti-tiling: blend the grass texture with itself at an irrational-ish
+    // second scale, so the 56×56 repeat never lines up into a visible grid.
+    groundMat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+          vec4 sampledDiffuseColor = mix(
+            texture2D( map, vMapUv ),
+            texture2D( map, vMapUv * 0.372 + vec2( 0.13, 0.71 ) ),
+            0.5
+          );
+          diffuseColor *= sampledDiffuseColor;
+        #endif`,
+      );
+    };
+    const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.receiveShadow = true;
     this.scene.add(ground);
   }

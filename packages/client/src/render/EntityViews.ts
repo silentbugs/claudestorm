@@ -500,14 +500,14 @@ class MobView {
     snout.rotation.x = Math.PI / 2;
     snout.position.set(0, 0.45, 0.78);
     beast.add(snout);
-    // Tusks.
+    // Tusks: rooted beside the snout, curving up-forward and flaring out.
     const tuskMat = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.5 });
-    const tuskGeo = new THREE.ConeGeometry(0.05, 0.24, 6);
+    const tuskGeo = new THREE.ConeGeometry(0.045, 0.22, 6);
+    tuskGeo.translate(0, 0.11, 0); // pivot at the root so rotations read as growth
     for (const side of [-1, 1]) {
       const tusk = new THREE.Mesh(tuskGeo, tuskMat);
-      tusk.position.set(side * 0.16, 0.38, 0.82);
-      tusk.rotation.x = -0.7;
-      tusk.rotation.z = side * -0.35;
+      tusk.position.set(side * 0.14, 0.34, 0.74);
+      tusk.rotation.set(0.6, 0, side * -0.45);
       beast.add(tusk);
     }
     // Stub legs at the four corners, pivoting at the shoulder for the scurry.

@@ -3,6 +3,7 @@ import {
   ABILITIES,
   ARENA,
   INTERACT_RADIUS,
+  STORM_START_RADIUS,
   buildStormPhases,
   dist,
   lerp,
@@ -74,17 +75,41 @@ export class GameApp {
     this.hud = new Hud(
       () => this.restart(),
       () => this.startSpectate(),
+      () => this.returnToMenu(),
     );
     window.addEventListener('keydown', (e) => {
       if (this.spectateId === null) return;
       if (e.code === 'ArrowLeft') this.cycleSpectate(-1);
       else if (e.code === 'ArrowRight') this.cycleSpectate(1);
+      else if (e.code === 'Escape') {
+        // Back out of spectating to the death screen (Play Again / Main Menu).
+        this.spectateId = null;
+        this.hud.showSpectate(null);
+        this.hud.showEnd(false, this.deathPlacement, true);
+      }
     });
   }
 
   private startSpectate(): void {
     this.hud.hideEnd();
     this.spectateId = -1; // resolved to the first living player next frame
+  }
+
+  /** Tear the match down and bring the start screen (and its flyover) back. */
+  private returnToMenu(): void {
+    this.transport?.dispose();
+    this.transport = null;
+    this.buffer.reset();
+    this.views.clear();
+    this.hud.hideEnd();
+    this.hud.showSpectate(null);
+    this.hud.showInteract(null);
+    this.spectateId = null;
+    this.inMatch = false;
+    this.map.setActive(false);
+    this.sceneMgr.setStorm(0, 0, STORM_START_RADIUS);
+    document.getElementById('start-screen')!.classList.remove('hidden');
+    document.getElementById('hud')!.classList.add('in-menu');
   }
 
   private cycleSpectate(dir: number): void {

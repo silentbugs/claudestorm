@@ -43,11 +43,13 @@
               <label>Hero color</label>
               <div id="color-swatches" class="choices"></div>
             </div>
+            <div class="setting-desc">Your wisp's tint — body, hands, glow, and paraglider. Purely cosmetic.</div>
             <div class="setting-row">
               <label for="bot-count">Opponents</label>
               <input type="range" id="bot-count" min="3" max="23" value="11" />
               <span id="bot-count-value" class="setting-value">11</span>
             </div>
+            <div class="setting-desc">How many bots drop onto the island with you.</div>
             <div class="setting-row">
               <label>Difficulty</label>
               <div id="difficulty-choice" class="choices">
@@ -56,6 +58,7 @@
                 <button data-value="hard">Hard</button>
               </div>
             </div>
+            <div class="setting-desc">Bot sharpness: aim accuracy, how often they cast, and how far away they notice you.</div>
             <div class="setting-row">
               <label>Circles</label>
               <div id="circles-choice" class="choices">
@@ -65,6 +68,7 @@
                 <button data-value="6">6</button>
               </div>
             </div>
+            <div class="setting-desc">How many times the storm closes before the final showdown. Fewer circles = shorter matches.</div>
             <div class="setting-row">
               <label>Time of day</label>
               <div id="time-choice" class="choices">
@@ -73,6 +77,7 @@
                 <button data-value="night">Night</button>
               </div>
             </div>
+            <div class="setting-desc">Sky, lighting, and mood only — no effect on gameplay.</div>
             <div class="setting-row">
               <label>Circle pace</label>
               <div id="pace-choice" class="choices">
@@ -81,6 +86,7 @@
                 <button data-value="1.4">Slow</button>
               </div>
             </div>
+            <div class="setting-desc">How long the storm waits and shrinks. Slower leaves more time to loot between closes.</div>
           </div>
           <button id="start-btn">Start Game</button>
           <button id="skills-btn" class="menu-secondary">Skills Compendium</button>
@@ -92,6 +98,7 @@
         <div id="end-sub"></div>
         <button id="spectate-btn" class="menu-secondary">Spectate</button>
         <button id="restart-btn">Play Again</button>
+        <button id="menu-btn" class="menu-secondary">Main Menu</button>
       </div>
       <div id="spectate-banner" class="hidden"></div>
       <div id="bottombar">
