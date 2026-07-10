@@ -167,25 +167,10 @@ function stampWreck(ctx: PieceCtx, x: number, z: number): void {
   ctx.items.push({ x: x + 4, z: z + 8 });
 }
 
-/** Skyreach Spire: the island's tallest peak, crowned in cliffs with two ways up. */
+/** Skyreach Spire: the island's tallest peak, with a watchtower on the summit. */
 function stampSpire(ctx: PieceCtx, x: number, z: number): void {
   ctx.landmarks.push({ kind: 'spire', name: 'Skyreach Spire', x, z, r: 30 });
   ctx.hills.push({ x, z, r: 38, h: 17 });
-  const segs = 11;
-  const gapA = 2;
-  const gapB = 7;
-  for (let s = 0; s < segs; s++) {
-    if (s === gapA || s === gapB) continue; // the two ascents
-    const a = (s / segs) * Math.PI * 2;
-    ctx.obstacles.push({
-      kind: 'circle',
-      x: x + Math.sin(a) * 21,
-      z: z + Math.cos(a) * 21,
-      r: 5.5,
-      height: 13,
-      look: 'cliff',
-    });
-  }
   ctx.chests.push({ x, z }, { x: x + 6, z: z - 4 }, { x: x - 5, z: z + 6 });
   ctx.elites.push({ x: x + 3, z: z + 3 });
   ctx.scrolls.push({ x: x - 3, z: z - 5 });
@@ -279,9 +264,9 @@ function stampBoulders(ctx: PieceCtx, x: number, z: number, s: number): void {
 
 /**
  * 760×760 island with real geography and a handful of named landmarks.
- * Mountain ridges (impassable cliff walls over tall massifs) are broken by
- * deliberate gaps — passageways that funnel fights. Lowland basins dip below
- * the plain, five of them holding lakes that slow anyone wading through.
+ * Mountain ridges are chains of tall massifs — open, climbable high ground.
+ * Lowland basins dip below the plain, five of them holding lakes that slow
+ * anyone wading through.
  * Five milestone areas (Shipwreck Cove, Skyreach Spire, The Stone Ring, The
  * Sunken Pit, Elder Grove) anchor navigation, with minor copses and boulder
  * fields filling the space between. Built from a fixed-seed Rng, so the
@@ -307,14 +292,13 @@ function buildArena(): MapDef {
   /** Anchors that POIs, cover, and loot must keep clear of. */
   const keepOut: Point[] = [];
 
-  // ── Mountain ridges: cliff-wall segments over tall massifs, with gaps ──
+  // ── Mountain ridges: chains of tall massifs — open high ground, no walls ──
   const ridges = scatterPoints(rng, 6, 170, 300);
   for (const ridge of ridges) {
     const angle = rng.range(0, Math.PI);
     const len = rng.range(75, 115);
     const dirX = Math.cos(angle);
     const dirZ = Math.sin(angle);
-    // The massif the wall rides on.
     for (const t of [-0.28, 0.05, 0.32]) {
       hills.push({
         x: ridge.x + dirX * t * len,
@@ -323,16 +307,11 @@ function buildArena(): MapDef {
         h: rng.range(8, 14),
       });
     }
+    // Keep sites and loot off the crests.
     const segs = Math.round(len / 9);
-    const gapAt = rng.int(2, segs - 3); // the pass through this ridge
-    const secondGap = rng.next() < 0.4 ? rng.int(2, segs - 3) : -10;
     for (let s = 0; s <= segs; s++) {
-      if (Math.abs(s - gapAt) <= 1 || Math.abs(s - secondGap) <= 1) continue; // passageway
       const t = s / segs - 0.5;
-      const x = ridge.x + dirX * t * len + rng.range(-2, 2);
-      const z = ridge.z + dirZ * t * len + rng.range(-2, 2);
-      obstacles.push({ kind: 'circle', x, z, r: rng.range(5, 7.5), height: rng.range(12, 17), look: 'cliff' });
-      keepOut.push({ x, z });
+      keepOut.push({ x: ridge.x + dirX * t * len, z: ridge.z + dirZ * t * len });
     }
   }
 

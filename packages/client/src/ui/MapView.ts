@@ -95,15 +95,6 @@ export class MapView {
       }
     }
     ctx.putImageData(img, 0, 0);
-    // Cliff walls read as dark stone dots — the ridges and their passes.
-    ctx.fillStyle = '#55514a';
-    const scale = BG_RES / ARENA.size;
-    for (const ob of ARENA.obstacles) {
-      if (ob.kind !== 'circle' || ob.look !== 'cliff') continue;
-      ctx.beginPath();
-      ctx.arc((ob.x + half) * scale, (half - ob.z) * scale, Math.max(1.5, ob.r * scale), 0, Math.PI * 2);
-      ctx.fill();
-    }
   }
 
   private draw(
