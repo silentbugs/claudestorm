@@ -203,6 +203,45 @@ body {
   color: #ffd75e;
 }
 
+.choices {
+  display: flex;
+  gap: 6px;
+}
+
+.choices button {
+  padding: 5px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #b8b5a5;
+  background: #1a2136;
+  border: 1px solid #333a55;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.choices button:hover {
+  background: #26304e;
+}
+
+.choices button.selected {
+  color: #10131f;
+  background: #ffd75e;
+  border-color: #ffe9a8;
+}
+
+.choices button.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #333a55;
+}
+
+.choices button.swatch.selected {
+  border-color: #fff;
+  transform: scale(1.15);
+}
+
 #start-btn {
   padding: 14px 52px;
   font-size: 24px;

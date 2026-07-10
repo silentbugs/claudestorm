@@ -669,10 +669,17 @@ export class EntityViews {
     roughness: 0.3,
   });
 
+  private selfColor = SELF_COLOR;
+
   constructor(
     private readonly scene: THREE.Scene,
     private readonly assets: AssetLibrary,
   ) {}
+
+  /** Hero color from the start screen; applies to views created afterwards. */
+  setSelfColor(color: number): void {
+    this.selfColor = color;
+  }
 
   sync(prev: Snapshot, next: Snapshot, t: number, selfId: number, camera: THREE.Camera, dt: number): void {
     const now = performance.now() / 1000;
@@ -686,7 +693,7 @@ export class EntityViews {
     for (const p of next.players) {
       let view = this.players.get(p.id);
       if (!view) {
-        view = new PlayerView(p.id === selfId, p.isBot);
+        view = new PlayerView(p.id === selfId, p.isBot, this.selfColor);
         this.players.set(p.id, view);
         this.scene.add(view.group);
       }

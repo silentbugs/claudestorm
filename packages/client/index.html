@@ -35,9 +35,38 @@
           <div id="start-sub">Drop in, loot spells, outlive the storm.</div>
           <div id="start-settings">
             <div class="setting-row">
+              <label>Hero color</label>
+              <div id="color-swatches" class="choices"></div>
+            </div>
+            <div class="setting-row">
               <label for="bot-count">Opponents</label>
               <input type="range" id="bot-count" min="3" max="23" value="11" />
               <span id="bot-count-value" class="setting-value">11</span>
+            </div>
+            <div class="setting-row">
+              <label>Difficulty</label>
+              <div id="difficulty-choice" class="choices">
+                <button data-value="easy">Easy</button>
+                <button data-value="normal" class="selected">Normal</button>
+                <button data-value="hard">Hard</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label>Circles</label>
+              <div id="circles-choice" class="choices">
+                <button data-value="3">3</button>
+                <button data-value="4">4</button>
+                <button data-value="5" class="selected">5</button>
+                <button data-value="6">6</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label>Circle pace</label>
+              <div id="pace-choice" class="choices">
+                <button data-value="0.7">Fast</button>
+                <button data-value="1" class="selected">Normal</button>
+                <button data-value="1.4">Slow</button>
+              </div>
             </div>
           </div>
           <button id="start-btn">Start Game</button>

@@ -4,11 +4,21 @@ import type { Rng } from '../math/rng.js';
 import { ABILITIES } from './abilities.js';
 import { dist, norm, yawToward } from '../math/vec.js';
 
+export type BotDifficulty = 'easy' | 'normal' | 'hard';
+
+/** Knobs per difficulty: aim scatter, trigger discipline, and awareness range. */
+const DIFFICULTY: Record<BotDifficulty, { spread: number; cast: number; engage: number }> = {
+  easy: { spread: 2.1, cast: 0.55, engage: 24 },
+  normal: { spread: 1, cast: 1, engage: 30 },
+  hard: { spread: 0.45, cast: 1.5, engage: 34 },
+};
+
 export interface BotContext {
   tick: number;
   rng: Rng;
   players: Iterable<PlayerEntity>;
   storm: { x: number; z: number; radius: number };
+  difficulty: BotDifficulty;
 }
 
 function noButtons() {
@@ -30,6 +40,7 @@ function noButtons() {
  */
 export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputCommand {
   const { tick, rng, storm } = ctx;
+  const diff = DIFFICULTY[ctx.difficulty];
   const st = bot.bot!;
   const buttons = noButtons();
   const slotCasts: number[] = [];
@@ -119,10 +130,11 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       }
       buttons.useItem = true;
     }
-  } else if (target && targetDist < 30) {
-    // Engage: face the target with imperfect aim that worsens with range.
-    // Spells fire along facing, so the miss lives in the yaw, not the aim point.
-    const spread = Math.min(3, targetDist * 0.12);
+  } else if (target && targetDist < diff.engage) {
+    // Engage: face the target with imperfect aim that worsens with range and
+    // improves with difficulty. Spells fire along facing, so the miss lives
+    // in the yaw, not the aim point.
+    const spread = Math.min(3, targetDist * 0.12) * diff.spread;
     aimX = target.x + rng.range(-spread, spread);
     aimZ = target.z + rng.range(-spread, spread);
     yaw = yawToward(bot.x, bot.z, aimX, aimZ);
@@ -144,24 +156,24 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
               : def.behavior === 'leap'
                 ? targetDist > 3 && targetDist < (def.leapRange ?? 10) + 2
                 : targetDist < 26;
-      if (inRange && rng.next() < 0.45) slotCasts.push(i);
+      if (inRange && rng.next() < 0.45 * diff.cast) slotCasts.push(i);
     }
     // Utility: chains at mid range, defensive tools when hurt, traps/CC up close.
     for (const slot of [2, 3]) {
       const utility = bot.slots.utility[slot - 2];
       if (!utility || bot.slotCds[slot]! > 0) continue;
       const def = ABILITIES[utility.abilityId];
-      if (def.pull && targetDist > 7 && targetDist < 16 && rng.next() < 0.4) slotCasts.push(slot);
-      else if (def.behavior === 'shield' && bot.hp < 45 && rng.next() < 0.5) slotCasts.push(slot);
-      else if (def.behavior === 'buff' && bot.hp < 40 && rng.next() < 0.5) slotCasts.push(slot);
-      else if (def.behavior === 'leap' && bot.hp < 35 && rng.next() < 0.35) slotCasts.push(slot);
-      else if (def.behavior === 'trap' && targetDist < 12 && rng.next() < 0.2) slotCasts.push(slot);
-      else if (def.behavior === 'groundAoE' && targetDist < (def.aoeRadius ?? 4) + 1 && rng.next() < 0.35)
+      if (def.pull && targetDist > 7 && targetDist < 16 && rng.next() < 0.4 * diff.cast) slotCasts.push(slot);
+      else if (def.behavior === 'shield' && bot.hp < 45 && rng.next() < 0.5 * diff.cast) slotCasts.push(slot);
+      else if (def.behavior === 'buff' && bot.hp < 40 && rng.next() < 0.5 * diff.cast) slotCasts.push(slot);
+      else if (def.behavior === 'leap' && bot.hp < 35 && rng.next() < 0.35 * diff.cast) slotCasts.push(slot);
+      else if (def.behavior === 'trap' && targetDist < 12 && rng.next() < 0.2 * diff.cast) slotCasts.push(slot);
+      else if (def.behavior === 'groundAoE' && targetDist < (def.aoeRadius ?? 4) + 1 && rng.next() < 0.35 * diff.cast)
         slotCasts.push(slot);
-      else if (def.behavior === 'projectile' && !def.pull && targetDist < 18 && rng.next() < 0.3)
+      else if (def.behavior === 'projectile' && !def.pull && targetDist < 18 && rng.next() < 0.3 * diff.cast)
         slotCasts.push(slot);
     }
-    if (bot.rollCdTicks === 0 && rng.next() < 0.02) buttons.roll = true;
+    if (bot.rollCdTicks === 0 && rng.next() < 0.02 * diff.cast) buttons.roll = true;
 
     if (tick >= st.nextDecisionTick) {
       st.strafeSign = rng.next() < 0.5 ? 1 : -1;

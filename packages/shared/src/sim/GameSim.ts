@@ -76,7 +76,7 @@ import {
   stackedRarity,
   type AbilityDef,
 } from './abilities.js';
-import { computeBotInput } from './bots.js';
+import { computeBotInput, type BotDifficulty } from './bots.js';
 import type {
   ChestEntity,
   CoinEntity,
@@ -133,6 +133,8 @@ export interface GameSimOptions {
   map?: MapDef;
   stormPhases?: StormPhaseDef[];
   stormStartRadius?: number;
+  /** How sharp the bots are (aim, trigger discipline, awareness). Default 'normal'. */
+  botDifficulty?: BotDifficulty;
   /** Test hook: skip the glide drop and start the match live on the ground. */
   skipDrop?: boolean;
 }
@@ -161,6 +163,7 @@ export class GameSim {
   private nextEntityId = 1000;
 
   private readonly stormPhases: StormPhaseDef[];
+  private readonly botDifficulty: BotDifficulty;
   private stormPhaseIndex = 0;
   private stormPhaseTime = 0;
   private stormRadius: number;
@@ -178,6 +181,7 @@ export class GameSim {
     this.map = opts.map ?? ARENA;
     this.rng = new Rng(opts.seed);
     this.stormPhases = opts.stormPhases ?? STORM_PHASES;
+    this.botDifficulty = opts.botDifficulty ?? 'normal';
     this.stormRadius = opts.stormStartRadius ?? STORM_START_RADIUS;
     this.stormRadiusAtPhaseStart = this.stormRadius;
     this.phase = opts.skipDrop ? 'live' : 'drop';
@@ -400,6 +404,7 @@ export class GameSim {
             rng: this.rng,
             players: this.players.values(),
             storm: stormView,
+            difficulty: this.botDifficulty,
           }),
         );
       }

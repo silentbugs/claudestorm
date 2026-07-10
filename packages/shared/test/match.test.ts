@@ -173,6 +173,26 @@ describe('storm script generator', () => {
   });
 });
 
+describe('bot difficulty', () => {
+  it('hard bots hurt a stationary target more than easy bots', () => {
+    const run = (difficulty: 'easy' | 'hard'): number => {
+      const sim = makeSim(
+        [
+          player(1, 0, 0), // stationary human punching bag
+          { id: 2, name: 'B', isBot: true, spawn: { x: 10, z: 0 } },
+        ],
+        { botDifficulty: difficulty, seed: 5 },
+      );
+      for (let i = 0; i < TICK_RATE * 20; i++) sim.step();
+      return PLAYER_BASE_HP - sim.players.get(1)!.hp;
+    };
+    const easy = run('easy');
+    const hard = run('hard');
+    expect(hard).toBeGreaterThan(0);
+    expect(hard).toBeGreaterThan(easy);
+  });
+});
+
 describe('match flow', () => {
   it('ends with a winner when only one player remains', () => {
     const sim = makeSim([

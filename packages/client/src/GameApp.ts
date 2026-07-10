@@ -4,9 +4,11 @@ import {
   ARENA,
   INTERACT_RADIUS,
   TICK_DT,
+  buildStormPhases,
   dist,
   lerp,
   terrainHeight,
+  type BotDifficulty,
   type Snapshot,
 } from '@claudestorm/shared';
 import { CameraRig } from './game/CameraRig.js';
@@ -30,6 +32,15 @@ const BOT_NAMES = [
 function botName(i: number): string {
   const base = BOT_NAMES[i % BOT_NAMES.length]!;
   return i < BOT_NAMES.length ? base : `${base} ${Math.floor(i / BOT_NAMES.length) + 1}`;
+}
+
+/** Hero color choices offered on the start screen (first is the default). */
+const HERO_COLORS = [0x4da6ff, 0x3ec9a7, 0xa26bff, 0x69d84f, 0xffd75e, 0xff7ab8];
+
+/** The selected value of a segmented .choices group. */
+function choiceValue(id: string): string {
+  const selected = document.querySelector<HTMLElement>(`#${id} button.selected`);
+  return selected?.dataset.value ?? '';
 }
 
 export class GameApp {
@@ -82,6 +93,24 @@ export class GameApp {
     const botValue = document.getElementById('bot-count-value')!;
     botSlider.addEventListener('input', () => (botValue.textContent = botSlider.value));
 
+    // Hero color swatches, then one-of-N selection for every .choices group.
+    const swatches = document.getElementById('color-swatches')!;
+    HERO_COLORS.forEach((color, i) => {
+      const btn = document.createElement('button');
+      btn.className = i === 0 ? 'swatch selected' : 'swatch';
+      btn.dataset.value = String(color);
+      btn.style.background = `#${color.toString(16).padStart(6, '0')}`;
+      swatches.appendChild(btn);
+    });
+    for (const group of document.querySelectorAll<HTMLElement>('.choices')) {
+      group.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest('button');
+        if (!btn) return;
+        for (const b of group.querySelectorAll('button')) b.classList.remove('selected');
+        btn.classList.add('selected');
+      });
+    }
+
     // Scene and renderer come up once the art is in; only then can you start.
     void AssetLibrary.load().then((assets) => {
       this.sceneMgr = new SceneManager(this.container, assets);
@@ -100,6 +129,10 @@ export class GameApp {
     const botCount = Number(
       (document.getElementById('bot-count') as HTMLInputElement | null)?.value ?? 11,
     );
+    this.views.setSelfColor(Number(choiceValue('color-swatches')) || HERO_COLORS[0]!);
+    const difficulty = (choiceValue('difficulty-choice') || 'normal') as BotDifficulty;
+    const circles = Number(choiceValue('circles-choice')) || 5;
+    const paceMult = Number(choiceValue('pace-choice')) || 1;
     this.transport = new LocalTransport(
       {
         seed: Date.now() & 0x7fffffff,
@@ -111,6 +144,8 @@ export class GameApp {
             isBot: true,
           })),
         ],
+        stormPhases: buildStormPhases(circles, paceMult),
+        botDifficulty: difficulty,
       },
       SELF_ID,
     );
