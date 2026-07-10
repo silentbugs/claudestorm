@@ -226,6 +226,7 @@ export class GameApp {
         const y = lerp(selfPrev.y, selfNext.y, t) + terrainHeight(ARENA.hills, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.sceneMgr.setFocus(x, z);
+        sfx.setListener(x, z, this.rig.camYaw);
         this.updateAim(x, z);
         this.updateInteractPrompt(next, x, z, selfNext.gliding);
       }

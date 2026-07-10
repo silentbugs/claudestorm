@@ -979,20 +979,20 @@ export class EntityViews {
             default:
               this.spawnFlash(ev.x, ev.z, 1.1, 0xcfe8ff, 0.16);
           }
-          sfx.cast(ev.abilityId);
+          sfx.cast(ev.abilityId, ev);
           break;
         case 'chargeRelease': {
           // Bigger flash the longer the charge was held.
           const color = ev.abilityId === 'celestialBarrage' ? 0xd8c8ff : 0xcfe8dd;
           this.spawnBurst(ev.x, ev.z, 1.2 + ev.fraction * 1.6, color, 0.3);
           this.spawnFlash(ev.x, ev.z, 1.0 + ev.fraction, color, 0.2);
-          sfx.cast(ev.abilityId);
+          sfx.cast(ev.abilityId, ev);
           break;
         }
         case 'melee': {
           this.spawnMeleeArc(ev.x, ev.z, ev.facing, ev.combo);
           this.players.get(ev.casterId)?.triggerSwing();
-          sfx.melee(ev.combo);
+          sfx.melee(ev.combo, ev);
           break;
         }
         case 'detonate':
@@ -1013,25 +1013,25 @@ export class EntityViews {
             this.spawnBurst(ev.x, ev.z, ev.radius, 0xffe38a, 0.35);
             this.spawnFlash(ev.x, ev.z, ev.radius * 0.6, 0xfff6d9, 0.25);
           }
-          sfx.detonate();
+          sfx.detonate(ev);
           break;
         case 'hit':
           if (ev.sourceId !== null) this.spawnFlash(ev.x, ev.z, 0.8, 0xff5b4d, 0.18);
-          if (ev.sourceId !== null && ev.amount > 3) sfx.hit();
+          if (ev.sourceId !== null && ev.amount > 3) sfx.hit(ev);
           break;
         case 'projectileGone':
           this.spawnFlash(ev.x, ev.z, 0.5, 0x9fd8ff, 0.14);
           break;
         case 'death':
           this.spawnBurst(ev.x, ev.z, 2.2, 0x3a3a4a, 0.6);
-          sfx.death(ev.id === selfId);
+          sfx.death(ev.id === selfId, ev);
           break;
         case 'mobDeath':
           this.spawnBurst(ev.x, ev.z, ev.elite ? 2.6 : 1.4, ev.elite ? 0xd4af37 : 0x8a6b3d, ev.elite ? 0.6 : 0.4);
           break;
         case 'chestOpened':
           this.spawnFlash(ev.x, ev.z, 1.4, 0xffd75e, 0.4);
-          sfx.chest();
+          sfx.chest(ev);
           break;
         case 'levelUp': {
           const p = playerById.get(ev.playerId);
@@ -1054,7 +1054,7 @@ export class EntityViews {
         case 'heal':
           this.spawnBurst(ev.x, ev.z, 1.6, 0x5fce6a, 0.5, 1.6); // green ring floats upward
           this.spawnFlash(ev.x, ev.z, 1.0, 0x9df0a5, 0.3);
-          if (ev.playerId === selfId) sfx.heal();
+          sfx.heal(ev);
           break;
         case 'itemPickup':
           if (ev.playerId === selfId) sfx.equip();

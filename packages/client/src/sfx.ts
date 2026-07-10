@@ -1,13 +1,36 @@
 import type { AbilityId } from '@claudestorm/shared';
 
-/** Tiny synthesized sound effects — no audio assets needed for the slice. */
+/** A world position a sound comes from; omit for UI/self sounds. */
+export interface SoundAt {
+  x: number;
+  z: number;
+}
+
+/** Beyond this, world sounds don't play at all. */
+const AUDIBLE_RANGE = 130;
+
+/**
+ * Tiny synthesized sound effects — no audio assets needed for the slice.
+ * World-positioned sounds fade with distance and pan left/right based on
+ * where the camera is looking.
+ */
 class Sfx {
   private ctx: AudioContext | null = null;
   private lastCoin = 0;
+  private listenerX = 0;
+  private listenerZ = 0;
+  private listenerYaw = 0;
 
   unlock(): void {
     if (!this.ctx) this.ctx = new AudioContext();
     if (this.ctx.state === 'suspended') void this.ctx.resume();
+  }
+
+  /** Follow the player's ears: their position, the camera's heading. */
+  setListener(x: number, z: number, camYaw: number): void {
+    this.listenerX = x;
+    this.listenerZ = z;
+    this.listenerYaw = camYaw;
   }
 
   private tone(
@@ -16,9 +39,23 @@ class Sfx {
     type: OscillatorType,
     volume: number,
     freqEnd?: number,
+    at?: SoundAt,
   ): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
+    let pan = 0;
+    if (at) {
+      const dx = at.x - this.listenerX;
+      const dz = at.z - this.listenerZ;
+      const d = Math.hypot(dx, dz);
+      if (d > AUDIBLE_RANGE) return;
+      volume *= 1 / (1 + d * d * 0.004); // ~70% at 10m, ~20% at 30m, whisper past 60m
+      if (d > 0.5) {
+        // Screen-right for camYaw is (-cos, sin); sounds on-top stay centered.
+        pan = ((dx * -Math.cos(this.listenerYaw) + dz * Math.sin(this.listenerYaw)) / d) *
+          Math.min(1, d / 6) * 0.8;
+      }
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type;
@@ -28,93 +65,97 @@ class Sfx {
     }
     gain.gain.setValueAtTime(volume, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-    osc.connect(gain).connect(ctx.destination);
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    osc.connect(gain).connect(panner).connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + duration);
   }
 
-  cast(ability: AbilityId): void {
+  cast(ability: AbilityId, at?: SoundAt): void {
+    const t = (freq: number, dur: number, type: OscillatorType, vol: number, freqEnd?: number) =>
+      this.tone(freq, dur, type, vol, freqEnd, at);
     switch (ability) {
       // Offense
       case 'rimeArrow':
-        this.tone(760, 0.12, 'triangle', 0.11, 1050);
+        t(760, 0.12, 'triangle', 0.11, 1050);
         break;
       case 'fireWhirl':
-        this.tone(180, 0.4, 'sawtooth', 0.08, 320);
+        t(180, 0.4, 'sawtooth', 0.08, 320);
         break;
       case 'earthbreaker':
-        this.tone(120, 0.35, 'sawtooth', 0.12, 45);
+        t(120, 0.35, 'sawtooth', 0.12, 45);
         break;
       case 'holyShield':
-        this.tone(660, 0.2, 'triangle', 0.1, 880);
+        t(660, 0.2, 'triangle', 0.1, 880);
         break;
       case 'stormArchon':
-        this.tone(500, 0.14, 'square', 0.07, 900);
+        t(500, 0.14, 'square', 0.07, 900);
         break;
       case 'manaSphere':
-        this.tone(340, 0.2, 'sine', 0.12, 200);
+        t(340, 0.2, 'sine', 0.12, 200);
         break;
       case 'searingAxe':
-        this.tone(200, 0.22, 'sawtooth', 0.11, 80);
+        t(200, 0.22, 'sawtooth', 0.11, 80);
         break;
       case 'slicingWinds':
-        this.tone(420, 0.18, 'sine', 0.1, 980);
+        t(420, 0.18, 'sine', 0.1, 980);
         break;
       case 'starBomb':
-        this.tone(300, 0.18, 'sawtooth', 0.07, 180);
+        t(300, 0.18, 'sawtooth', 0.07, 180);
         break;
       case 'toxicSmackerel':
-        this.tone(420, 0.15, 'triangle', 0.1, 240);
+        t(420, 0.15, 'triangle', 0.1, 240);
         break;
       // Utility
       case 'quakingLeap':
-        this.tone(340, 0.25, 'sine', 0.12, 720);
+        t(340, 0.25, 'sine', 0.12, 720);
         break;
       case 'huntersChains':
-        this.tone(900, 0.1, 'square', 0.06, 500);
+        t(900, 0.1, 'square', 0.06, 500);
         break;
       case 'steelTraps':
-        this.tone(700, 0.09, 'square', 0.07, 350);
+        t(700, 0.09, 'square', 0.07, 350);
         break;
       case 'windstorm':
-        this.tone(280, 0.25, 'sine', 0.1, 760);
+        t(280, 0.25, 'sine', 0.1, 760);
         break;
       case 'explosiveCaltrops':
-        this.tone(520, 0.12, 'square', 0.08, 260);
+        t(520, 0.12, 'square', 0.08, 260);
         break;
       case 'snowdrift':
-        this.tone(980, 0.2, 'triangle', 0.1, 520);
+        t(980, 0.2, 'triangle', 0.1, 520);
         break;
       case 'lightningBulwark':
-        this.tone(220, 0.3, 'triangle', 0.12, 330);
+        t(220, 0.3, 'triangle', 0.12, 330);
         break;
       case 'fadeToShadow':
-        this.tone(300, 0.25, 'sine', 0.09, 90);
+        t(300, 0.25, 'sine', 0.09, 90);
         break;
       case 'repel':
-        this.tone(540, 0.2, 'triangle', 0.11, 720);
+        t(540, 0.2, 'triangle', 0.11, 720);
         break;
       case 'faeform':
-        this.tone(620, 0.25, 'sine', 0.1, 1240);
+        t(620, 0.25, 'sine', 0.1, 1240);
         break;
     }
   }
 
-  melee(combo: number): void {
+  melee(combo: number, at?: SoundAt): void {
     const base = combo === 3 ? 340 : 280;
-    this.tone(base, 0.08, 'square', 0.07, base * 0.6);
+    this.tone(base, 0.08, 'square', 0.07, base * 0.6, at);
   }
 
-  hit(): void {
-    this.tone(220, 0.1, 'square', 0.09, 120);
+  hit(at?: SoundAt): void {
+    this.tone(220, 0.1, 'square', 0.09, 120, at);
   }
 
-  detonate(): void {
-    this.tone(140, 0.35, 'sawtooth', 0.15, 40);
+  detonate(at?: SoundAt): void {
+    this.tone(140, 0.35, 'sawtooth', 0.15, 40, at);
   }
 
-  death(isSelf: boolean): void {
-    this.tone(isSelf ? 330 : 400, 0.5, 'triangle', 0.14, 60);
+  death(isSelf: boolean, at?: SoundAt): void {
+    this.tone(isSelf ? 330 : 400, 0.5, 'triangle', 0.14, 60, at);
   }
 
   coin(): void {
@@ -124,9 +165,9 @@ class Sfx {
     this.tone(1180, 0.09, 'triangle', 0.08, 1560);
   }
 
-  heal(): void {
-    this.tone(392, 0.14, 'sine', 0.12, 587);
-    setTimeout(() => this.tone(587, 0.2, 'sine', 0.1, 784), 110);
+  heal(at?: SoundAt): void {
+    this.tone(392, 0.14, 'sine', 0.12, 587, at);
+    setTimeout(() => this.tone(587, 0.2, 'sine', 0.1, 784, at), 110);
   }
 
   levelUp(): void {
@@ -138,8 +179,8 @@ class Sfx {
     this.tone(620, 0.12, 'sine', 0.11, 880);
   }
 
-  chest(): void {
-    this.tone(190, 0.25, 'triangle', 0.12, 320);
+  chest(at?: SoundAt): void {
+    this.tone(190, 0.25, 'triangle', 0.12, 320, at);
   }
 
   victory(): void {
