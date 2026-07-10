@@ -9,7 +9,8 @@ import {
   TICK_RATE,
 } from '../src/constants.js';
 import { ABILITIES } from '../src/sim/abilities.js';
-import { buttons, castCmd, cmd, loadout, makeSim, player } from './helpers.js';
+import type { MapDef } from '../src/maps/arena.js';
+import { buttons, castCmd, cmd, loadout, makeSim, player, FLAT_MAP } from './helpers.js';
 
 const HOLD_MELEE = buttons({ melee: true });
 const PRESS_ROLL = buttons({ roll: true });
@@ -282,6 +283,23 @@ describe('Storm Archon', () => {
     sim.applyInput(1, castCmd(0, 10, 0));
     const snap = sim.step();
     expect(snap.projectiles).toHaveLength(ABILITIES.stormArchon.volley!);
+  });
+});
+
+describe('mob aggro', () => {
+  it('a mob hit from far beyond its aggro radius comes after the attacker', () => {
+    // Star Bomb's wide blast at max cast range still catches the wandering
+    // guard (an elite: it survives the 40 damage where a common mob wouldn't).
+    const map: MapDef = { ...FLAT_MAP, elites: [{ x: 28, z: 0 }] };
+    const sim = makeSim([player(1, 0, 0, { loadout: loadout(['starBomb']) })], { map });
+    sim.applyInput(1, castCmd(0, 28, 0));
+    for (let i = 0; i < TICK_RATE * 2; i++) sim.step();
+    const mob = sim.mobs.values().next().value!;
+    expect(mob.hp).toBeLessThan(mob.maxHp);
+    expect(mob.targetId).toBe(1);
+    // And the stretched leash lets it actually close the distance.
+    for (let i = 0; i < TICK_RATE * 3.5; i++) sim.step();
+    expect(Math.hypot(mob.x, mob.z)).toBeLessThan(16);
   });
 });
 

@@ -1648,6 +1648,18 @@ export class GameSim {
     if (this.phase !== 'live' || mob.hp <= 0) return;
     mob.hp -= amount;
     this.events.push({ type: 'hit', targetId: mob.id, sourceId, amount, x: mob.x, z: mob.z });
+    // Getting hit always aggros, no matter how far the attacker is — the
+    // leash stretches so sniping from range can't be consequence-free.
+    if (mob.hp > 0 && sourceId !== null) {
+      const attacker = this.players.get(sourceId);
+      if (attacker?.alive) {
+        mob.targetId = sourceId;
+        mob.leashRadius = Math.max(
+          mob.leashRadius,
+          dist(mob.homeX, mob.homeZ, attacker.x, attacker.z) + 8,
+        );
+      }
+    }
     if (mob.hp <= 0) {
       this.mobs.delete(mob.id);
       this.events.push({ type: 'mobDeath', x: mob.x, z: mob.z, elite: mob.elite });
