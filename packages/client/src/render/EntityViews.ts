@@ -143,12 +143,12 @@ function setBar(fill: THREE.Mesh, frac: number, width: number): void {
 }
 
 /*
- * Player characters are wisp specters: one smooth, flowing ghost-robe
- * silhouette (a lathed surface tapering to a floating tail), big glowing
- * eyes that blink, and two small floating hands. There is no weapon: melee
- * swings swell a hand into a giant glowing mitt that slaps through the arc.
- * Non-human, minimal, and a single coherent shape rather than an assembly
- * of primitives. Geometries are shared; each view owns only its tintable
+ * Player characters are tiny ghost specters, Warframe-style: no face —
+ * a sleek metallic helm with a single glowing visor arc and a swept-back
+ * crest sits over one smooth, flowing robe silhouette (a lathed surface
+ * tapering to a floating tail), with two small floating hands. There is no
+ * weapon: melee swings swell a hand into a giant glowing mitt that slaps
+ * through the arc. Geometries are shared; each view owns only its tintable
  * materials.
  */
 const WISP_BODY_GEO = new THREE.LatheGeometry(
@@ -160,9 +160,13 @@ const WISP_BODY_GEO = new THREE.LatheGeometry(
   24,
 );
 WISP_BODY_GEO.translate(0, -0.8, 0); // pivot mid-body for rolls and death topples
-const WISP_EYE_GEO = new THREE.SphereGeometry(0.06, 10, 10);
-WISP_EYE_GEO.scale(1, 1.45, 0.5);
 const WISP_HAND_GEO = new THREE.SphereGeometry(0.095, 12, 10);
+// The helm: a smooth casque over the dome, a glowing visor arc, a crest fin.
+const WISP_HELM_GEO = new THREE.SphereGeometry(0.345, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.58);
+const WISP_VISOR_GEO = new THREE.TorusGeometry(0.315, 0.038, 6, 12, 1.25);
+WISP_VISOR_GEO.rotateZ(Math.PI / 2 - 0.625); // center the arc upward...
+WISP_VISOR_GEO.rotateX(Math.PI / 2); // ...then swing it to face forward
+const WISP_CREST_GEO = new THREE.BoxGeometry(0.04, 0.24, 0.34);
 
 /** Paraglider canopy: a squashed sphere slice, tinted per hero. */
 const CHUTE_CANOPY_GEO = new THREE.SphereGeometry(1.5, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
@@ -180,11 +184,11 @@ class PlayerView {
   private readonly bodyPivot = new THREE.Group();
   private readonly robeMat: THREE.MeshStandardMaterial;
   private readonly handMat: THREE.MeshStandardMaterial;
-  private readonly eyeMat: THREE.MeshBasicMaterial;
+  private readonly helmMat: THREE.MeshStandardMaterial;
+  private readonly visorMat: THREE.MeshBasicMaterial;
   private readonly body: THREE.Mesh;
   private readonly handL = new THREE.Group();
   private readonly handR = new THREE.Group();
-  private readonly eyes: THREE.Mesh[] = [];
   private readonly chute = new THREE.Group();
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
@@ -196,7 +200,6 @@ class PlayerView {
   private swingCombo = 1;
   private castTimer = 0;
   private bobPhase = 0;
-  private blinkIn = 3;
   private deploy = 0;
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
@@ -214,23 +217,35 @@ class PlayerView {
       emissive: this.glowBase,
       emissiveIntensity: 0,
     });
-    this.eyeMat = new THREE.MeshBasicMaterial({ color: this.glowBase });
+    this.helmMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(this.base).multiplyScalar(0.5),
+      metalness: 0.5,
+      roughness: 0.35,
+    });
+    this.visorMat = new THREE.MeshBasicMaterial({ color: this.glowBase });
 
-    // Pivot at mid-body so roll spins and the death topple read naturally.
+    // Pivot at mid-body so roll spins and the death topple read naturally,
+    // scaled down: these are tiny specters.
     this.bodyPivot.position.y = 1.0;
+    this.bodyPivot.scale.setScalar(0.86);
 
     // One continuous robe-to-head form; the tail floats above the ground.
     this.body = new THREE.Mesh(WISP_BODY_GEO, this.robeMat);
     this.body.castShadow = true;
     this.bodyPivot.add(this.body);
 
-    // Tall glowing eyes on the dome mark the facing (and blink, for charm).
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(WISP_EYE_GEO, this.eyeMat);
-      eye.position.set(side * 0.105, 0.47, 0.26);
-      this.eyes.push(eye);
-      this.bodyPivot.add(eye);
-    }
+    // No face — a sleek helm with a glowing visor arc and a crest fin.
+    const helm = new THREE.Mesh(WISP_HELM_GEO, this.helmMat);
+    helm.position.y = 0.5;
+    helm.castShadow = true;
+    this.bodyPivot.add(helm);
+    const visor = new THREE.Mesh(WISP_VISOR_GEO, this.visorMat);
+    visor.position.y = 0.45;
+    this.bodyPivot.add(visor);
+    const crest = new THREE.Mesh(WISP_CREST_GEO, this.helmMat);
+    crest.position.set(0, 0.82, -0.04);
+    crest.rotation.x = -0.3;
+    this.bodyPivot.add(crest);
 
     // Floating mitten hands — no weapon: swings swell them into giant
     // glowing slaps, alternating sides, both clapping on the finisher.
@@ -272,7 +287,7 @@ class PlayerView {
       line.quaternion.setFromUnitVectors(Y_AXIS, lineDir.normalize());
       this.chute.add(line);
     }
-    this.chute.position.y = 1.3; // hangs from the shoulders
+    this.chute.position.y = 1.15; // hangs from the shoulders
     this.chute.visible = false;
     this.group.add(this.chute);
 
@@ -296,7 +311,7 @@ class PlayerView {
     const bar = makeBar(1.3);
     this.hpGroup = bar.group;
     this.hpFill = bar.fill;
-    this.hpGroup.position.y = 2.5;
+    this.hpGroup.position.y = 2.2;
     this.group.add(this.hpGroup);
   }
 
@@ -332,7 +347,8 @@ class PlayerView {
       this.bodyPivot.position.y = 0.5;
       this.robeMat.color.setHex(DEAD_COLOR);
       this.handMat.color.setHex(DEAD_COLOR);
-      this.eyeMat.color.setHex(0x777788);
+      this.helmMat.color.setHex(0x3c3c46);
+      this.visorMat.color.setHex(0x777788);
       this.hpGroup.visible = false;
       this.shield.visible = false;
       this.aura.visible = false;
@@ -429,27 +445,29 @@ class PlayerView {
       this.handL.rotation.x = 0.15;
     }
 
-    // Blink every few seconds — held for a moment, then wide again.
-    this.blinkIn -= dt;
-    if (this.blinkIn <= -0.13) this.blinkIn = 2.6 + Math.random() * 2.8;
-    const lid = this.blinkIn < 0 ? 0.12 : 1;
-    for (const eye of this.eyes) eye.scale.y = lid;
-
     TINT.setHex(this.base);
     if (p.slowed) TINT.lerp(TINT_MIX.setHex(SLOW_COLOR), 0.55);
     if (p.poisoned) TINT.lerp(TINT_MIX.setHex(0x5fce6a), 0.4);
     if (p.fae) TINT.lerp(TINT_MIX.setHex(0xe98fd8), 0.7);
     this.robeMat.color.copy(TINT);
     this.handMat.color.copy(TINT).lerp(WHITE, 0.3);
-    this.eyeMat.color.copy(this.glowBase);
-    // Eyes blaze on the finisher clap.
-    if (this.swingCombo === 3) this.eyeMat.color.lerp(WHITE, Math.min(1, slapR));
+    this.helmMat.color.copy(TINT).multiplyScalar(0.5);
+    // The visor breathes a slow pulse, and blazes on the finisher clap.
+    this.visorMat.color
+      .copy(this.glowBase)
+      .multiplyScalar(0.86 + Math.sin(this.bobPhase * 1.3) * 0.14);
+    if (this.swingCombo === 3) this.visorMat.color.lerp(WHITE, Math.min(1, slapR));
     // Stealth: nearly invisible to enemies, ghostly to yourself.
     const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
-    this.robeMat.transparent = this.handMat.transparent = this.eyeMat.transparent = opacity < 1;
+    this.robeMat.transparent =
+      this.handMat.transparent =
+      this.helmMat.transparent =
+      this.visorMat.transparent =
+        opacity < 1;
     this.robeMat.opacity = opacity;
     this.handMat.opacity = opacity;
-    this.eyeMat.opacity = opacity;
+    this.helmMat.opacity = opacity;
+    this.visorMat.opacity = opacity;
     this.hpGroup.visible = !p.stealthed;
     setBar(this.hpFill, p.hpFrac, 1.3);
     // Billboard: cancel the parent's facing rotation so the bar always faces the camera.
