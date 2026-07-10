@@ -286,7 +286,7 @@ describe('Storm Archon', () => {
 });
 
 describe('Holy Shield', () => {
-  it('pierces through, returns to the caster, and hits each enemy once', () => {
+  it('pierces on the way out and hits again on the way back', () => {
     const sim = makeSim([
       player(1, 0, 0, { loadout: loadout(['holyShield']) }),
       player(2, 8, 0),
@@ -294,7 +294,8 @@ describe('Holy Shield', () => {
     sim.applyInput(1, castCmd(0, 8, 0));
     let snap = sim.step();
     for (let i = 0; i < 60; i++) snap = sim.step();
-    expect(sim.players.get(2)!.hp).toBeCloseTo(PLAYER_BASE_HP - ABILITIES.holyShield.damage, 5);
+    // Once on the outward leg, once on the return leg.
+    expect(sim.players.get(2)!.hp).toBeCloseTo(PLAYER_BASE_HP - 2 * ABILITIES.holyShield.damage, 5);
     expect(snap.projectiles).toHaveLength(0); // caught by the owner
   });
 });

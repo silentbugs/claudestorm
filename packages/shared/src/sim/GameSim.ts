@@ -1185,9 +1185,11 @@ export class GameSim {
       const def = ABILITIES[proj.abilityId];
       const owner = this.players.get(proj.ownerId);
 
-      // Boomerang (Holy Shield): after the outward leg, home back to the owner.
+      // Boomerang (Holy Shield): after the outward leg, home back to the
+      // owner — and the return leg hits everyone a second time.
       if (def.boomerang && proj.ticksLeft <= 0 && !proj.returning) {
         proj.returning = true;
+        proj.hitIds.clear();
       }
       if (proj.returning && owner?.alive) {
         const back = norm(owner.x - proj.x, owner.z - proj.z);
