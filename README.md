@@ -14,7 +14,7 @@ Set up your match on the start screen — hero color, opponent count (3–23 bot
 - **WASD** — move (relative to your character's facing)
 - **Hold right mouse** — turn your character with the camera (WoW-style)
 - **Hold left mouse** — orbit the camera without turning your character; pressing RMB snaps you to the camera's heading
-- **R** — sword auto-attack (3-hit combo, big finisher)
+- **R** — melee slap (3-hit combo; the third is a two-handed finisher)
 - **1 / 2** — offense spell slots (looted); charge-and-release spells cast on press, release on re-press
 - **3 / 4** — utility spell slots (looted)
 - Spells fire **where your character faces** (turn to aim, Plunderstorm-style); ground circles land in your facing at the cursor's distance.

@@ -145,10 +145,11 @@ function setBar(fill: THREE.Mesh, frac: number, width: number): void {
 /*
  * Player characters are wisp specters: one smooth, flowing ghost-robe
  * silhouette (a lathed surface tapering to a floating tail), big glowing
- * eyes, and two small floating hands — the right one grips a proper little
- * sword. Non-human, minimal, and a single coherent shape rather than an
- * assembly of primitives. Geometries and sword materials are shared; each
- * view owns only its three tintable materials.
+ * eyes that blink, and two small floating hands. There is no weapon: melee
+ * swings swell a hand into a giant glowing mitt that slaps through the arc.
+ * Non-human, minimal, and a single coherent shape rather than an assembly
+ * of primitives. Geometries are shared; each view owns only its tintable
+ * materials.
  */
 const WISP_BODY_GEO = new THREE.LatheGeometry(
   [
@@ -163,17 +164,11 @@ const WISP_EYE_GEO = new THREE.SphereGeometry(0.06, 10, 10);
 WISP_EYE_GEO.scale(1, 1.45, 0.5);
 const WISP_HAND_GEO = new THREE.SphereGeometry(0.095, 12, 10);
 
-const SWORD_BLADE_GEO = new THREE.BoxGeometry(0.045, 0.1, 0.62);
-const SWORD_TIP_GEO = new THREE.ConeGeometry(0.058, 0.14, 4);
-SWORD_TIP_GEO.rotateX(Math.PI / 2);
-SWORD_TIP_GEO.rotateZ(Math.PI / 4);
-SWORD_TIP_GEO.scale(0.75, 1, 1.9);
-const SWORD_GUARD_GEO = new THREE.BoxGeometry(0.2, 0.05, 0.05);
-const SWORD_GRIP_GEO = new THREE.CylinderGeometry(0.028, 0.028, 0.14, 8);
-SWORD_GRIP_GEO.rotateX(Math.PI / 2);
-const STEEL_MAT = new THREE.MeshStandardMaterial({ color: 0xcfd2dd, metalness: 0.7, roughness: 0.35 });
-const GOLD_MAT = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35 });
-const GRIP_MAT = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.85 });
+/** Paraglider canopy: a squashed sphere slice, tinted per hero. */
+const CHUTE_CANOPY_GEO = new THREE.SphereGeometry(1.5, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
+CHUTE_CANOPY_GEO.scale(1, 0.62, 0.85);
+const CHUTE_LINE_GEO = new THREE.CylinderGeometry(0.012, 0.012, 1, 4);
+const CHUTE_LINE_MAT = new THREE.MeshBasicMaterial({ color: 0x2a2a33 });
 
 /** Scratch colors for per-frame tinting — never allocate in update(). */
 const TINT = new THREE.Color();
@@ -189,7 +184,8 @@ class PlayerView {
   private readonly body: THREE.Mesh;
   private readonly handL = new THREE.Group();
   private readonly handR = new THREE.Group();
-  private readonly glider: THREE.Mesh;
+  private readonly eyes: THREE.Mesh[] = [];
+  private readonly chute = new THREE.Group();
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
   private readonly hpGroup: THREE.Group;
@@ -197,8 +193,11 @@ class PlayerView {
   private deadFor = 0;
   private rollSpin = 0;
   private swingTimer = 0;
+  private swingCombo = 1;
   private castTimer = 0;
   private bobPhase = 0;
+  private blinkIn = 3;
+  private deploy = 0;
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
   private readonly base: number;
@@ -207,11 +206,14 @@ class PlayerView {
   constructor(isSelf: boolean, isBot: boolean, selfColor: number = SELF_COLOR) {
     this.base = isSelf || !isBot ? selfColor : BOT_COLOR;
     this.robeMat = new THREE.MeshStandardMaterial({ color: this.base, roughness: 0.62 });
+    this.glowBase.setHex(this.base).lerp(WHITE, 0.72);
+    // Hands glow when they strike — the wisp's "weapon" is a giant slap.
     this.handMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(this.base).lerp(WHITE, 0.3),
       roughness: 0.6,
+      emissive: this.glowBase,
+      emissiveIntensity: 0,
     });
-    this.glowBase.setHex(this.base).lerp(WHITE, 0.72);
     this.eyeMat = new THREE.MeshBasicMaterial({ color: this.glowBase });
 
     // Pivot at mid-body so roll spins and the death topple read naturally.
@@ -222,50 +224,57 @@ class PlayerView {
     this.body.castShadow = true;
     this.bodyPivot.add(this.body);
 
-    // Tall glowing eyes on the dome mark the facing.
+    // Tall glowing eyes on the dome mark the facing (and blink, for charm).
     for (const side of [-1, 1]) {
       const eye = new THREE.Mesh(WISP_EYE_GEO, this.eyeMat);
       eye.position.set(side * 0.105, 0.47, 0.26);
+      this.eyes.push(eye);
       this.bodyPivot.add(eye);
     }
 
-    // Floating mitten hands; the right one grips the sword.
-    const palmL = new THREE.Mesh(WISP_HAND_GEO, this.handMat);
-    palmL.position.set(-0.02, -0.16, 0.06);
-    palmL.castShadow = true;
-    this.handL.add(palmL);
-    this.handL.position.set(-0.44, 0.28, 0.04);
-    const palmR = new THREE.Mesh(WISP_HAND_GEO, this.handMat);
-    palmR.position.set(0.02, -0.16, 0.06);
-    palmR.castShadow = true;
-    const blade = new THREE.Mesh(SWORD_BLADE_GEO, STEEL_MAT);
-    blade.position.set(0.02, -0.18, 0.42);
-    blade.castShadow = true;
-    const tip = new THREE.Mesh(SWORD_TIP_GEO, STEEL_MAT);
-    tip.position.set(0.02, -0.18, 0.8);
-    const guard = new THREE.Mesh(SWORD_GUARD_GEO, GOLD_MAT);
-    guard.position.set(0.02, -0.18, 0.08);
-    const grip = new THREE.Mesh(SWORD_GRIP_GEO, GRIP_MAT);
-    grip.position.set(0.02, -0.18, -0.03);
-    this.handR.add(palmR, blade, tip, guard, grip);
-    this.handR.position.set(0.44, 0.28, 0.04);
-    this.handR.rotation.x = 0.3; // resting: sword low, forward
-    this.bodyPivot.add(this.handL, this.handR);
+    // Floating mitten hands — no weapon: swings swell them into giant
+    // glowing slaps, alternating sides, both clapping on the finisher.
+    for (const [hand, side] of [
+      [this.handL, -1],
+      [this.handR, 1],
+    ] as const) {
+      const palm = new THREE.Mesh(WISP_HAND_GEO, this.handMat);
+      palm.position.set(side * 0.02, -0.16, 0.06);
+      palm.castShadow = true;
+      hand.add(palm);
+      hand.position.set(side * 0.44, 0.28, 0.04);
+      hand.rotation.x = 0.15;
+      this.bodyPivot.add(hand);
+    }
 
     this.group.add(this.bodyPivot);
 
-    // Delta-wing glider: a wide triangle pointing the way you fly.
-    const wingGeo = new THREE.CircleGeometry(2.0, 3);
-    wingGeo.rotateZ(Math.PI / 2); // one vertex up...
-    wingGeo.rotateX(Math.PI / 2); // ...then lay flat, nose forward (+z)
-    wingGeo.scale(1.1, 1, 0.7);
-    this.glider = new THREE.Mesh(
-      wingGeo,
-      new THREE.MeshStandardMaterial({ color: 0xe0b34c, roughness: 0.7, side: THREE.DoubleSide }),
-    );
-    this.glider.position.y = 2.8;
-    this.glider.visible = false;
-    this.group.add(this.glider);
+    // Paraglider: tinted canopy on suspension lines, swaying above the wisp.
+    const canopyMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(this.base).lerp(WHITE, 0.18),
+      roughness: 0.75,
+      side: THREE.DoubleSide,
+    });
+    const canopy = new THREE.Mesh(CHUTE_CANOPY_GEO, canopyMat);
+    canopy.position.y = 1.5;
+    this.chute.add(canopy);
+    const lineTop = new THREE.Vector3();
+    const lineBottom = new THREE.Vector3();
+    const lineDir = new THREE.Vector3();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+      lineTop.set(Math.sin(a) * 1.32, 1.68, Math.cos(a) * 1.12);
+      lineBottom.set(Math.sin(a) * 0.2, 0, Math.cos(a) * 0.17);
+      const line = new THREE.Mesh(CHUTE_LINE_GEO, CHUTE_LINE_MAT);
+      lineDir.subVectors(lineTop, lineBottom);
+      line.scale.y = lineDir.length();
+      line.position.copy(lineBottom).addScaledVector(lineDir, 0.5);
+      line.quaternion.setFromUnitVectors(Y_AXIS, lineDir.normalize());
+      this.chute.add(line);
+    }
+    this.chute.position.y = 1.3; // hangs from the shoulders
+    this.chute.visible = false;
+    this.group.add(this.chute);
 
     this.shield = new THREE.Mesh(
       new THREE.SphereGeometry(1.15, 18, 14),
@@ -327,13 +336,12 @@ class PlayerView {
       this.hpGroup.visible = false;
       this.shield.visible = false;
       this.aura.visible = false;
-      this.glider.visible = false;
+      this.chute.visible = false;
       if (this.deadFor > 2.5) this.group.visible = false;
       return;
     }
 
     this.group.rotation.y = p.facing;
-    this.glider.visible = p.gliding;
     this.shield.visible = p.shielded || p.immune;
     (this.shield.material as THREE.MeshBasicMaterial).color.setHex(
       p.immune ? 0xcfe0ff : 0x9fc4e8,
@@ -366,26 +374,66 @@ class PlayerView {
       this.bodyPivot.rotation.x = airborne ? -0.12 : Math.min(0.2, speed * 0.018);
     }
 
+    // Paraglider: pops open on deploy, then breathes and sways on the wind.
+    this.chute.visible = p.gliding;
+    if (p.gliding) {
+      this.deploy = Math.min(1, this.deploy + dt / 0.4);
+      const e = 1 - (1 - this.deploy) * (1 - this.deploy); // ease-out pop
+      const breathe = 1 + Math.sin(this.bobPhase * 1.7) * 0.03;
+      this.chute.scale.set((0.25 + 0.75 * e) * breathe, 0.25 + 0.75 * e, (0.25 + 0.75 * e) * breathe);
+      this.chute.rotation.z = Math.sin(this.bobPhase * 1.1) * 0.08;
+      this.chute.rotation.x = -0.12 + Math.sin(this.bobPhase * 0.8) * 0.05;
+    } else {
+      this.deploy = 0;
+    }
+
     // Hands drift on their own slightly offset rhythms.
     this.handL.position.y = 0.28 + Math.sin(this.bobPhase + 1.6) * 0.03;
     if (this.swingTimer <= 0) this.handR.position.y = 0.28 + Math.sin(this.bobPhase) * 0.03;
 
-    // Sword swing: whip forward, then drift back to rest.
+    // The slap: the striking hand swells into a giant glowing mitt and whips
+    // through the arc — right, then left, then BOTH on the combo finisher.
+    let slapL = 0;
+    let slapR = 0;
     if (this.swingTimer > 0) {
       this.swingTimer = Math.max(0, this.swingTimer - dt);
       const t = 1 - this.swingTimer / SWING_DURATION;
-      this.handR.rotation.x = t < 0.4 ? lerp(0.3, -1.85, t / 0.4) : lerp(-1.85, 0.3, (t - 0.4) / 0.6);
-    } else {
-      this.handR.rotation.x = 0.3;
+      const whip = t < 0.4 ? lerp(0.15, -2.05, t / 0.4) : lerp(-2.05, 0.15, (t - 0.4) / 0.6);
+      const act = Math.sin(Math.PI * t); // swell in, shrink out
+      const finisher = this.swingCombo === 3;
+      if (finisher || this.swingCombo % 2 === 1) {
+        this.handR.rotation.x = whip;
+        slapR = act;
+      }
+      if (finisher || this.swingCombo % 2 === 0) {
+        this.handL.rotation.x = whip;
+        slapL = act;
+      }
+      if (finisher) {
+        slapR *= 1.35;
+        slapL *= 1.35;
+      }
     }
-    // The off-hand rises while casting.
+    if (slapR === 0) this.handR.rotation.x = 0.15;
+    this.handR.scale.setScalar(1 + 1.5 * slapR);
+    this.handL.scale.setScalar(1 + 1.5 * slapL);
+    this.handMat.emissiveIntensity = Math.max(slapL, slapR) * 0.9;
+    // The off-hand rises while casting (unless it's mid-slap).
     if (this.castTimer > 0) {
       this.castTimer = Math.max(0, this.castTimer - dt);
-      this.handL.rotation.x = -1.7;
-      this.handL.position.y += 0.16;
-    } else {
-      this.handL.rotation.x = 0;
+      if (slapL === 0) {
+        this.handL.rotation.x = -1.7;
+        this.handL.position.y += 0.16;
+      }
+    } else if (slapL === 0) {
+      this.handL.rotation.x = 0.15;
     }
+
+    // Blink every few seconds — held for a moment, then wide again.
+    this.blinkIn -= dt;
+    if (this.blinkIn <= -0.13) this.blinkIn = 2.6 + Math.random() * 2.8;
+    const lid = this.blinkIn < 0 ? 0.12 : 1;
+    for (const eye of this.eyes) eye.scale.y = lid;
 
     TINT.setHex(this.base);
     if (p.slowed) TINT.lerp(TINT_MIX.setHex(SLOW_COLOR), 0.55);
@@ -394,21 +442,23 @@ class PlayerView {
     this.robeMat.color.copy(TINT);
     this.handMat.color.copy(TINT).lerp(WHITE, 0.3);
     this.eyeMat.color.copy(this.glowBase);
-    // Stealth: nearly invisible to enemies, ghostly to yourself. The sword's
-    // materials are shared, so the hands (and sword) hide instead of fading.
+    // Eyes blaze on the finisher clap.
+    if (this.swingCombo === 3) this.eyeMat.color.lerp(WHITE, Math.min(1, slapR));
+    // Stealth: nearly invisible to enemies, ghostly to yourself.
     const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
-    this.robeMat.transparent = this.eyeMat.transparent = opacity < 1;
+    this.robeMat.transparent = this.handMat.transparent = this.eyeMat.transparent = opacity < 1;
     this.robeMat.opacity = opacity;
+    this.handMat.opacity = opacity;
     this.eyeMat.opacity = opacity;
-    this.handL.visible = this.handR.visible = !p.stealthed || isSelf;
     this.hpGroup.visible = !p.stealthed;
     setBar(this.hpFill, p.hpFrac, 1.3);
     // Billboard: cancel the parent's facing rotation so the bar always faces the camera.
     this.hpGroup.quaternion.copy(this.group.quaternion).invert().multiply(camera.quaternion);
   }
 
-  triggerSwing(): void {
+  triggerSwing(combo: number): void {
     this.swingTimer = SWING_DURATION;
+    this.swingCombo = combo;
   }
 
   triggerCast(): void {
@@ -994,7 +1044,7 @@ export class EntityViews {
         }
         case 'melee': {
           this.spawnMeleeArc(ev.x, ev.z, ev.facing, ev.combo);
-          this.players.get(ev.casterId)?.triggerSwing();
+          this.players.get(ev.casterId)?.triggerSwing(ev.combo);
           sfx.melee(ev.combo, ev);
           break;
         }

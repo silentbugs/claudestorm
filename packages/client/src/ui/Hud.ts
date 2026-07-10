@@ -123,9 +123,9 @@ export class Hud {
     };
 
     const builtins = [
-      row('⚔️', 'Sword', 'R', 'Builtin',
+      row('👋', 'Slap', 'R', 'Builtin',
         `${MELEE_DAMAGE} damage · ${MELEE_INTERVAL}s swing · 3rd hit ×${MELEE_COMBO_FINISHER_MULT}`,
-        'Auto-attack combo in a front arc. The third hit in a row is a finisher.'),
+        'Wind up a giant glowing hand and slap everything in a front arc. The third hit is a two-handed finisher.'),
       row('💚', 'Heal', 'H', 'Builtin', `${HEAL_AMOUNT} healing · ${HEAL_COOLDOWN}s cooldown`,
         'Instantly restore health. Everyone carries this — use it before it is too late.'),
       row('🤸', 'Barrel Roll', 'Shift', 'Builtin', `${ROLL_DISTANCE}m · ${ROLL_COOLDOWN}s cooldown`,
@@ -193,7 +193,7 @@ export class Hud {
         ? `${Math.ceil(self.hp)} +${Math.ceil(self.shieldHp)} / ${self.maxHp}`
         : `${Math.ceil(self.hp)} / ${self.maxHp}`;
 
-    this.updateSlot('melee', 'Sword', '⚔️', null, self.meleeCd, MELEE_INTERVAL, false);
+    this.updateSlot('melee', 'Slap', '👋', null, self.meleeCd, MELEE_INTERVAL, false);
     this.updateAbilitySlot('0', self, 0);
     this.updateAbilitySlot('1', self, 1);
     this.updateAbilitySlot('2', self, 2);
