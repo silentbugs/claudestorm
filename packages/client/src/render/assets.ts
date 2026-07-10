@@ -7,7 +7,6 @@ export const MODEL_NAMES = [
   'tree_oak', 'tree_fat', 'tree_tall', 'tree_thin',
   'tree_pineDefaultA', 'tree_pineDefaultB', 'tree_palm', 'tree_palmTall',
   'rock_largeA', 'rock_largeB', 'rock_largeC', 'rock_tallA', 'rock_tallB', 'rock_tallC',
-  'cliff_block_rock', 'cliff_blockDiagonal_rock',
   'stump_round', 'stump_old', 'log', 'log_stack', 'campfire_logs',
   'grass', 'grass_large', 'plant_bush', 'plant_bushLarge',
   'flower_redA', 'flower_purpleA', 'flower_yellowA', 'mushroom_red', 'mushroom_tanGroup',

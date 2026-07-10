@@ -386,25 +386,34 @@ export class SceneManager {
     const palmPick: ModelName[] = ['tree_palm', 'tree_palmTall'];
     const rockPick: ModelName[] = ['rock_tallA', 'rock_tallB', 'rock_tallC'];
 
-    const cliffPick: ModelName[] = ['cliff_block_rock', 'cliff_blockDiagonal_rock'];
     ARENA.obstacles.forEach((ob, i) => {
       if (ob.kind !== 'circle') return; // the island has no box obstacles anymore
       const rot = i * 2.39; // deterministic "random" facing
       const look = ob.look ?? (ob.height >= 10 ? 'cliff' : ob.height >= 5 ? 'tree' : 'rock');
       if (look === 'cliff') {
-        // Mountain-wall segment: a giant cliff block spanning the collision circle.
-        const name = cliffPick[i % 2]!;
-        const cliff = this.assets.model(name);
-        const size = this.assets.size(name);
-        cliff.scale.set(
-          (ob.r * 2.4) / Math.max(0.001, size.x),
-          ob.height / Math.max(0.001, size.y),
-          (ob.r * 2.4) / Math.max(0.001, size.z),
-        );
-        // Sink slightly so jittered segments knit into a continuous wall.
-        cliff.position.y = -0.6;
+        // Mountain-wall segment: a cluster of giant stone spires sunk deep
+        // into the massif, so jagged tops read as mountain teeth and nothing
+        // floats above the curved terrain.
         const holder = new THREE.Group();
-        holder.add(cliff);
+        const main = this.assets.model(rockPick[i % 3]!);
+        const size = this.assets.size(rockPick[i % 3]!);
+        main.scale.set(
+          (ob.r * 2.6) / Math.max(0.001, size.x),
+          (ob.height * 1.2) / Math.max(0.001, size.y),
+          (ob.r * 2.6) / Math.max(0.001, size.z),
+        );
+        main.position.y = -1.6;
+        holder.add(main);
+        const side = this.assets.model(rockPick[(i + 1) % 3]!);
+        const sideSize = this.assets.size(rockPick[(i + 1) % 3]!);
+        side.scale.set(
+          (ob.r * 1.7) / Math.max(0.001, sideSize.x),
+          (ob.height * 0.7) / Math.max(0.001, sideSize.y),
+          (ob.r * 1.7) / Math.max(0.001, sideSize.z),
+        );
+        side.position.set(ob.r * 0.7 * Math.sin(rot), -1.6, ob.r * 0.7 * Math.cos(rot));
+        side.rotation.y = 1.9;
+        holder.add(side);
         this.place(holder, ob.x, ob.z, rot);
       } else if (look === 'tree') {
         const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > ARENA.size / 2 - 44;
