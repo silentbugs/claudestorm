@@ -17,7 +17,7 @@ import { SnapshotBuffer } from './game/SnapshotBuffer.js';
 import { LocalTransport } from './net/LocalTransport.js';
 import { AssetLibrary } from './render/assets.js';
 import { EntityViews } from './render/EntityViews.js';
-import { SceneManager } from './render/SceneManager.js';
+import { SceneManager, type EnvironmentId } from './render/SceneManager.js';
 import { sfx } from './sfx.js';
 import { Hud } from './ui/Hud.js';
 
@@ -111,6 +111,10 @@ export class GameApp {
         btn.classList.add('selected');
       });
     }
+    // Time of day previews live on the menu's island flyover.
+    document.getElementById('time-choice')!.addEventListener('click', () => {
+      this.sceneMgr?.setEnvironment((choiceValue('time-choice') || 'day') as EnvironmentId);
+    });
 
     // Scene and renderer come up once the art is in; only then can you start.
     void AssetLibrary.load().then((assets) => {
@@ -131,6 +135,7 @@ export class GameApp {
       (document.getElementById('bot-count') as HTMLInputElement | null)?.value ?? 11,
     );
     this.views.setSelfColor(Number(choiceValue('color-swatches')) || HERO_COLORS[0]!);
+    this.sceneMgr.setEnvironment((choiceValue('time-choice') || 'day') as EnvironmentId);
     const difficulty = (choiceValue('difficulty-choice') || 'normal') as BotDifficulty;
     const circles = Number(choiceValue('circles-choice')) || 5;
     const paceMult = Number(choiceValue('pace-choice')) || 1;

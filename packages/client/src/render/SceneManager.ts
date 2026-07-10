@@ -3,8 +3,49 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { ARENA, Rng, STORM_START_RADIUS, terrainHeight } from '@claudestorm/shared';
 import type { AssetLibrary, ModelName } from './assets.js';
 
-const FOG_COLOR = 0x453e58;
 const SUN_DIR = new THREE.Vector3(0.55, 0.5, 0.32).normalize();
+
+/** Start-screen time-of-day choices. */
+export type EnvironmentId = 'day' | 'dusk' | 'night';
+
+interface EnvPreset {
+  fog: number;
+  zenith: number;
+  horizon: number;
+  glow: number;
+  glowStrength: number;
+  hemiSky: number;
+  hemiGround: number;
+  hemiIntensity: number;
+  sun: number;
+  sunIntensity: number;
+  waterDeep: number;
+  waterSky: number;
+  exposure: number;
+  cloud: number;
+  cloudOpacity: number;
+}
+
+/** Day is the default — bright and saturated, the Plunderstorm look. */
+const ENVIRONMENTS: Record<EnvironmentId, EnvPreset> = {
+  day: {
+    fog: 0x9cc2dd, zenith: 0x2660c2, horizon: 0xaadcf2, glow: 0xfff2cc, glowStrength: 0.35,
+    hemiSky: 0xcfe5ff, hemiGround: 0x3d5a34, hemiIntensity: 0.95, sun: 0xfff2d8, sunIntensity: 1.8,
+    waterDeep: 0x0d3852, waterSky: 0x80b2cc, exposure: 1.12, cloud: 0xffffff, cloudOpacity: 0.85,
+  },
+  dusk: {
+    fog: 0x453e58, zenith: 0x1a2447, horizon: 0x8c6b85, glow: 0xffb861, glowStrength: 0.5,
+    hemiSky: 0xbfd4ff, hemiGround: 0x30281e, hemiIntensity: 0.85, sun: 0xffe6c0, sunIntensity: 1.7,
+    waterDeep: 0x0a1c33, waterSky: 0x5c5c7a, exposure: 1.05, cloud: 0xd9dce8, cloudOpacity: 0.82,
+  },
+  night: {
+    fog: 0x141a2c, zenith: 0x050810, horizon: 0x1a2138, glow: 0x9fb6ff, glowStrength: 0.25,
+    hemiSky: 0x8fa8d8, hemiGround: 0x101418, hemiIntensity: 0.55, sun: 0xbdd2ff, sunIntensity: 0.95,
+    waterDeep: 0x03080f, waterSky: 0x26304d, exposure: 1.0, cloud: 0x2a3048, cloudOpacity: 0.6,
+  },
+};
+
+const FOG_COLOR = ENVIRONMENTS.day.fog;
 
 /** Owns the Three.js scene, camera, lights, sky, water, arena geometry, and storm wall. */
 export class SceneManager {
@@ -17,7 +58,10 @@ export class SceneManager {
   private readonly clouds: { group: THREE.Group; speed: number }[] = [];
   private readonly clock = new THREE.Clock();
   private readonly sun: THREE.DirectionalLight;
+  private readonly hemi: THREE.HemisphereLight;
   private sky!: THREE.Mesh;
+  private skyMat!: THREE.ShaderMaterial;
+  private cloudMat!: THREE.MeshStandardMaterial;
   /** Staging area for static scenery; merged into per-material meshes at the end. */
   private readonly staticStage = new THREE.Group();
 
@@ -44,8 +88,8 @@ export class SceneManager {
     this.scene.background = new THREE.Color(FOG_COLOR);
     this.buildSky();
 
-    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
-    this.scene.add(hemi);
+    this.hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
+    this.scene.add(this.hemi);
     // The shadow map covers a tight box that follows the player (setFocus)
     // instead of the whole island: far casters skip the shadow pass entirely
     // and the texels land where the fight is.
@@ -101,6 +145,7 @@ export class SceneManager {
     this.stormWall.position.y = 30;
     this.setStorm(0, 0, STORM_START_RADIUS);
     this.scene.add(this.stormWall);
+    this.setEnvironment('day');
 
     // Compile every shader up front so the first frames of a match don't hitch.
     this.renderer.compile(this.scene, this.camera);
@@ -115,34 +160,40 @@ export class SceneManager {
    * leaving a black hole in the sky that tracks the camera.
    */
   private buildSky(): void {
-    const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(1000, 24, 12),
-      new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        depthWrite: false,
-        fog: false,
-        uniforms: { uSunDir: { value: SUN_DIR } },
-        vertexShader: `
-          varying vec3 vWorld;
-          void main() {
-            vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }`,
-        fragmentShader: `
-          uniform vec3 uSunDir;
-          varying vec3 vWorld;
-          void main() {
-            vec3 dir = normalize(vWorld);
-            float h = dir.y * 0.5 + 0.5;
-            vec3 zenith = vec3(0.10, 0.14, 0.28);
-            vec3 horizon = vec3(0.55, 0.42, 0.52);
-            vec3 col = mix(horizon, zenith, smoothstep(0.5, 0.78, h));
-            float sunGlow = pow(max(dot(dir, uSunDir), 0.0), 10.0);
-            col += vec3(1.0, 0.72, 0.38) * sunGlow * 0.5;
-            gl_FragColor = vec4(col, 1.0);
-          }`,
-      }),
-    );
+    this.skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      uniforms: {
+        uSunDir: { value: SUN_DIR },
+        uZenith: { value: new THREE.Color() },
+        uHorizon: { value: new THREE.Color() },
+        uGlowColor: { value: new THREE.Color() },
+        uGlowStrength: { value: 0.5 },
+      },
+      vertexShader: `
+        varying vec3 vLocal;
+        void main() {
+          vLocal = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform vec3 uSunDir;
+        uniform vec3 uZenith;
+        uniform vec3 uHorizon;
+        uniform vec3 uGlowColor;
+        uniform float uGlowStrength;
+        varying vec3 vLocal;
+        void main() {
+          vec3 dir = normalize(vLocal);
+          float h = dir.y * 0.5 + 0.5;
+          vec3 col = mix(uHorizon, uZenith, smoothstep(0.5, 0.78, h));
+          float sunGlow = pow(max(dot(dir, uSunDir), 0.0), 10.0);
+          col += uGlowColor * sunGlow * uGlowStrength;
+          gl_FragColor = vec4(col, 1.0);
+        }`,
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(1000, 24, 12), this.skyMat);
     this.sky = sky;
     this.scene.add(sky);
   }
@@ -210,6 +261,8 @@ export class SceneManager {
         uNormals: { value: this.assets.waterNormals },
         uSunDir: { value: SUN_DIR },
         uFogColor: { value: new THREE.Color(FOG_COLOR) },
+        uDeep: { value: new THREE.Color(0x0a1c33) },
+        uSkyTint: { value: new THREE.Color(0x5c5c7a) },
       },
       vertexShader: `
         uniform float uTime;
@@ -231,6 +284,8 @@ export class SceneManager {
         uniform sampler2D uNormals;
         uniform vec3 uSunDir;
         uniform vec3 uFogColor;
+        uniform vec3 uDeep;
+        uniform vec3 uSkyTint;
         varying vec3 vWorld;
         varying vec3 vView;
         varying float vDist;
@@ -240,9 +295,7 @@ export class SceneManager {
           vec3 n = normalize(vec3(n1.x + n2.x, 3.0, n1.y + n2.y));
           vec3 viewDir = normalize(vView);
           float fresnel = pow(1.0 - max(dot(viewDir, n), 0.0), 3.0);
-          vec3 deep = vec3(0.04, 0.11, 0.20);
-          vec3 skyTint = vec3(0.36, 0.36, 0.48);
-          vec3 col = mix(deep, skyTint, fresnel * 0.8);
+          vec3 col = mix(uDeep, uSkyTint, fresnel * 0.8);
           float spec = pow(max(dot(n, normalize(viewDir + uSunDir)), 0.0), 70.0);
           col += vec3(1.0, 0.82, 0.55) * spec * 0.9;
           col = mix(col, uFogColor, smoothstep(280.0, 920.0, vDist));
@@ -417,13 +470,14 @@ export class SceneManager {
   /** Puffy low-poly clouds drifting high over the island. */
   private buildClouds(): void {
     const rng = new Rng(0xc10d);
-    const cloudMat = new THREE.MeshStandardMaterial({
+    this.cloudMat = new THREE.MeshStandardMaterial({
       color: 0xd9dce8,
       roughness: 1,
       transparent: true,
       opacity: 0.82,
       flatShading: true,
     });
+    const cloudMat = this.cloudMat;
     for (let c = 0; c < 14; c++) {
       const group = new THREE.Group();
       const puffs = 3 + (c % 3);
@@ -438,6 +492,28 @@ export class SceneManager {
       this.clouds.push({ group, speed: rng.range(1.5, 4) });
       this.scene.add(group);
     }
+  }
+
+  /** Retint sky, fog, lights, water, and clouds to a time-of-day preset. */
+  setEnvironment(id: EnvironmentId): void {
+    const env = ENVIRONMENTS[id] ?? ENVIRONMENTS.day;
+    (this.scene.fog as THREE.Fog).color.setHex(env.fog);
+    (this.scene.background as THREE.Color).setHex(env.fog);
+    (this.skyMat.uniforms.uZenith!.value as THREE.Color).setHex(env.zenith);
+    (this.skyMat.uniforms.uHorizon!.value as THREE.Color).setHex(env.horizon);
+    (this.skyMat.uniforms.uGlowColor!.value as THREE.Color).setHex(env.glow);
+    this.skyMat.uniforms.uGlowStrength!.value = env.glowStrength;
+    this.hemi.color.setHex(env.hemiSky);
+    this.hemi.groundColor.setHex(env.hemiGround);
+    this.hemi.intensity = env.hemiIntensity;
+    this.sun.color.setHex(env.sun);
+    this.sun.intensity = env.sunIntensity;
+    (this.waterMat.uniforms.uFogColor!.value as THREE.Color).setHex(env.fog);
+    (this.waterMat.uniforms.uDeep!.value as THREE.Color).setHex(env.waterDeep);
+    (this.waterMat.uniforms.uSkyTint!.value as THREE.Color).setHex(env.waterSky);
+    this.renderer.toneMappingExposure = env.exposure;
+    this.cloudMat.color.setHex(env.cloud);
+    this.cloudMat.opacity = env.cloudOpacity;
   }
 
   setStorm(x: number, z: number, radius: number): void {
