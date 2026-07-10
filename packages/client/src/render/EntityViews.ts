@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   ABILITIES,
   ARENA,
@@ -696,11 +697,19 @@ function buildProjectileGeometry(abilityId: AbilityId): { geo: THREE.BufferGeome
 /**
  * Celestial Barrage flies as an aurora sheet: a tall vertical veil, blazing
  * at the leading edge and dimming back along its length, rippling with
- * electric-purple rays. One shared geometry and shader for all three stars.
+ * electric-purple rays. Three sheets fanned around the flight axis give the
+ * beam real width from every viewing angle; additive overlap brightens the
+ * spine. One shared geometry and shader for all three stars.
  */
-const CELESTIAL_GEO = new THREE.PlaneGeometry(3.6, 4.6, 1, 1);
-CELESTIAL_GEO.rotateY(-Math.PI / 2); // uv.x runs along +z, so the bright edge leads
-CELESTIAL_GEO.translate(0, 1.2, 0); // rises from the ground up
+const CELESTIAL_GEO = mergeGeometries(
+  [-0.55, 0, 0.55].map((roll) => {
+    const sheet = new THREE.PlaneGeometry(3.6, 4.6, 1, 1);
+    sheet.rotateY(-Math.PI / 2); // uv.x runs along +z, so the bright edge leads
+    sheet.rotateZ(roll); // fan around the flight axis for visible width
+    sheet.translate(0, 1.2, 0); // rises from the ground up
+    return sheet;
+  }),
+)!;
 const CELESTIAL_MAT = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,

@@ -150,7 +150,7 @@ export class SceneManager {
           float rise = sin(vUv.y * 24.0 - uTime * 2.4 + vUv.x * 40.0) * 0.5 + 0.5;
           float glow = bands * 0.6 + rise * 0.4;
           float vert = 1.0 - vUv.y;                    // fades with height
-          float alpha = (0.08 + glow * 0.24) * (0.3 + vert * 0.7);
+          float alpha = (0.3 + glow * 0.45) * (0.45 + vert * 0.55);
           vec3 col = mix(vec3(0.42, 0.18, 0.8), vec3(0.78, 0.5, 1.0), glow);
           gl_FragColor = vec4(col, alpha);
         }`,

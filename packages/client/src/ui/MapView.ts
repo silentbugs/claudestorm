@@ -70,7 +70,10 @@ export class MapView {
     for (let py = 0; py < BG_RES; py++) {
       const z = half - ((py + 0.5) / BG_RES) * ARENA.size;
       for (let px = 0; px < BG_RES; px++) {
-        const x = -half + ((px + 0.5) / BG_RES) * ARENA.size;
+        // The x axis is mirrored (see draw()): the world is left-handed
+        // relative to a north-up map, so this keeps map turns matching
+        // on-screen turns.
+        const x = half - ((px + 0.5) / BG_RES) * ARENA.size;
         const over = Math.hypot(x, z) - coastRadius(coastBase, Math.atan2(x, z));
         if (over > 0) {
           c[0] = SEA[0]; c[1] = SEA[1]; c[2] = SEA[2];
@@ -109,7 +112,9 @@ export class MapView {
     const ctx = canvas.getContext('2d')!;
     const size = canvas.width;
     const half = ARENA.size / 2;
-    const cx = (wx: number): number => ((wx + half) / ARENA.size) * size;
+    // x mirrored to match the world's handedness (turning right on screen
+    // must turn the arrow clockwise on the map).
+    const cx = (wx: number): number => ((half - wx) / ARENA.size) * size;
     const cy = (wz: number): number => ((half - wz) / ARENA.size) * size;
     const cr = (wr: number): number => (wr / ARENA.size) * size;
 
@@ -158,7 +163,7 @@ export class MapView {
     const s = size / 40;
     ctx.save();
     ctx.translate(px, py);
-    ctx.rotate(selfYaw);
+    ctx.rotate(-selfYaw); // mirrored x flips the rotation sense too
     ctx.beginPath();
     ctx.moveTo(0, -s);
     ctx.lineTo(s * 0.62, s * 0.7);
