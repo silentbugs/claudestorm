@@ -29,10 +29,10 @@ export const JUMP_VELOCITY = 7.5;
 export const GRAVITY = 22;
 
 /** Drop-in glide at match start. */
-export const DROP_START_Y = 120; // 13.3s of fall at 16 m/s glide ≈ 213m of reach
+export const DROP_START_Y = 160; // 17.8s of fall at 16 m/s glide ≈ 284m of reach
 export const GLIDE_FALL_SPEED = 9;
 export const GLIDE_MOVE_SPEED = 16;
-export const DROP_TIMEOUT_SECONDS = 15;
+export const DROP_TIMEOUT_SECONDS = 20;
 
 /** Leveling: plunder/XP gathered mid-match. */
 export const XP_THRESHOLDS = [0, 40, 90, 150, 220, 300, 390, 490];

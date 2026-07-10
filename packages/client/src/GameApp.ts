@@ -150,7 +150,8 @@ export class GameApp {
       // Menu backdrop: a slow flyover of the island.
       this.menuTime += dt;
       const a = this.menuTime * 0.04;
-      this.sceneMgr.camera.position.set(Math.cos(a) * 150, 75, Math.sin(a) * 150);
+      const r = ARENA.size * 0.36;
+      this.sceneMgr.camera.position.set(Math.cos(a) * r, ARENA.size * 0.18, Math.sin(a) * r);
       this.sceneMgr.camera.lookAt(0, 6, 0);
       this.sceneMgr.render();
       requestAnimationFrame((n) => this.frame(n));

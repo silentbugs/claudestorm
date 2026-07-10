@@ -34,10 +34,10 @@ export class SceneManager {
       55,
       window.innerWidth / window.innerHeight,
       0.1,
-      900,
+      1000,
     );
 
-    this.scene.fog = new THREE.Fog(FOG_COLOR, 240, 760);
+    this.scene.fog = new THREE.Fog(FOG_COLOR, 260, 840);
     this.buildSky();
 
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
@@ -103,7 +103,7 @@ export class SceneManager {
   /** Gradient sky dome with a warm glow around the sun's side of the horizon. */
   private buildSky(): void {
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(840, 24, 12),
+      new THREE.SphereGeometry(940, 24, 12),
       new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
@@ -219,11 +219,11 @@ export class SceneManager {
           vec3 col = mix(deep, skyTint, fresnel * 0.8);
           float spec = pow(max(dot(n, normalize(viewDir + uSunDir)), 0.0), 70.0);
           col += vec3(1.0, 0.82, 0.55) * spec * 0.9;
-          col = mix(col, uFogColor, smoothstep(240.0, 760.0, vDist));
+          col = mix(col, uFogColor, smoothstep(260.0, 840.0, vDist));
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2600, 32, 32), mat);
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000, 32, 32), mat);
     water.geometry.rotateX(-Math.PI / 2);
     water.position.y = -0.55;
     this.scene.add(water);
@@ -300,7 +300,7 @@ export class SceneManager {
       const rot = i * 2.39; // deterministic "random" facing
       if (ob.kind === 'circle') {
         if (ob.height >= 5) {
-          const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > 168;
+          const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > ARENA.size / 2 - 44;
           const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
           // Canopy overshoots the collision cylinder; trunks match its radius.
           this.place(this.assets.modelAtHeight(name, ob.height * 1.45), ob.x, ob.z, rot);
@@ -366,32 +366,33 @@ export class SceneManager {
       }
     };
 
-    stamp('grass', 420, 0.5, false);
-    stamp('grass_large', 240, 0.55, false);
-    stamp('plant_bush', 150, 0.8, true);
-    stamp('plant_bushLarge', 70, 1.1, true);
-    stamp('rock_largeA', 60, 0.7, true);
-    stamp('flower_redA', 50, 0.5, false);
-    stamp('flower_purpleA', 50, 0.5, false);
-    stamp('flower_yellowA', 50, 0.5, false);
-    stamp('mushroom_red', 30, 0.35, false);
-    stamp('mushroom_tanGroup', 25, 0.3, false);
-    stamp('stump_round', 25, 0.5, true);
-    stamp('log', 20, 0.55, true);
+    stamp('grass', 720, 0.5, false);
+    stamp('grass_large', 420, 0.55, false);
+    stamp('plant_bush', 260, 0.8, true);
+    stamp('plant_bushLarge', 120, 1.1, true);
+    stamp('rock_largeA', 100, 0.7, true);
+    stamp('flower_redA', 85, 0.5, false);
+    stamp('flower_purpleA', 85, 0.5, false);
+    stamp('flower_yellowA', 85, 0.5, false);
+    stamp('mushroom_red', 50, 0.35, false);
+    stamp('mushroom_tanGroup', 42, 0.3, false);
+    stamp('stump_round', 42, 0.5, true);
+    stamp('log', 34, 0.55, true);
   }
 
   /** Wrecks and rowboats beached on the sand ring. */
   private buildShoreline(): void {
+    const shore = ARENA.size / 2 - 18; // in the sand ring
     const wreck = this.assets.modelAtHeight('ship-wreck', 11);
-    this.place(wreck, 192, -55, 2.3);
+    this.place(wreck, shore - 10, -55, 2.3);
     const boatA = this.assets.modelAtHeight('boat-row-small', 1.4);
-    this.place(boatA, -190, 118, 0.8);
+    this.place(boatA, -shore, 118, 0.8);
     const boatB = this.assets.modelAtHeight('boat-row-small', 1.4);
-    this.place(boatB, 64, 196, -1.9);
+    this.place(boatB, 64, shore, -1.9);
     const camp = this.assets.modelAtHeight('campfire_logs', 0.8);
-    this.place(camp, 186, -42, 0);
+    this.place(camp, shore - 16, -42, 0);
     const flag = this.assets.modelAtHeight('flag-pirate-high', 6);
-    this.place(flag, 196, -62, 2.6);
+    this.place(flag, shore - 6, -62, 2.6);
   }
 
   /** Puffy low-poly clouds drifting high over the island. */
