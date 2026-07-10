@@ -362,6 +362,17 @@ body {
   color: #b8b5a5;
 }
 
+#spectate-banner {
+  position: absolute;
+  top: 84px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 17px;
+  color: #cfcbe0;
+  text-shadow: 0 1px 4px #000;
+}
+
 #restart-btn {
   margin-top: 18px;
   padding: 12px 36px;

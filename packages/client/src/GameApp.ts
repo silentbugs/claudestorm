@@ -64,12 +64,36 @@ export class GameApp {
   private lastInputSend = 0;
   private lastFrame = performance.now();
   private endShown = false;
+  private deadShown = false;
+  private deathPlacement = 0;
+  private spectateId: number | null = null;
+  private latestSnap: Snapshot | null = null;
   private inMatch = false;
   private menuTime = 0;
   private wasLooking = false;
 
   constructor(private readonly container: HTMLElement) {
-    this.hud = new Hud(() => this.restart());
+    this.hud = new Hud(
+      () => this.restart(),
+      () => this.startSpectate(),
+    );
+    window.addEventListener('keydown', (e) => {
+      if (this.spectateId === null) return;
+      if (e.code === 'ArrowLeft') this.cycleSpectate(-1);
+      else if (e.code === 'ArrowRight') this.cycleSpectate(1);
+    });
+  }
+
+  private startSpectate(): void {
+    this.hud.hideEnd();
+    this.spectateId = -1; // resolved to the first living player next frame
+  }
+
+  private cycleSpectate(dir: number): void {
+    const alive = (this.latestSnap?.players ?? []).filter((p) => p.alive && p.id !== SELF_ID);
+    if (alive.length === 0) return;
+    const idx = alive.findIndex((p) => p.id === this.spectateId);
+    this.spectateId = alive[(idx + dir + alive.length) % alive.length]!.id;
   }
 
   start(): void {
@@ -133,7 +157,12 @@ export class GameApp {
     this.buffer.reset();
     this.views.clear();
     this.hud.hideEnd();
+    this.hud.showSpectate(null);
     this.endShown = false;
+    this.deadShown = false;
+    this.deathPlacement = 0;
+    this.spectateId = null;
+    this.latestSnap = null;
     const botCount = Number(
       (document.getElementById('bot-count') as HTMLInputElement | null)?.value ?? 11,
     );
@@ -170,19 +199,24 @@ export class GameApp {
   }
 
   private onSnapshot(snap: Snapshot): void {
+    this.latestSnap = snap;
     this.views.handleEvents(snap.events, SELF_ID, snap);
     for (const ev of snap.events) {
       if (ev.type === 'hit' && ev.targetId === SELF_ID) this.hud.flashVignette();
-      if (ev.type === 'death' && ev.id === SELF_ID && !this.endShown) {
-        this.endShown = true;
-        this.hud.showEnd(false, snap.aliveCount + 1);
+      if (ev.type === 'death' && ev.id === SELF_ID && !this.deadShown) {
+        this.deadShown = true;
+        this.deathPlacement = snap.aliveCount + 1;
+        // Offer to watch the rest of the match play out.
+        if (snap.phase !== 'ended') this.hud.showEnd(false, this.deathPlacement, true);
       }
     }
     if (snap.phase === 'ended' && !this.endShown) {
       this.endShown = true;
+      this.spectateId = null;
+      this.hud.showSpectate(null);
       const victory = snap.winnerId === SELF_ID;
       if (victory) sfx.victory();
-      this.hud.showEnd(victory, victory ? 1 : snap.aliveCount + 1);
+      this.hud.showEnd(victory, victory ? 1 : this.deathPlacement || snap.aliveCount + 1);
     }
   }
 
@@ -221,21 +255,40 @@ export class GameApp {
       );
       this.hud.update(next, SELF_ID);
 
-      const selfNext = next.players.find((p) => p.id === SELF_ID);
-      const selfPrev = prev.players.find((p) => p.id === SELF_ID) ?? selfNext;
-      if (selfNext && selfPrev) {
-        const x = lerp(selfPrev.x, selfNext.x, t);
-        const z = lerp(selfPrev.z, selfNext.z, t);
-        const y = lerp(selfPrev.y, selfNext.y, t) + terrainHeight(ARENA.hills, x, z);
+      // Camera focus: yourself, or whoever you're spectating after death.
+      let focusNext = next.players.find((p) => p.id === SELF_ID);
+      if (this.spectateId !== null) {
+        let target = next.players.find((p) => p.id === this.spectateId && p.alive);
+        if (!target) {
+          // First pick, or the one we watched just died: follow someone alive.
+          target = next.players.find((p) => p.alive && p.id !== SELF_ID);
+          this.spectateId = target?.id ?? null;
+        }
+        if (target) {
+          focusNext = target;
+          this.hud.showSpectate(`Spectating ${target.name} · ←/→ to switch`);
+        }
+      }
+      const focusPrev = focusNext
+        ? (prev.players.find((p) => p.id === focusNext.id) ?? focusNext)
+        : undefined;
+      if (focusNext && focusPrev) {
+        const x = lerp(focusPrev.x, focusNext.x, t);
+        const z = lerp(focusPrev.z, focusNext.z, t);
+        const y = lerp(focusPrev.y, focusNext.y, t) + terrainHeight(ARENA.hills, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.sceneMgr.setFocus(x, z);
         sfx.setListener(x, z, this.rig.camYaw);
-        this.map.update(next.storm, x, z, this.rig.yaw);
-        this.updateAim(x, z);
-        this.updateInteractPrompt(next, x, z, selfNext.gliding);
+        this.map.update(next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
+        if (this.spectateId === null) {
+          this.updateAim(x, z);
+          this.updateInteractPrompt(next, x, z, focusNext.gliding);
+        } else {
+          this.hud.showInteract(null);
+        }
       }
 
-      if (now - this.lastInputSend >= TICK_DT * 1000) {
+      if (this.spectateId === null && now - this.lastInputSend >= TICK_DT * 1000) {
         this.lastInputSend = now;
         this.transport?.sendInput(this.input.buildCommand(this.rig.yaw, this.aimX, this.aimZ));
       }

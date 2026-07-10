@@ -46,14 +46,17 @@ export class Hud {
   private readonly endScreen = document.getElementById('end-screen')!;
   private readonly endTitle = document.getElementById('end-title')!;
   private readonly endSub = document.getElementById('end-sub')!;
+  private readonly spectateBtn = document.getElementById('spectate-btn')!;
+  private readonly spectateBanner = document.getElementById('spectate-banner')!;
   private readonly vignette = document.getElementById('vignette')!;
   private readonly slotEls = new Map<string, SlotEls>();
   private vignetteStrength = 0;
 
   private readonly skillsOverlay = document.getElementById('skills-overlay')!;
 
-  constructor(onRestart: () => void) {
+  constructor(onRestart: () => void, onSpectate: () => void) {
     document.getElementById('restart-btn')!.addEventListener('click', onRestart);
+    this.spectateBtn.addEventListener('click', onSpectate);
     for (const el of document.querySelectorAll<HTMLElement>('.slot')) {
       this.slotEls.set(el.dataset.slot!, {
         root: el,
@@ -268,16 +271,27 @@ export class Hud {
     }
   }
 
-  showEnd(victory: boolean, placement: number): void {
+  showEnd(victory: boolean, placement: number, canSpectate = false): void {
     this.endScreen.classList.remove('hidden');
     this.endTitle.textContent = victory ? 'VICTORY' : 'DEFEAT';
     this.endTitle.className = victory ? 'victory' : 'defeat';
     this.endSub.textContent = victory
       ? 'Last one standing — the plunder is yours!'
       : `You placed #${placement}`;
+    this.spectateBtn.classList.toggle('hidden', !canSpectate);
   }
 
   hideEnd(): void {
     this.endScreen.classList.add('hidden');
+  }
+
+  /** Banner while following someone else after death; null hides it. */
+  showSpectate(text: string | null): void {
+    if (text) {
+      this.spectateBanner.textContent = text;
+      this.spectateBanner.classList.remove('hidden');
+    } else {
+      this.spectateBanner.classList.add('hidden');
+    }
   }
 }
