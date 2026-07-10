@@ -74,6 +74,8 @@ export class GameApp {
   private inMatch = false;
   private menuTime = 0;
   private wasLooking = false;
+  private fpsAccum = 0;
+  private fpsFrames = 0;
 
   constructor(private readonly container: HTMLElement) {
     this.hud = new Hud(
@@ -81,6 +83,16 @@ export class GameApp {
       () => this.startSpectate(),
       () => this.returnToMenu(),
     );
+    // Re-engage the lock after Esc released it (click lands on the canvas).
+    window.addEventListener('mousedown', (e) => {
+      if (
+        this.inMatch &&
+        e.target instanceof HTMLCanvasElement &&
+        document.getElementById('end-screen')!.classList.contains('hidden')
+      ) {
+        this.lockPointer();
+      }
+    });
     window.addEventListener('keydown', (e) => {
       if (this.spectateId === null) return;
       if (e.code === 'ArrowLeft') this.cycleSpectate(-1);
@@ -97,6 +109,25 @@ export class GameApp {
   private startSpectate(): void {
     this.hud.hideEnd();
     this.spectateId = -1; // resolved to the first living player next frame
+    this.lockPointer();
+  }
+
+  /**
+   * The pointer stays locked for the whole match (WoW-style): raw look input,
+   * an in-game drawn cursor, and no browser context menu — including
+   * Firefox's shift+right-click, which ignores preventDefault, and its
+   * pointer-lock banner now shows once per match instead of on every turn.
+   */
+  private lockPointer(): void {
+    if (document.pointerLockElement) return;
+    try {
+      const lock = this.sceneMgr.renderer.domElement.requestPointerLock() as
+        | Promise<void>
+        | undefined;
+      void lock?.catch(() => {});
+    } catch {
+      // Lock unavailable (or throttled after Esc) — the game still plays unlocked.
+    }
   }
 
   /** Tear the match down and bring the start screen (and its flyover) back. */
@@ -111,6 +142,7 @@ export class GameApp {
     this.spectateId = null;
     this.tracker = null; // abandoned matches are not recorded
     this.inMatch = false;
+    document.exitPointerLock();
     this.map.setActive(false);
     this.sceneMgr.setStorm(0, 0, STORM_START_RADIUS);
     document.getElementById('start-screen')!.classList.remove('hidden');
@@ -222,6 +254,7 @@ export class GameApp {
       this.buffer.push(snap);
       this.onSnapshot(snap);
     });
+    this.lockPointer();
   }
 
   private restart(): void {
@@ -246,6 +279,7 @@ export class GameApp {
         this.deathPlacement = snap.aliveCount + 1;
         // Offer to watch the rest of the match play out.
         if (snap.phase !== 'ended') {
+          document.exitPointerLock();
           this.hud.showEnd(false, this.deathPlacement, true, this.matchSummary());
         }
       }
@@ -256,6 +290,7 @@ export class GameApp {
       this.hud.showSpectate(null);
       const victory = snap.winnerId === SELF_ID;
       if (victory) sfx.victory();
+      document.exitPointerLock();
       this.hud.showEnd(
         victory,
         victory ? 1 : this.deathPlacement || snap.aliveCount + 1,
@@ -274,8 +309,19 @@ export class GameApp {
   }
 
   private frame(now: number): void {
-    const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
+    const rawDt = (now - this.lastFrame) / 1000;
+    const dt = Math.min(0.1, rawDt);
     this.lastFrame = now;
+
+    // FPS readout: averaged over half-second windows.
+    this.fpsAccum += rawDt;
+    this.fpsFrames++;
+    if (this.fpsAccum >= 0.5) {
+      document.getElementById('fps')!.textContent =
+        `${Math.round(this.fpsFrames / this.fpsAccum)} FPS`;
+      this.fpsAccum = 0;
+      this.fpsFrames = 0;
+    }
 
     if (!this.inMatch) {
       // Menu backdrop: a slow flyover of the island.
@@ -306,7 +352,6 @@ export class GameApp {
         lerp(prev.storm.z, next.storm.z, t),
         lerp(prev.storm.radius, next.storm.radius, t),
       );
-      this.hud.update(next, SELF_ID);
 
       // Camera focus: yourself, or whoever you're spectating after death.
       let focusNext = next.players.find((p) => p.id === SELF_ID);
@@ -322,6 +367,9 @@ export class GameApp {
           this.hud.showSpectate(`Spectating ${target.name} · ←/→ to switch`);
         }
       }
+      // The HUD mirrors whoever the camera follows: while spectating, the
+      // vitals, hotbar, cooldowns, and level are the spectated player's.
+      this.hud.update(next, focusNext?.id ?? SELF_ID);
       const focusPrev = focusNext
         ? (prev.players.find((p) => p.id === focusNext.id) ?? focusNext)
         : undefined;

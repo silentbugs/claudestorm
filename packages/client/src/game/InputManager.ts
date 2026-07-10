@@ -14,6 +14,7 @@ export class InputManager {
   private seq = 0;
   private rmbHeld = false;
   private lmbHeld = false;
+  private cursorEl: HTMLElement | null = null;
 
   mouseX = 0;
   mouseY = 0;
@@ -73,6 +74,22 @@ export class InputManager {
   };
 
   private readonly onMouseMove = (e: MouseEvent) => {
+    if (document.pointerLockElement) {
+      // Locked (in-match): raw deltas drive the camera while a button is
+      // held, and our own drawn cursor the rest of the time.
+      if (this.rmbHeld) {
+        this.lookDX += e.movementX;
+        this.lookDY += e.movementY;
+      } else if (this.lmbHeld) {
+        this.orbitDX += e.movementX;
+        this.orbitDY += e.movementY;
+      } else {
+        this.mouseX = Math.max(0, Math.min(window.innerWidth, this.mouseX + e.movementX));
+        this.mouseY = Math.max(0, Math.min(window.innerHeight, this.mouseY + e.movementY));
+        this.placeCursor();
+      }
+      return;
+    }
     this.mouseX = e.clientX;
     this.mouseY = e.clientY;
     if (this.rmbHeld) {
@@ -85,30 +102,28 @@ export class InputManager {
   };
 
   private readonly onMouseDown = (e: MouseEvent) => {
-    if (e.button === 2) {
-      this.rmbHeld = true;
-      // Lock the pointer while turning: raw deltas, no cursor drift, and no
-      // browser context menu — including Firefox's shift+right-click, which
-      // ignores preventDefault. Only when the press lands on the game canvas.
-      if (e.target instanceof HTMLCanvasElement) {
-        try {
-          const lock = e.target.requestPointerLock() as Promise<void> | undefined;
-          void lock?.catch(() => {});
-        } catch {
-          // Denied (e.g. re-lock throttling) — mouse-look still works unlocked.
-        }
-      }
-    }
+    if (e.button === 2) this.rmbHeld = true;
     if (e.button === 0) this.lmbHeld = true;
   };
 
   private readonly onMouseUp = (e: MouseEvent) => {
-    if (e.button === 2) {
-      this.rmbHeld = false;
-      if (document.pointerLockElement) document.exitPointerLock();
-    }
+    if (e.button === 2) this.rmbHeld = false;
     if (e.button === 0) this.lmbHeld = false;
   };
+
+  /** The drawn gauntlet only exists while the pointer is locked. */
+  private readonly onLockChange = () => {
+    const locked = document.pointerLockElement !== null;
+    this.cursorEl?.classList.toggle('hidden', !locked);
+    if (locked) this.placeCursor();
+  };
+
+  private placeCursor(): void {
+    if (this.cursorEl) {
+      // Offset matches the CSS cursor hotspot (the gauntlet's fingertip).
+      this.cursorEl.style.transform = `translate(${this.mouseX - 6}px, ${this.mouseY - 5}px)`;
+    }
+  }
 
   private readonly onWheel = (e: WheelEvent) => {
     this.zoomDelta += e.deltaY;
@@ -121,6 +136,7 @@ export class InputManager {
   };
 
   attach(): void {
+    this.cursorEl = document.getElementById('virtual-cursor');
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
@@ -129,6 +145,7 @@ export class InputManager {
     window.addEventListener('wheel', this.onWheel, { passive: true });
     window.addEventListener('blur', this.onBlur);
     window.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('pointerlockchange', this.onLockChange);
   }
 
   detach(): void {

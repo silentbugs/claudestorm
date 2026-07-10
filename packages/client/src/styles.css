@@ -31,6 +31,27 @@ button {
   color: #e8e6d9;
 }
 
+#fps {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  font-size: 13px;
+  color: #8d8a7c;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* The drawn gauntlet cursor, shown only while the pointer is locked in-match. */
+#virtual-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  pointer-events: none;
+  z-index: 60;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g transform="rotate(-28 16 16)" stroke="%233a2408" stroke-width="1.6" stroke-linejoin="round"><path fill="%23e3b54e" d="M12 3 C10.6 3 10 4 10 5.5 L10 16 L8.6 14.4 C7.4 13 5.4 13.6 5.4 15.4 C5.4 16.2 5.8 17 6.6 18 L11 24 C12.6 26.2 14.6 27.4 17.4 27.4 L19.4 27.4 C23.4 27.4 25.8 25 25.8 21 L25.8 14.8 C25.8 13.2 24.7 12.3 23.4 12.3 C22.9 12.3 22.4 12.5 22 12.8 C21.7 11.6 20.7 11 19.6 11 C19 11 18.4 11.2 17.9 11.6 C17.5 10.5 16.5 9.9 15.4 9.9 C14.9 9.9 14.4 10.1 14 10.4 L14 5.5 C14 4 13.4 3 12 3 Z"/><path fill="none" stroke="%238a6420" stroke-width="1.1" d="M14 11.5 L14 16 M17.9 12.4 L17.9 16.5 M22 13.6 L22 17"/><path fill="%23b98a2e" d="M9.6 23.2 L26.6 23.2 L26.6 26 C26.6 27.2 25.8 28 24.6 28 L11.6 28 C10.4 28 9.6 27.2 9.6 26 Z"/><circle cx="12.4" cy="25.6" r="0.9" fill="%23e3b54e" stroke="none"/><circle cx="18.1" cy="25.6" r="0.9" fill="%23e3b54e" stroke="none"/><circle cx="23.8" cy="25.6" r="0.9" fill="%23e3b54e" stroke="none"/></g></svg>') no-repeat;
+}
+
 #topbar {
   position: absolute;
   top: 14px;
