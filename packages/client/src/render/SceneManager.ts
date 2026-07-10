@@ -60,7 +60,7 @@ export class SceneManager {
     this.waterMat = this.buildWater();
     this.buildLakes();
     this.buildObstacles();
-    this.scatterFoliage();
+    this.buildLandmarks();
     this.buildShoreline();
     this.mergeStatics();
     this.buildClouds();
@@ -158,9 +158,10 @@ export class SceneManager {
       const h = terrainHeight(ARENA.hills, x, z);
       pos.setY(i, h);
       tmp.copy(low).lerp(high, Math.min(1, h / 6));
-      // High massifs go stony; lowland basins go marshy.
+      // High massifs go stony; lowland basins go marshy; pits go bare rock.
       if (h > 7) tmp.lerp(rock, Math.min(1, (h - 7) / 5));
       if (h < -0.3) tmp.lerp(marsh, Math.min(1, -(h + 0.3) / 1.5));
+      if (h < -2.5) tmp.lerp(rock, Math.min(1, -(h + 2.5) / 3));
       // Muddy shores around the lakes.
       for (const lake of ARENA.lakes) {
         const d = Math.hypot(x - lake.x, z - lake.z);
@@ -309,8 +310,8 @@ export class SceneManager {
 
   /**
    * Obstacle dressing with real models (visual only — the sim collides with
-   * the raw shapes): tall cylinders are trees (palms near the shore), short
-   * ones rocks; boxes become walls, huts, or crates by footprint.
+   * the raw circles): the map's `look` hint picks cliff blocks, trees (palms
+   * near the shore), or rocks.
    */
   private buildObstacles(): void {
     const treePick: ModelName[] = [
@@ -321,126 +322,83 @@ export class SceneManager {
 
     const cliffPick: ModelName[] = ['cliff_block_rock', 'cliff_blockDiagonal_rock'];
     ARENA.obstacles.forEach((ob, i) => {
+      if (ob.kind !== 'circle') return; // the island has no box obstacles anymore
       const rot = i * 2.39; // deterministic "random" facing
-      if (ob.kind === 'circle') {
-        if (ob.height >= 10) {
-          // Mountain-wall segment: a giant cliff block spanning the collision circle.
-          const name = cliffPick[i % 2]!;
-          const cliff = this.assets.model(name);
-          const size = this.assets.size(name);
-          cliff.scale.set(
-            (ob.r * 2.4) / Math.max(0.001, size.x),
-            ob.height / Math.max(0.001, size.y),
-            (ob.r * 2.4) / Math.max(0.001, size.z),
-          );
-          // Sink slightly so jittered segments knit into a continuous wall.
-          cliff.position.y = -0.6;
-          const holder = new THREE.Group();
-          holder.add(cliff);
-          this.place(holder, ob.x, ob.z, rot);
-          return;
-        }
-        if (ob.height >= 5) {
-          const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > ARENA.size / 2 - 44;
-          const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
-          // Canopy overshoots the collision cylinder; trunks match its radius.
-          // Widened for the chunky, painterly WoW silhouette.
-          const tree = this.assets.modelAtHeight(name, ob.height * 1.45);
-          tree.scale.x *= 1.2;
-          tree.scale.z *= 1.2;
-          this.place(tree, ob.x, ob.z, rot);
-        } else {
-          this.place(this.assets.modelAtHeight(rockPick[i % 3]!, ob.height * 1.1), ob.x, ob.z, rot);
-        }
-        return;
+      const look = ob.look ?? (ob.height >= 10 ? 'cliff' : ob.height >= 5 ? 'tree' : 'rock');
+      if (look === 'cliff') {
+        // Mountain-wall segment: a giant cliff block spanning the collision circle.
+        const name = cliffPick[i % 2]!;
+        const cliff = this.assets.model(name);
+        const size = this.assets.size(name);
+        cliff.scale.set(
+          (ob.r * 2.4) / Math.max(0.001, size.x),
+          ob.height / Math.max(0.001, size.y),
+          (ob.r * 2.4) / Math.max(0.001, size.z),
+        );
+        // Sink slightly so jittered segments knit into a continuous wall.
+        cliff.position.y = -0.6;
+        const holder = new THREE.Group();
+        holder.add(cliff);
+        this.place(holder, ob.x, ob.z, rot);
+      } else if (look === 'tree') {
+        const nearShore = Math.max(Math.abs(ob.x), Math.abs(ob.z)) > ARENA.size / 2 - 44;
+        const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
+        // Canopy overshoots the collision cylinder; trunks match its radius.
+        const tree = this.assets.modelAtHeight(name, ob.height * 1.45);
+        tree.scale.x *= 1.2;
+        tree.scale.z *= 1.2;
+        this.place(tree, ob.x, ob.z, rot);
+      } else {
+        this.place(this.assets.modelAtHeight(rockPick[i % 3]!, ob.height * 1.1), ob.x, ob.z, rot);
       }
-      // Boxes: long thin footprints are ruin walls, large ones huts, small ones crates.
-      const long = Math.max(ob.hx, ob.hz);
-      const thin = Math.min(ob.hx, ob.hz);
-      const name: ModelName =
-        long >= 3.5 && thin <= 1.6 ? 'castle-wall' : long >= 2.2 && ob.height >= 3 ? 'structure' : 'crate';
-      const model = this.assets.model(name);
-      const size = this.assets.size(name);
-      model.scale.set(
-        (ob.hx * 2) / Math.max(0.001, size.x),
-        (ob.height * (name === 'structure' ? 1.2 : 1.05)) / Math.max(0.001, size.y),
-        (ob.hz * 2) / Math.max(0.001, size.z),
-      );
-      this.place(model, ob.x, ob.z);
     });
   }
 
-  /** Instanced foliage stamped from the nature-kit models. */
-  private scatterFoliage(): void {
-    const rng = new Rng(1337);
-    const half = ARENA.size / 2 - 8;
-    const blocked = (x: number, z: number): boolean => {
-      for (const ob of ARENA.obstacles) {
-        const clearance = ob.kind === 'box' ? Math.max(ob.hx, ob.hz) + 1.5 : ob.r + 1.5;
-        if (Math.hypot(x - ob.x, z - ob.z) < clearance) return true;
+  /** Set dressing that makes each milestone area readable from a distance. */
+  private buildLandmarks(): void {
+    for (const lm of ARENA.landmarks) {
+      switch (lm.kind) {
+        case 'wreck': {
+          // The beached hulk sits over its collision rock, listing toward the sea.
+          const hulk = this.assets.modelAtHeight('ship-wreck', 12);
+          this.place(hulk, lm.x, lm.z, -0.5);
+          this.place(this.assets.modelAtHeight('flag-pirate-high', 6), lm.x - 10, lm.z + 12, 2.4);
+          this.place(this.assets.modelAtHeight('campfire_logs', 0.8), lm.x - 12, lm.z - 5, 0);
+          this.place(this.assets.modelAtHeight('boat-row-small', 1.4), lm.x + 12, lm.z - 12, 1.1);
+          break;
+        }
+        case 'spire': {
+          // A watchtower on the island's highest point — visible from anywhere.
+          this.place(this.assets.modelAtHeight('tower-watch', 13), lm.x, lm.z, 0.6);
+          this.place(this.assets.modelAtHeight('flag-pirate-high', 6), lm.x + 7, lm.z + 2, -0.4);
+          break;
+        }
+        case 'stonering': {
+          this.place(this.assets.modelAtHeight('campfire_logs', 0.9), lm.x, lm.z + 2.5, 0);
+          break;
+        }
+        case 'grove': {
+          this.place(this.assets.modelAtHeight('log_stack', 1.1), lm.x + 7, lm.z + 6, 0.9);
+          this.place(this.assets.modelAtHeight('stump_old', 0.8), lm.x - 8, lm.z + 3, 0);
+          break;
+        }
+        case 'pit': {
+          // Old digging gear abandoned at the lip.
+          this.place(this.assets.modelAtHeight('log_stack', 1.0), lm.x + lm.r + 3, lm.z + 4, 0.4);
+          this.place(this.assets.modelAtHeight('campfire_logs', 0.8), lm.x - lm.r - 4, lm.z - 2, 0);
+          break;
+        }
       }
-      for (const lake of ARENA.lakes) {
-        if (Math.hypot(x - lake.x, z - lake.z) < lake.r + 2) return true; // no grass in water
-      }
-      return false;
-    };
-    const placements = (count: number): { x: number; z: number; s: number; rot: number }[] => {
-      const out: { x: number; z: number; s: number; rot: number }[] = [];
-      let guard = 0;
-      while (out.length < count && guard++ < count * 4) {
-        const x = rng.range(-half, half);
-        const z = rng.range(-half, half);
-        if (blocked(x, z)) continue;
-        out.push({ x, z, s: rng.range(0.7, 1.4), rot: rng.range(0, Math.PI * 2) });
-      }
-      return out;
-    };
-
-    const dummy = new THREE.Object3D();
-    const stamp = (name: ModelName, count: number, targetHeight: number, shadows: boolean): void => {
-      const spots = placements(count);
-      const base = targetHeight / Math.max(0.001, this.assets.size(name).y);
-      for (const part of this.assets.meshParts(name)) {
-        const mesh = new THREE.InstancedMesh(part.geometry, part.material, spots.length);
-        spots.forEach((p, idx) => {
-          dummy.position.set(p.x, terrainHeight(ARENA.hills, p.x, p.z), p.z);
-          dummy.rotation.set(0, p.rot, 0);
-          dummy.scale.setScalar(p.s * base);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(idx, dummy.matrix);
-        });
-        mesh.castShadow = shadows;
-        this.scene.add(mesh);
-      }
-    };
-
-    stamp('grass', 1300, 0.5, false);
-    stamp('grass_large', 760, 0.55, false);
-    stamp('plant_bush', 470, 0.8, true);
-    stamp('plant_bushLarge', 220, 1.1, true);
-    stamp('rock_largeA', 180, 0.7, true);
-    stamp('flower_redA', 150, 0.5, false);
-    stamp('flower_purpleA', 150, 0.5, false);
-    stamp('flower_yellowA', 150, 0.5, false);
-    stamp('mushroom_red', 90, 0.35, false);
-    stamp('mushroom_tanGroup', 75, 0.3, false);
-    stamp('stump_round', 75, 0.5, true);
-    stamp('log', 60, 0.55, true);
+    }
   }
 
-  /** Wrecks and rowboats beached on the sand ring. */
+  /** Rowboats beached on the sand ring. */
   private buildShoreline(): void {
     const shore = ARENA.size / 2 - 18; // in the sand ring
-    const wreck = this.assets.modelAtHeight('ship-wreck', 11);
-    this.place(wreck, shore - 10, -55, 2.3);
     const boatA = this.assets.modelAtHeight('boat-row-small', 1.4);
     this.place(boatA, -shore, 118, 0.8);
     const boatB = this.assets.modelAtHeight('boat-row-small', 1.4);
     this.place(boatB, 64, shore, -1.9);
-    const camp = this.assets.modelAtHeight('campfire_logs', 0.8);
-    this.place(camp, shore - 16, -42, 0);
-    const flag = this.assets.modelAtHeight('flag-pirate-high', 6);
-    this.place(flag, shore - 6, -62, 2.6);
   }
 
   /** Puffy low-poly clouds drifting high over the island. */

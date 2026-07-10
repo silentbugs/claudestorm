@@ -38,6 +38,7 @@ import {
   MOB_LEASH_RADIUS,
   MOB_RADIUS,
   MOB_SPEED,
+  PIT_CLIMB_FACTOR,
   PLAYER_BASE_HP,
   PLAYER_RADIUS,
   PLAYER_SPEED,
@@ -632,6 +633,9 @@ export class GameSim {
         (this.inLake(p.x, p.z) ? LAKE_WADE_FACTOR : 1);
       vx = p.moveX * speed;
       vz = p.moveZ * speed;
+      const climb = this.pitClimbFactor(p.x, p.z, vx, vz);
+      vx *= climb;
+      vz *= climb;
     }
 
     // Jump physics (not while gliding, leaping, or hovering — those own y).
@@ -677,6 +681,28 @@ export class GameSim {
       if (dist(x, z, lake.x, lake.z) < lake.r) return true;
     }
     return false;
+  }
+
+  /**
+   * Pits are easy to enter and hard to leave: moving outward through the rim
+   * band is a slow climb, except within the ramp sector. Moving deeper,
+   * sideways, or across the flat floor is free.
+   */
+  private pitClimbFactor(x: number, z: number, vx: number, vz: number): number {
+    for (const pit of this.map.pits) {
+      const dx = x - pit.x;
+      const dz = z - pit.z;
+      const d = Math.hypot(dx, dz);
+      if (d < pit.r * 0.45 || d > pit.r) continue; // flat floor, or outside
+      const outward = (dx * vx + dz * vz) / Math.max(0.001, d);
+      if (outward <= 0.1) continue; // heading down or around the bowl
+      let rel = Math.atan2(dx, dz) - pit.rampAngle;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      if (Math.abs(rel) <= pit.rampHalfAngle) continue; // taking the ramp
+      return PIT_CLIMB_FACTOR;
+    }
+    return 1;
   }
 
   private inMeleeArc(

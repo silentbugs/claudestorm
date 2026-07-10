@@ -37,6 +37,9 @@ export const DROP_TIMEOUT_SECONDS = 22;
 /** Wading through a lake slows you down. */
 export const LAKE_WADE_FACTOR = 0.55;
 
+/** Climbing out of a pit (moving outward through the rim band, off the ramp). */
+export const PIT_CLIMB_FACTOR = 0.35;
+
 /** Leveling: plunder/XP gathered mid-match. */
 export const XP_THRESHOLDS = [0, 40, 90, 150, 220, 300, 390, 490];
 export const MAX_LEVEL = XP_THRESHOLDS.length;
