@@ -85,12 +85,28 @@ export class InputManager {
   };
 
   private readonly onMouseDown = (e: MouseEvent) => {
-    if (e.button === 2) this.rmbHeld = true;
+    if (e.button === 2) {
+      this.rmbHeld = true;
+      // Lock the pointer while turning: raw deltas, no cursor drift, and no
+      // browser context menu — including Firefox's shift+right-click, which
+      // ignores preventDefault. Only when the press lands on the game canvas.
+      if (e.target instanceof HTMLCanvasElement) {
+        try {
+          const lock = e.target.requestPointerLock() as Promise<void> | undefined;
+          void lock?.catch(() => {});
+        } catch {
+          // Denied (e.g. re-lock throttling) — mouse-look still works unlocked.
+        }
+      }
+    }
     if (e.button === 0) this.lmbHeld = true;
   };
 
   private readonly onMouseUp = (e: MouseEvent) => {
-    if (e.button === 2) this.rmbHeld = false;
+    if (e.button === 2) {
+      this.rmbHeld = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
     if (e.button === 0) this.lmbHeld = false;
   };
 
