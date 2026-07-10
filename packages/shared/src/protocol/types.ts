@@ -177,6 +177,9 @@ export interface StormSnapshot {
   x: number;
   z: number;
   radius: number;
+  /** Where the current/next circle settles (minimap "next circle" indicator). */
+  targetX: number;
+  targetZ: number;
   targetRadius: number;
   shrinking: boolean;
   dps: number;

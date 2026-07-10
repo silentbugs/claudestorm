@@ -76,25 +76,33 @@ describe('storm', () => {
     expect(sim.players.get(2)!.alive).toBe(false);
   });
 
-  it('drifts toward a new center inside the previous circle each phase', () => {
-    const sim = makeSim([player(1, 0, 0)], {
-      stormPhases: [
-        { hold: 0.5, shrink: 0.5, targetRadius: 30, dps: 0 },
-        { hold: 0.5, shrink: 0.5, targetRadius: 12, dps: 0 },
-      ],
-      stormStartRadius: 50,
-      seed: 7,
-    });
-    let snap = sim.step();
-    // Settle phase 1 (hold 0.5s + shrink 0.5s), grab the center, then phase 2.
-    for (let i = 0; i < TICK_RATE * 1.2; i++) snap = sim.step();
-    const c1 = { x: snap.storm.x, z: snap.storm.z };
-    for (let i = 0; i < TICK_RATE * 1.8; i++) snap = sim.step();
-    // Each circle settles meaningfully away from the previous center — the
-    // safe zone wanders instead of collapsing toward the middle.
-    expect(Math.hypot(c1.x, c1.z)).toBeGreaterThan(5);
-    expect(Math.hypot(snap.storm.x - c1.x, snap.storm.z - c1.z)).toBeGreaterThan(5);
-    expect(Math.hypot(snap.storm.x, snap.storm.z)).toBeLessThan(50); // still near the map
+  it('every circle converges on a final point rolled at match start', () => {
+    const phases = [
+      { hold: 0.2, shrink: 0.3, targetRadius: 150, dps: 0 },
+      { hold: 0.2, shrink: 0.3, targetRadius: 60, dps: 0 },
+      { hold: 0.2, shrink: 0.3, targetRadius: 20, dps: 0 },
+      { hold: 0.2, shrink: 0.3, targetRadius: 4, dps: 0 },
+    ];
+    const run = (seed: number) => {
+      const sim = makeSim([player(1, 0, 0)], { stormPhases: phases, stormStartRadius: 537, seed });
+      const settled: { x: number; z: number; radius: number }[] = [];
+      sim.step();
+      for (let p = 0; p < phases.length; p++) {
+        // Each phase is 0.5s; sample just after it settles.
+        for (let i = 0; i < TICK_RATE * 0.55; i++) settled[p] = sim.step().storm;
+      }
+      return settled;
+    };
+    const centers = run(11);
+    const final = centers[centers.length - 1]!;
+    // A player camped on the eventual final point is never caught outside:
+    // every settled circle contains where the storm is ultimately headed.
+    for (const c of centers) {
+      expect(Math.hypot(c.x - final.x, c.z - final.z)).toBeLessThanOrEqual(c.radius + 0.01);
+    }
+    // The point is picked per match, not a fixed map spot.
+    const otherFinal = run(12)[phases.length - 1]!;
+    expect(Math.hypot(otherFinal.x - final.x, otherFinal.z - final.z)).toBeGreaterThan(1);
   });
 
   it('bots keep fighting inside a tiny final circle instead of freezing', () => {

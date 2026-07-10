@@ -29,8 +29,10 @@ export function buildStormPhases(circles = 5, paceMult = 1): StormPhaseDef[] {
     const t = i / (n - 1);
     const last = i === n - 1;
     phases.push({
-      hold: Math.round((35 - 21 * t) * paceMult),
-      shrink: Math.round((last ? 80 : 45 - 25 * t) * paceMult),
+      hold: Math.round((50 - 26 * t) * paceMult),
+      // Shrinks are long enough that the wall never outruns a walking player
+      // (~3.3 m/s worst case vs 8 m/s run speed): you can cross ahead of it.
+      shrink: Math.round((last ? 110 : 95 - 45 * t) * paceMult),
       // Radii fall geometrically; the 0.8 exponent keeps the late circles roomy.
       targetRadius: last ? 4 : Math.round(first * Math.pow(4 / first, t * 0.8)),
       dps: Math.round(4 + 28 * t),

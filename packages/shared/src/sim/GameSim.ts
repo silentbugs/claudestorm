@@ -168,6 +168,9 @@ export class GameSim {
   private stormPhaseTime = 0;
   private stormRadius: number;
   private stormRadiusAtPhaseStart: number;
+  /** Where the storm ultimately converges — rolled once at match start. */
+  private readonly stormFinalX: number;
+  private readonly stormFinalZ: number;
   /** The circle drifts: each phase closes on a new center inside the old circle. */
   private stormCenterX = 0;
   private stormCenterZ = 0;
@@ -185,8 +188,12 @@ export class GameSim {
     this.stormRadius = opts.stormStartRadius ?? STORM_START_RADIUS;
     this.stormRadiusAtPhaseStart = this.stormRadius;
     this.phase = opts.skipDrop ? 'live' : 'drop';
+    const finalAngle = this.rng.range(0, Math.PI * 2);
+    const finalR = this.rng.range(0, this.map.size * 0.2);
+    this.stormFinalX = Math.cos(finalAngle) * finalR;
+    this.stormFinalZ = Math.sin(finalAngle) * finalR;
     const firstPhase = this.stormPhases[0];
-    if (firstPhase) this.pickStormTargetCenter(firstPhase);
+    if (firstPhase) this.pickStormTargetCenter(firstPhase, this.stormPhases.length === 1);
 
     const n = opts.players.length;
     opts.players.forEach((setup, i) => {
@@ -1463,16 +1470,32 @@ export class GameSim {
   }
 
   /**
-   * Pick where the next circle settles: always meaningfully off-center — like the
-   * original, the safe zone wanders instead of collapsing toward the middle.
+   * Pick where the next circle settles: every phase converges on the final
+   * point rolled at match start, so the safe zone wanders toward one part of
+   * the island instead of collapsing to the middle. Each step keeps the next
+   * circle inside the current one, and once the final point is reachable the
+   * circles settle around it (never drifting away again).
    */
-  private pickStormTargetCenter(phase: StormPhaseDef): void {
-    const maxOffset = Math.max(0, this.stormRadius - phase.targetRadius) * 0.95;
-    const angle = this.rng.range(0, Math.PI * 2);
-    const r = maxOffset * this.rng.range(0.45, 1);
-    const clampTo = Math.max(0, this.map.size / 2 - phase.targetRadius * 0.5);
-    this.stormTargetCenterX = Math.max(-clampTo, Math.min(clampTo, this.stormCenterX + Math.cos(angle) * r));
-    this.stormTargetCenterZ = Math.max(-clampTo, Math.min(clampTo, this.stormCenterZ + Math.sin(angle) * r));
+  private pickStormTargetCenter(phase: StormPhaseDef, last: boolean): void {
+    const insideOld = Math.max(0, this.stormRadius - phase.targetRadius) * 0.95;
+    const dx = this.stormFinalX - this.stormCenterX;
+    const dz = this.stormFinalZ - this.stormCenterZ;
+    const d = Math.hypot(dx, dz);
+    if (d > insideOld) {
+      // The point is farther than one step allows: take the biggest stride toward it.
+      this.stormTargetCenterX = this.stormCenterX + (dx / d) * insideOld;
+      this.stormTargetCenterZ = this.stormCenterZ + (dz / d) * insideOld;
+    } else if (last) {
+      this.stormTargetCenterX = this.stormFinalX;
+      this.stormTargetCenterZ = this.stormFinalZ;
+    } else {
+      // Within reach: settle near the point, with wander so it stays unpredictable.
+      const jitter = Math.min(phase.targetRadius * 0.55, insideOld - d);
+      const angle = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(0, jitter);
+      this.stormTargetCenterX = this.stormFinalX + Math.cos(angle) * r;
+      this.stormTargetCenterZ = this.stormFinalZ + Math.sin(angle) * r;
+    }
   }
 
   private updateStorm(): void {
@@ -1498,7 +1521,10 @@ export class GameSim {
         this.stormRadiusAtPhaseStart = this.stormRadius;
         this.stormCenterAtPhaseStartX = this.stormCenterX;
         this.stormCenterAtPhaseStartZ = this.stormCenterZ;
-        this.pickStormTargetCenter(this.stormPhases[this.stormPhaseIndex]!);
+        this.pickStormTargetCenter(
+          this.stormPhases[this.stormPhaseIndex]!,
+          this.stormPhaseIndex === this.stormPhases.length - 1,
+        );
       }
     }
 
@@ -1650,6 +1676,8 @@ export class GameSim {
         x: this.stormCenterX,
         z: this.stormCenterZ,
         radius: this.stormRadius,
+        targetX: this.stormTargetCenterX,
+        targetZ: this.stormTargetCenterZ,
         targetRadius: phaseDef?.targetRadius ?? this.stormRadius,
         shrinking,
         dps: phaseDef?.dps ?? 0,
