@@ -83,7 +83,7 @@ export class SceneManager {
   private readonly staticStage = new THREE.Group();
 
   constructor(container: HTMLElement, private readonly assets: AssetLibrary) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
@@ -367,14 +367,17 @@ export class SceneManager {
   }
 
   /**
-   * Static batching: the ~110 staged scenery models would otherwise be ~250
-   * draw calls in the main pass and again in the shadow pass whenever the
-   * whole island is in the frustum. Bake them into one mesh per material
-   * (Kenney reuses a handful of named materials across the kits).
+   * Static batching, chunked: scenery merges into one mesh per material per
+   * ~95m grid cell. Merging kills draw-call count; chunking keeps frustum
+   * culling alive — without it every merged mesh spans the whole island, so
+   * looking at your feet still drew every tree, and the shadow pass
+   * re-rendered all island geometry into the 2048² map every frame.
    */
   private mergeStatics(): void {
     this.staticStage.updateMatrixWorld(true);
+    const cell = ARENA.size / 8;
     const groups = new Map<string, { material: THREE.Material; geos: THREE.BufferGeometry[] }>();
+    const wp = new THREE.Vector3();
     this.staticStage.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       const material = o.material as THREE.Material & { map?: THREE.Texture | null };
@@ -385,7 +388,9 @@ export class SceneManager {
         geo.deleteAttribute('uv');
         geo.deleteAttribute('uv1');
       }
-      const key = `${material.name}|${material.map ? 'tex' : 'flat'}`;
+      o.getWorldPosition(wp);
+      const cellKey = `${Math.floor(wp.x / cell)}|${Math.floor(wp.z / cell)}`;
+      const key = `${material.name}|${material.map ? 'tex' : 'flat'}|${cellKey}`;
       let group = groups.get(key);
       if (!group) {
         group = { material, geos: [] };

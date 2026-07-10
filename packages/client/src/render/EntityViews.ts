@@ -23,6 +23,8 @@ import type { AssetLibrary } from './assets.js';
 const MOB_DRAW_DIST = 230;
 const CHEST_DRAW_DIST = 230;
 const PICKUP_DRAW_DIST = 150;
+/** Other players cull too — at 380m in the fog a cloud is a smudge of pixels. */
+const PLAYER_DRAW_DIST = 380;
 
 const SELF_COLOR = 0x4da6ff;
 const BOT_COLOR = 0xd9534f;
@@ -825,6 +827,12 @@ export class EntityViews {
         this.players.set(p.id, view);
         this.scene.add(view.group);
       }
+      if (p.id !== selfId && beyond(p.x, p.z, PLAYER_DRAW_DIST)) {
+        view.group.visible = false;
+        continue;
+      }
+      // Re-show players that come back into range (dead ones manage their own fade).
+      if (p.alive) view.group.visible = true;
       const pp = prevPlayers.get(p.id) ?? p;
       const ix = lerp(pp.x, p.x, t);
       const iz = lerp(pp.z, p.z, t);
