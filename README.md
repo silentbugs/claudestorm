@@ -20,7 +20,7 @@ Set up your match on the start screen — hero color, opponent count (3–23 bot
 - Spells fire **where your character faces** (turn to aim, Plunderstorm-style); ground circles land in your facing at the cursor's distance.
 - **Z / X** — swap the offense pair / the utility pair
 - **G** — use held item (one consumable at a time)
-- **H** — heal (builtin, 20s cooldown)
+- **H** — heal (builtin, 20s cooldown): a 3s channel that pulses 20 hp per second; taking damage or attacking interrupts it, and the cooldown is spent either way
 - **Space** — jump
 - **Shift** — barrel roll (dodges projectiles)
 - **F** — open chests / take scrolls
