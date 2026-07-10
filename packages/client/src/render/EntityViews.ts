@@ -648,20 +648,49 @@ function buildProjectileGeometry(abilityId: AbilityId): { geo: THREE.BufferGeome
       return { geo: new THREE.TorusKnotGeometry(0.3, 0.1, 32, 6), glow: 1.2 };
     case 'huntersChains':
       return { geo: new THREE.BoxGeometry(0.24, 0.24, 0.24), glow: 1.2 };
-    case 'celestialBarrage': {
-      // Starlight comet: stretched octahedron streaking along its flight path.
-      const geo = new THREE.OctahedronGeometry(0.34);
-      geo.scale(1, 1, 2.4);
-      return { geo, glow: 2.0 };
-    }
     default:
       return { geo: new THREE.SphereGeometry(0.32, 12, 10), glow: 1.4 };
   }
 }
 
+/**
+ * Celestial Barrage flies as an aurora sheet: a tall vertical veil, blazing
+ * at the leading edge and dimming back along its length, rippling with
+ * electric-purple rays. One shared geometry and shader for all three stars.
+ */
+const CELESTIAL_GEO = new THREE.PlaneGeometry(3.6, 4.6, 1, 1);
+CELESTIAL_GEO.rotateY(-Math.PI / 2); // uv.x runs along +z, so the bright edge leads
+CELESTIAL_GEO.translate(0, 1.2, 0); // rises from the ground up
+const CELESTIAL_MAT = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform float uTime;
+    varying vec2 vUv;
+    void main() {
+      float head = pow(vUv.x, 2.2);                        // dims from the front backwards
+      float vert = sin(vUv.y * 3.14159);                   // soft top and bottom
+      float rays = 0.72 + 0.28 * sin(vUv.y * 26.0 + uTime * 9.0 + vUv.x * 6.0);
+      float flicker = 0.8 + 0.2 * sin(uTime * 27.0 + vUv.x * 18.0);
+      vec3 col = mix(vec3(0.36, 0.16, 0.85), vec3(0.75, 0.55, 1.0), vUv.y);
+      col += vec3(0.55, 0.6, 1.0) * pow(vUv.x, 8.0);       // electric leading edge
+      gl_FragColor = vec4(col, head * vert * rays * flicker * 0.85);
+    }`,
+});
+
 /** Projectiles share one geometry + material per ability across the whole match. */
 const projLooks = new Map<AbilityId, { geo: THREE.BufferGeometry; mat: THREE.MeshStandardMaterial }>();
 function makeProjectileMesh(abilityId: AbilityId): THREE.Mesh {
+  if (abilityId === 'celestialBarrage') return new THREE.Mesh(CELESTIAL_GEO, CELESTIAL_MAT);
   let look = projLooks.get(abilityId);
   if (!look) {
     const color = PROJECTILE_COLORS[abilityId] ?? 0xffffff;
@@ -729,6 +758,7 @@ export class EntityViews {
 
   sync(prev: Snapshot, next: Snapshot, t: number, selfId: number, camera: THREE.Camera, dt: number): void {
     const now = performance.now() / 1000;
+    CELESTIAL_MAT.uniforms.uTime!.value = now;
     const camX = camera.position.x;
     const camZ = camera.position.z;
     const beyond = (x: number, z: number, drawDist: number): boolean =>
