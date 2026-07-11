@@ -197,6 +197,16 @@ const TRAIL_RING_GEOS = [0.24, 0.17, 0.11].map((r) => {
 });
 const CORE_GEO = new THREE.SphereGeometry(0.075, 12, 10);
 
+// Slime: one smooth dome blob, translucent, with a glowing nucleus.
+const SLIME_GEO = new THREE.LatheGeometry(
+  [
+    [0.02, 0.0], [0.3, 0.02], [0.42, 0.14], [0.44, 0.3], [0.38, 0.5],
+    [0.26, 0.66], [0.12, 0.76], [0.0, 0.8],
+  ].map(([r, y]) => new THREE.Vector2(r!, y!)),
+  20,
+);
+SLIME_GEO.translate(0, -0.4, 0); // pivot mid-blob
+
 /** Paraglider canopy: a squashed sphere slice, tinted per hero. */
 const CHUTE_CANOPY_GEO = new THREE.SphereGeometry(1.5, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
 CHUTE_CANOPY_GEO.scale(1, 0.62, 0.85);
@@ -209,11 +219,13 @@ const TINT_MIX = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
 
 /** Selectable body designs; all share the slap hands and the same chassis. */
-export type HeroModel = 'cloud' | 'wisp' | 'mask';
+export type HeroModel = 'cloud' | 'wisp' | 'mask' | 'dust' | 'slime';
 export const HERO_MODELS: { id: HeroModel; name: string }[] = [
   { id: 'cloud', name: 'Storm Cloud' },
   { id: 'wisp', name: 'Wisp' },
   { id: 'mask', name: 'Spectral Mask' },
+  { id: 'dust', name: 'Dust Devil' },
+  { id: 'slime', name: 'Slime' },
 ];
 
 /** How a body's materials take the hero tint (and their resting opacity). */
@@ -276,6 +288,8 @@ class PlayerView {
     this.bodyPivot.position.y = 1.0;
     if (model === 'wisp') this.buildWisp();
     else if (model === 'mask') this.buildMask();
+    else if (model === 'dust') this.buildDust();
+    else if (model === 'slime') this.buildSlime();
     else this.buildCloud();
     this.bodyPivot.scale.setScalar(this.baseScale);
 
@@ -474,6 +488,64 @@ class PlayerView {
         ring.rotation.y += dt * (0.8 + i * 0.5) * (i % 2 === 0 ? 1 : -1);
         ring.position.y = -0.22 - i * 0.2 + Math.sin(bob + i * 0.9) * 0.025;
       });
+    };
+  }
+
+  /** A little whirlwind: two counter-rotating tiers of dust, always turning. */
+  private buildDust(): void {
+    const dustMat = this.tintable('light', { roughness: 1 });
+    const darkMat = this.tintable('dark', { roughness: 1 });
+    const swirlA = new THREE.Group();
+    const swirlB = new THREE.Group();
+    for (let i = 0; i < 10; i++) {
+      const t = i / 9;
+      const a = i * 2.4; // golden-angle spiral
+      const r = 0.08 + t * 0.3; // narrow base, wide crown
+      const puff = new THREE.Mesh(CLOUD_PUFF_GEO, i % 3 === 0 ? darkMat : dustMat);
+      puff.position.set(Math.sin(a) * r, -0.45 + t * 0.95, Math.cos(a) * r);
+      puff.scale.setScalar(0.09 + t * 0.14);
+      puff.castShadow = i % 2 === 0;
+      (i % 2 === 0 ? swirlA : swirlB).add(puff);
+    }
+    this.bodyPivot.add(swirlA, swirlB);
+    const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
+    visor.position.set(0, 0.3, 0.12);
+    this.bodyPivot.add(visor);
+
+    this.deathStyle = 'dissipate';
+    this.animateBody = (bob, speed, dt) => {
+      // Fluid: the vortex never stops turning, and speeds up with travel.
+      const spin = 2.2 + Math.min(9, speed * 0.9);
+      swirlA.rotation.y += dt * spin;
+      swirlB.rotation.y -= dt * spin * 0.7;
+      const sway = Math.sin(bob * 0.7) * 0.06;
+      swirlA.rotation.z = sway;
+      swirlB.rotation.z = -sway * 0.6;
+    };
+  }
+
+  /** A grounded blob that hops and squash-stretches instead of hovering. */
+  private buildSlime(): void {
+    const slimeMat = this.tintable('plain', { roughness: 0.25, metalness: 0.05 }, 0.88);
+    const blob = new THREE.Mesh(SLIME_GEO, slimeMat);
+    blob.castShadow = true;
+    this.bodyPivot.add(blob);
+    const core = new THREE.Mesh(CORE_GEO, this.visorMat);
+    core.position.y = -0.06;
+    core.scale.setScalar(1.4);
+    this.bodyPivot.add(core);
+    const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
+    visor.position.set(0, 0.08, 0.22);
+    this.bodyPivot.add(visor);
+
+    this.deathStyle = 'dissipate';
+    this.animateBody = (bob, speed, _dt) => {
+      // Fluid: hop along the ground with volume-preserving squash & stretch.
+      const hop = Math.abs(Math.sin(bob * 1.3)) * Math.min(0.3, 0.04 + speed * 0.03);
+      this.bodyPivot.position.y = 0.42 + hop;
+      const amp = 0.05 + Math.min(0.09, speed * 0.009);
+      const wobble = Math.sin(bob * 2.6) * amp;
+      blob.scale.set(1 - wobble * 0.55, 1 + wobble, 1 - wobble * 0.55);
     };
   }
 
