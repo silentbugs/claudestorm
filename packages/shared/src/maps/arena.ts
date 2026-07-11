@@ -16,8 +16,12 @@ export interface CircleObstacle {
   z: number;
   r: number;
   height: number;
-  /** Renderer hint; the sim only cares about the collision shape. */
-  look?: 'tree' | 'rock' | 'cliff';
+  /**
+   * Renderer hint; the sim only cares about the collision shape. 'none'
+   * marks collision-only footprints under landmark dressing (the watchtower,
+   * the wreck's hull) that the renderer must not decorate again.
+   */
+  look?: 'tree' | 'rock' | 'cliff' | 'none';
 }
 
 export type Obstacle = BoxObstacle | CircleObstacle;
@@ -57,7 +61,7 @@ export interface PitDef {
 }
 
 /** The handful of named milestone areas that make the island recognizable. */
-export type LandmarkKind = 'wreck' | 'spire' | 'stonering' | 'pit' | 'grove';
+export type LandmarkKind = 'wreck' | 'spire' | 'stonering' | 'pit' | 'grove' | 'ravine';
 
 export interface LandmarkDef {
   kind: LandmarkKind;
@@ -196,9 +200,13 @@ interface PieceCtx {
 /** Shipwreck Cove: a beached hulk on the east shore, rich pickings around it. */
 function stampWreck(ctx: PieceCtx, x: number, z: number): void {
   ctx.landmarks.push({ kind: 'wreck', name: 'Shipwreck Cove', x, z, r: 26 });
-  // The hull blocks movement; a couple of rocks scatter the approach.
+  // The hull itself blocks movement (two footprints along the ship's axis,
+  // matching the renderer's -0.5 facing); rocks scatter the approach.
+  const hx = Math.sin(-0.5);
+  const hz = Math.cos(-0.5);
   ctx.obstacles.push(
-    { kind: 'circle', x, z, r: 5.5, height: 9, look: 'rock' },
+    { kind: 'circle', x: x + hx * 5, z: z + hz * 5, r: 4.5, height: 9, look: 'none' },
+    { kind: 'circle', x: x - hx * 5, z: z - hz * 5, r: 4.5, height: 9, look: 'none' },
     { kind: 'circle', x: x - 14, z: z + 9, r: 2.2, height: 3.5, look: 'rock' },
     { kind: 'circle', x: x - 9, z: z - 13, r: 1.8, height: 3, look: 'rock' },
   );
@@ -212,8 +220,10 @@ function stampWreck(ctx: PieceCtx, x: number, z: number): void {
 function stampSpire(ctx: PieceCtx, x: number, z: number): void {
   ctx.landmarks.push({ kind: 'spire', name: 'Skyreach Spire', x, z, r: 30 });
   ctx.hills.push({ x, z, r: 38, h: 17 });
-  ctx.chests.push({ x, z }, { x: x + 6, z: z - 4 }, { x: x - 5, z: z + 6 });
-  ctx.elites.push({ x: x + 3, z: z + 3 });
+  // The watchtower's footing is solid.
+  ctx.obstacles.push({ kind: 'circle', x, z, r: 2.4, height: 9, look: 'none' });
+  ctx.chests.push({ x: x + 4, z: z + 2 }, { x: x + 6, z: z - 4 }, { x: x - 5, z: z + 6 });
+  ctx.elites.push({ x: x + 3, z: z + 5 });
   ctx.scrolls.push({ x: x - 3, z: z - 5 });
 }
 
@@ -282,6 +292,41 @@ function stampGroveLandmark(ctx: PieceCtx, x: number, z: number): void {
   ctx.chests.push({ x: x + 5, z: z + 2 }, { x: x - 4, z: z - 6 });
   ctx.elites.push({ x: x + 2, z: z - 4 });
   ctx.scrolls.push({ x: x - 6, z: z + 4 }, { x: x + 7, z: z - 2 });
+}
+
+/**
+ * The Undercroft: a deep sunken ravine — the island's underground. Rock
+ * walls line both rims; the only comfortable ways in are the two open ends,
+ * and the loot-rich floor sits ~8m below the plain, out of sight.
+ */
+function stampRavine(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'ravine', name: 'The Undercroft', x, z, r: 34 });
+  const angle = ctx.rng.range(0, Math.PI);
+  const dirX = Math.sin(angle);
+  const dirZ = Math.cos(angle);
+  // The trench: overlapping deep bowls along the axis.
+  for (const t of [-24, -8, 8, 24]) {
+    ctx.hills.push({ x: x + dirX * t, z: z + dirZ * t, r: 22, h: -6.5 });
+  }
+  // Rock walls along both rims; the ends stay open as entrances.
+  const px = dirZ;
+  const pz = -dirX;
+  for (const t of [-21, -10.5, 0, 10.5, 21]) {
+    for (const side of [-1, 1]) {
+      ctx.obstacles.push({
+        kind: 'circle',
+        x: x + dirX * t + px * side * 13,
+        z: z + dirZ * t + pz * side * 13,
+        r: ctx.rng.range(2.4, 3.2),
+        height: ctx.rng.range(6, 9),
+        look: 'rock',
+      });
+    }
+  }
+  ctx.chests.push({ x, z }, { x: x + dirX * 12, z: z + dirZ * 12 }, { x: x - dirX * 12, z: z - dirZ * 12 });
+  ctx.elites.push({ x: x + dirX * 5, z: z + dirZ * 5 }, { x: x - dirX * 6, z: z - dirZ * 6 });
+  ctx.scrolls.push({ x: x + px * 4, z: z + pz * 4 });
+  ctx.items.push({ x: x - px * 4, z: z - pz * 4 });
 }
 
 /** Minor filler site: a small stand of trees with loot tucked inside. */
@@ -376,7 +421,7 @@ function buildArena(): MapDef {
   });
 
   // ── Landmarks: the wreck sits right on the east coast, the rest inland ──
-  const spots = scatterPoints(rng, 4, 180, 250, keepOut, inland(62));
+  const spots = scatterPoints(rng, 5, 165, 250, keepOut, inland(62));
   const wreckAngle = rng.range(1.2, 1.9); // roughly east, atan2(x, z) convention
   const wreckR = coastRadius(COAST, wreckAngle) - 22;
   stampWreck(ctx, Math.sin(wreckAngle) * wreckR, Math.cos(wreckAngle) * wreckR);
@@ -384,6 +429,7 @@ function buildArena(): MapDef {
   stampStoneRing(ctx, spots[1]!.x, spots[1]!.z);
   stampPit(ctx, spots[2]!.x, spots[2]!.z);
   stampGroveLandmark(ctx, spots[3]!.x, spots[3]!.z);
+  stampRavine(ctx, spots[4]!.x, spots[4]!.z);
   const landmarkAnchors = ctx.landmarks.map((l) => ({ x: l.x, z: l.z }));
   keepOut.push(...landmarkAnchors);
 
@@ -423,6 +469,36 @@ function buildArena(): MapDef {
   for (const p of scatterPoints(rng, 52, 22, 348, avoid, inland(18))) mobs.push(p);
   for (const p of scatterPoints(rng, 26, 32, 336, avoid, inland(18))) scrolls.push(p);
   for (const p of scatterPoints(rng, 24, 30, 340, avoid, inland(18))) items.push(p);
+
+  // ── Nudge every static pickup out of anything it spawned inside ──
+  // A chest inside a tree trunk helps no one.
+  const clearLoot = (pts: Point[]): void => {
+    for (const p of pts) {
+      for (let pass = 0; pass < 3; pass++) {
+        let moved = false;
+        for (const ob of obstacles) {
+          if (ob.kind !== 'circle') continue;
+          const clearance = ob.r + 1.4;
+          const dx = p.x - ob.x;
+          const dz = p.z - ob.z;
+          const d = Math.hypot(dx, dz);
+          if (d >= clearance) continue;
+          if (d > 1e-6) {
+            p.x = ob.x + (dx / d) * clearance;
+            p.z = ob.z + (dz / d) * clearance;
+          } else {
+            p.x = ob.x + clearance;
+          }
+          moved = true;
+        }
+        if (!moved) break;
+      }
+    }
+  };
+  clearLoot(chests);
+  clearLoot(scrolls);
+  clearLoot(items);
+  clearLoot(elites);
 
   return {
     size: 760,

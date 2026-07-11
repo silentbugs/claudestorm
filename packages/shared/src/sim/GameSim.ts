@@ -1130,6 +1130,24 @@ export class GameSim {
       this.equipScroll(p, bestScroll, true);
       return;
     }
+    // Items swap like scrolls do: take the new one, drop what you held.
+    let bestItem: ItemEntity | null = null;
+    let bestItemDist = INTERACT_RADIUS;
+    for (const it of this.items.values()) {
+      const d = dist(p.x, p.z, it.x, it.z);
+      if (d < bestItemDist) {
+        bestItemDist = d;
+        bestItem = it;
+      }
+    }
+    if (bestItem) {
+      const held = p.item;
+      p.item = bestItem.itemId;
+      this.items.delete(bestItem.id);
+      this.events.push({ type: 'itemPickup', playerId: p.id, itemId: p.item });
+      if (held) this.spawnItem(p.x, p.z, held);
+      return;
+    }
     let bestChest: ChestEntity | null = null;
     let bestChestDist = INTERACT_RADIUS;
     for (const c of this.chests.values()) {

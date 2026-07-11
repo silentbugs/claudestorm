@@ -8,6 +8,7 @@ import {
   XP_PER_CHEST,
   XP_PER_ELITE,
 } from '../src/constants.js';
+import { ARENA } from '../src/maps/arena.js';
 import { buttons, cmd, loadout, makeSim, player, FLAT_MAP } from './helpers.js';
 
 const PRESS_INTERACT = buttons({ interact: true });
@@ -170,5 +171,18 @@ describe('mobs and leveling', () => {
     const sim = makeSim([player(1, 0, 0)], { map });
     for (let i = 0; i < TICK_RATE * 3; i++) sim.step();
     expect(sim.players.get(1)!.hp).toBeLessThan(PLAYER_BASE_HP);
+  });
+});
+
+describe('island loot placement', () => {
+  it('no chest, scroll, or item spawns inside an obstacle', () => {
+    for (const list of [ARENA.chests, ARENA.scrolls, ARENA.items]) {
+      for (const p of list) {
+        for (const ob of ARENA.obstacles) {
+          if (ob.kind !== 'circle') continue;
+          expect(Math.hypot(p.x - ob.x, p.z - ob.z)).toBeGreaterThanOrEqual(ob.r + 1.3);
+        }
+      }
+    }
   });
 });

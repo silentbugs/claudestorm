@@ -3,6 +3,8 @@ import { GameSim } from '../src/sim/GameSim.js';
 import {
   DROP_START_Y,
   DROP_TIMEOUT_SECONDS,
+  HEAL_CAST_SECONDS,
+  HEAL_TICK_AMOUNT,
   PLAYER_BASE_HP,
   TICK_RATE,
 } from '../src/constants.js';
@@ -178,6 +180,16 @@ describe('storm script generator', () => {
       expect(slow[i]!.shrink).toBeGreaterThan(normal[i]!.shrink);
       expect(slow[i]!.targetRadius).toBe(normal[i]!.targetRadius);
     }
+  });
+});
+
+describe('bot self-care', () => {
+  it('a hurt bot channels its heal back up once out of combat', () => {
+    const sim = makeSim([{ id: 1, name: 'B', isBot: true, spawn: { x: 0, z: 0 } }]);
+    const b = sim.players.get(1)!;
+    b.hp = 30;
+    for (let i = 0; i < TICK_RATE * 6; i++) sim.step();
+    expect(b.hp).toBeGreaterThanOrEqual(30 + HEAL_TICK_AMOUNT * HEAL_CAST_SECONDS);
   });
 });
 

@@ -6,6 +6,26 @@ import { buttons, cmd, makeSim, player, FLAT_MAP } from './helpers.js';
 const USE_ITEM = buttons({ useItem: true });
 
 describe('consumable items', () => {
+  it('F swaps the held item with one on the ground', () => {
+    const map = { ...FLAT_MAP, items: [{ x: 0.5, z: 0 }, { x: 30, z: 0 }] };
+    const sim = makeSim([player(1, 0, 0)], { map });
+    sim.step(); // auto-pickup the nearby item
+    const p = sim.players.get(1)!;
+    expect(p.item).not.toBeNull();
+    // Make the remaining ground item distinct, stand over it, and swap.
+    const ground = [...sim.items.values()][0]!;
+    ground.itemId = p.item === 'smokeBomb' ? 'mechanoHog' : 'smokeBomb';
+    const wanted = ground.itemId;
+    const heldBefore = p.item!;
+    p.x = 30;
+    p.z = 0;
+    sim.applyInput(1, cmd({ buttons: buttons({ interact: true }) }));
+    sim.step();
+    expect(p.item).toBe(wanted);
+    // The old item was dropped where we stood.
+    expect([...sim.items.values()].some((i) => i.itemId === heldBefore)).toBe(true);
+  });
+
   it('auto-picks up an item into the empty item slot, one at a time', () => {
     const map = { ...FLAT_MAP, items: [{ x: 1, z: 0 }, { x: 1.2, z: 0 }] };
     const sim = makeSim([player(1, 0, 0)], { map });

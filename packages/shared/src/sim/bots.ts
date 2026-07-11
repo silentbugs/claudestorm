@@ -72,8 +72,6 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
     };
   }
 
-  // Everyone has the builtin heal — use it when hurt.
-  if (bot.healCdTicks === 0 && bot.hp < bot.maxHp * 0.45) buttons.heal = true;
   // Snack on the chicken when hurt; save mobility items for the storm (below).
   if (bot.item === 'chickenCoup' && bot.hp < bot.maxHp * 0.55) buttons.useItem = true;
 
@@ -104,6 +102,20 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   // final circle and leave every bot permanently "fleeing" to the exact center.
   const margin = Math.min(5, storm.radius * 0.3);
   const stormDanger = distFromCenter > storm.radius - margin;
+
+  // Heal strategically: only once the fight has broken off — channeling in
+  // combat just hands the enemy an interrupt.
+  const inCombat = target !== null && targetDist < diff.engage + 8;
+  if (
+    bot.healCdTicks === 0 &&
+    bot.healCastTicks === 0 &&
+    bot.hp < bot.maxHp * 0.7 &&
+    !inCombat &&
+    !stormDanger &&
+    !st.retreating
+  ) {
+    buttons.heal = true;
+  }
 
   // Storm retreat is a commitment: pick a point well inside the circle once
   // and walk to it. Re-deciding every tick made bots jitter in place at the
@@ -197,7 +209,11 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       st.nextDecisionTick = tick + rng.int(20, 60);
     }
     const toTarget = norm(target.x - bot.x, target.z - bot.z);
-    if (targetDist > 14) {
+    if (bot.hp < bot.maxHp * 0.3 && bot.healCdTicks === 0) {
+      // Desperate with the heal still in pocket: disengage to drink it.
+      moveX = -toTarget.x;
+      moveZ = -toTarget.z;
+    } else if (targetDist > 14) {
       moveX = toTarget.x;
       moveZ = toTarget.z;
     } else if (targetDist < 6 && !buttons.melee) {
