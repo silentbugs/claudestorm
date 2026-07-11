@@ -21,14 +21,16 @@ export class CameraRig {
   /** Right-mouse look: turn the character and camera together. */
   applyLook(dx: number, dy: number, zoom: number): void {
     this.yaw -= dx * 0.0032;
-    this.pitch = clamp(this.pitch + dy * 0.0032, 0.12, 1.25);
+    // Negative pitch lets the camera dip below head height (and below a
+    // lake's surface); the terrain clamp keeps it out of the ground.
+    this.pitch = clamp(this.pitch + dy * 0.0032, -0.55, 1.25);
     this.dist = clamp(this.dist + zoom * 0.01, 5, 18);
   }
 
   /** Left-mouse orbit: swing the camera only; the character keeps facing. */
   applyOrbit(dx: number, dy: number): void {
     this.orbit -= dx * 0.0032;
-    this.pitch = clamp(this.pitch + dy * 0.0032, 0.12, 1.25);
+    this.pitch = clamp(this.pitch + dy * 0.0032, -0.55, 1.25);
   }
 
   /** Engaging right-mouse turns the character to where the camera looks (WoW). */

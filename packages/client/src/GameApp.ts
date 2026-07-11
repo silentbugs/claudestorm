@@ -77,6 +77,7 @@ export class GameApp {
   private wasLooking = false;
   private fpsAccum = 0;
   private fpsFrames = 0;
+  private fpsWorst = 0;
 
   constructor(private readonly container: HTMLElement) {
     this.hud = new Hud(
@@ -324,14 +325,19 @@ export class GameApp {
     const dt = Math.min(0.1, rawDt);
     this.lastFrame = now;
 
-    // FPS readout: averaged over half-second windows.
+    // FPS readout: the average alone hides single dropped frames (vsync pins
+    // it at the refresh rate), so the worst frame of each window shows too.
     this.fpsAccum += rawDt;
     this.fpsFrames++;
+    this.fpsWorst = Math.max(this.fpsWorst, rawDt);
     if (this.fpsAccum >= 0.5) {
-      document.getElementById('fps')!.textContent =
-        `${Math.round(this.fpsFrames / this.fpsAccum)} FPS`;
+      const worstMs = Math.round(this.fpsWorst * 1000);
+      const el = document.getElementById('fps')!;
+      el.textContent = `${Math.round(this.fpsFrames / this.fpsAccum)} FPS · worst ${worstMs} ms`;
+      el.classList.toggle('spiking', worstMs > 40);
       this.fpsAccum = 0;
       this.fpsFrames = 0;
+      this.fpsWorst = 0;
     }
 
     if (!this.inMatch) {
@@ -390,7 +396,7 @@ export class GameApp {
         const y = lerp(focusPrev.y, focusNext.y, t) + groundHeight(ARENA, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.sceneMgr.setFocus(x, z);
-        this.updateUnderwater(x, z, focusNext.gliding || focusNext.y > 0.5);
+        this.updateUnderwater();
         sfx.setListener(x, z, this.rig.camYaw);
         this.map.update(next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
         if (this.spectateId === null) {
@@ -414,17 +420,13 @@ export class GameApp {
   }
 
   /**
-   * Blue wash while you're in the water, WoW-style: wading through a lake
-   * (unless airborne over it) or dipping the camera below the surface.
+   * WoW-style: the blue wash appears exactly when the camera itself is below
+   * a lake's surface — nothing else triggers it.
    */
-  private updateUnderwater(x: number, z: number, airborne: boolean): void {
+  private updateUnderwater(): void {
     const cam = this.sceneMgr.camera.position;
     let under = false;
     for (const lake of ARENA.lakes) {
-      if (!airborne && Math.hypot(x - lake.x, z - lake.z) < lake.r) {
-        under = true;
-        break;
-      }
       if (Math.hypot(cam.x - lake.x, cam.z - lake.z) < lake.r * 1.05) {
         // Matches the renderer's lake disc height.
         const surface = groundHeight(ARENA, lake.x, lake.z) * 0.45;

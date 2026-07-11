@@ -51,6 +51,10 @@ button {
   text-shadow: 0 1px 2px #000;
 }
 
+#fps.spiking {
+  color: #e08585;
+}
+
 /* The drawn gauntlet cursor, shown only while the pointer is locked in-match. */
 #virtual-cursor {
   position: fixed;
