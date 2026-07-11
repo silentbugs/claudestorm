@@ -222,17 +222,20 @@ describe('Fire Whirl', () => {
 });
 
 describe('Earthbreaker', () => {
-  it('erupts around the caster and stuns whoever is caught', () => {
+  it("the quake's stun locks the target in place; bystanders are untouched", () => {
+    const def = ABILITIES.earthbreaker;
     const sim = makeSim([
       player(1, 0, 0, { loadout: loadout(['earthbreaker']) }),
       player(2, 3, 0),
       player(3, 30, 30),
     ]);
-    sim.applyInput(1, castCmd(0, 50, 50)); // aim far — still centers on caster
-    const telegraphTicks = Math.round(ABILITIES.earthbreaker.telegraph! * TICK_RATE);
-    for (let i = 0; i < telegraphTicks + 2; i++) sim.step();
+    // Charge-and-release: face +x with the cursor on the enemy, hold to max.
+    sim.applyInput(1, cmd({ yaw: Math.PI / 2, aimX: 3, aimZ: 0, slotCasts: [0] }));
+    const total =
+      Math.round(def.chargeSeconds! * TICK_RATE) + Math.round(def.telegraph! * TICK_RATE) + 3;
+    for (let i = 0; i < total; i++) sim.step();
     const b = sim.players.get(2)!;
-    expect(b.hp).toBeCloseTo(PLAYER_BASE_HP - ABILITIES.earthbreaker.damage, 5);
+    expect(b.hp).toBeCloseTo(PLAYER_BASE_HP - def.damage, 5);
     expect(b.stunTicks).toBeGreaterThan(0);
     // Stunned: movement input does nothing.
     const xBefore = b.x;
@@ -375,6 +378,27 @@ describe('Slicing Winds', () => {
     const power = def.chargeMinFraction! + (1 - def.chargeMinFraction!) * (1 / chargeMaxTicks);
     expect(sim.players.get(2)!.hp).toBeCloseTo(PLAYER_BASE_HP - def.damage * power, 5);
     expect(sim.players.get(1)!.x).toBeLessThan(def.leapRange! * 0.7); // well short of full range
+  });
+
+  it('earthbreaker charges, then sunders the aimed spot and stuns whoever it hits', () => {
+    const def = ABILITIES.earthbreaker;
+    const sim = makeSim([
+      player(1, 0, 0, { loadout: loadout(['earthbreaker']) }),
+      player(2, 0, 10),
+    ]);
+    // Facing +z with the cursor 10m out: the quake lands on the enemy.
+    sim.applyInput(1, cmd({ yaw: 0, aimX: 0, aimZ: 10, slotCasts: [0] }));
+    sim.step();
+    const a = sim.players.get(1)!;
+    expect(a.chargeSlot).toBe(0); // winding up, not cast yet
+    expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+    // Hold to max: auto-releases at full power, telegraph plays, then it detonates.
+    const total =
+      Math.round(def.chargeSeconds! * TICK_RATE) + Math.round(def.telegraph! * TICK_RATE) + 3;
+    for (let i = 0; i < total; i++) sim.step();
+    const target = sim.players.get(2)!;
+    expect(target.hp).toBeCloseTo(PLAYER_BASE_HP - def.damage, 5);
+    expect(target.stunTicks).toBeGreaterThan(0);
   });
 });
 

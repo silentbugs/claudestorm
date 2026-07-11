@@ -777,25 +777,7 @@ export class GameSim {
         break;
       }
       case 'groundAoE': {
-        // The circle lands along the character's facing; the cursor's distance
-        // from the caster only picks how far out (clamped to cast range).
-        const d = Math.min(dist(p.x, p.z, p.aimX, p.aimZ), def.castRange!);
-        const tx = p.x + Math.sin(p.facing) * d;
-        const tz = p.z + Math.cos(p.facing) * d;
-        this.zones.push({
-          id: this.nextEntityId++,
-          abilityId: def.id,
-          ownerId: p.id,
-          kind: 'telegraph',
-          x: tx,
-          z: tz,
-          radius: def.aoeRadius!,
-          damage: def.damage * scale,
-          endTick: this.tick + Math.round(def.telegraph! * TICK_RATE),
-          dps: 0,
-          slowFactor: 1,
-          rootDuration: 0,
-        });
+        this.castGroundAoE(p, def, scale, 1);
         break;
       }
       case 'cone': {
@@ -851,6 +833,31 @@ export class GameSim {
         break;
       }
     }
+  }
+
+  /**
+   * Drop a telegraphed circle along the caster's facing; the cursor's distance
+   * from the caster only picks how far out (clamped to cast range).
+   * reachMult stretches the range (charged casts, e.g. Earthbreaker).
+   */
+  private castGroundAoE(p: PlayerEntity, def: AbilityDef, scale: number, reachMult: number): void {
+    const d = Math.min(dist(p.x, p.z, p.aimX, p.aimZ), def.castRange! * reachMult);
+    const tx = p.x + Math.sin(p.facing) * d;
+    const tz = p.z + Math.cos(p.facing) * d;
+    this.zones.push({
+      id: this.nextEntityId++,
+      abilityId: def.id,
+      ownerId: p.id,
+      kind: 'telegraph',
+      x: tx,
+      z: tz,
+      radius: def.aoeRadius!,
+      damage: def.damage * scale,
+      endTick: this.tick + Math.round(def.telegraph! * TICK_RATE),
+      dps: 0,
+      slowFactor: 1,
+      rootDuration: 0,
+    });
   }
 
   /** Fire a projectile (or fan volley) along the caster's facing. reachMult stretches lifetime (charged casts). */
@@ -974,6 +981,7 @@ export class GameSim {
     });
     if (def.behavior === 'leap') this.startLeap(p, def, scale, power);
     else if (def.behavior === 'projectile') this.spawnProjectiles(p, def, scale, power);
+    else if (def.behavior === 'groundAoE') this.castGroundAoE(p, def, scale, power);
   }
 
   /** A stun (or death) interrupts the charge: no effect, half cooldown. */
