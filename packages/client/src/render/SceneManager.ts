@@ -310,7 +310,8 @@ export class SceneManager {
         varying float vDist;
         void main() {
           vec3 p = position;
-          p.y += sin(p.x * 0.06 + uTime * 0.8) * 0.25 + cos(p.z * 0.05 + uTime * 0.6) * 0.25;
+          // Barely-there swell: big waves made the lakes visibly heave.
+          p.y += sin(p.x * 0.06 + uTime * 0.8) * 0.06 + cos(p.z * 0.05 + uTime * 0.6) * 0.05;
           vec4 world = modelMatrix * vec4(p, 1.0);
           vWorld = world.xyz;
           vView = cameraPosition - world.xyz;
@@ -352,7 +353,7 @@ export class SceneManager {
   private buildLakes(): void {
     for (const lake of ARENA.lakes) {
       const bottom = groundHeight(ARENA, lake.x, lake.z);
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(lake.r * 1.15, 28), this.waterMat);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(lake.r * 1.05, 28), this.waterMat);
       disc.geometry.rotateX(-Math.PI / 2);
       disc.position.set(lake.x, bottom * 0.45, lake.z);
       this.scene.add(disc);
@@ -434,6 +435,7 @@ export class SceneManager {
       if (ob.kind !== 'circle') return; // the island has no box obstacles anymore
       const rot = i * 2.39; // deterministic "random" facing
       const look = ob.look ?? (ob.height >= 5 ? 'tree' : 'rock');
+      if (look === 'none') return; // collision-only footprint under landmark dressing
       if (look === 'tree') {
         const nearShore =
           Math.hypot(ob.x, ob.z) >
@@ -482,6 +484,12 @@ export class SceneManager {
           // Old digging gear abandoned at the lip.
           this.place(this.assets.modelAtHeight('log_stack', 1.0), lm.x + lm.r + 3, lm.z + 4, 0.4);
           this.place(this.assets.modelAtHeight('campfire_logs', 0.8), lm.x - lm.r - 4, lm.z - 2, 0);
+          break;
+        }
+        case 'ravine': {
+          // A camp abandoned at the trench floor.
+          this.place(this.assets.modelAtHeight('campfire_logs', 0.9), lm.x + 2, lm.z - 3, 0);
+          this.place(this.assets.modelAtHeight('stump_old', 0.8), lm.x - 4, lm.z + 2, 1.2);
           break;
         }
       }

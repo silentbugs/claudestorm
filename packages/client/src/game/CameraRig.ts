@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp } from '@claudestorm/shared';
+import { ARENA, clamp, groundHeight } from '@claudestorm/shared';
 
 /**
  * Orbit camera, WoW-style: right-drag turns the character (camera follows),
@@ -45,6 +45,10 @@ export class CameraRig {
       y + 1.6 + height,
       z - Math.cos(this.camYaw) * horiz,
     );
+    // Never sink below the terrain (walking downhill used to poke the camera
+    // through the slope and show the sea under the island).
+    const floor = groundHeight(ARENA, camera.position.x, camera.position.z) + 0.5;
+    if (camera.position.y < floor) camera.position.y = floor;
     camera.lookAt(x, y + 1.6, z);
   }
 }

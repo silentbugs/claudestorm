@@ -31,6 +31,17 @@ button {
   color: #e8e6d9;
 }
 
+/* WoW-style underwater wash when the camera dips below a lake's surface. */
+#underwater {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(28, 88, 138, 0.32) 0%,
+    rgba(14, 52, 96, 0.55) 100%
+  );
+}
+
 #fps {
   position: absolute;
   top: 14px;

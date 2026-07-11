@@ -3,6 +3,7 @@ import {
   ABILITIES,
   ARENA,
   INTERACT_RADIUS,
+  ITEMS,
   STORM_START_RADIUS,
   buildStormPhases,
   dist,
@@ -379,6 +380,7 @@ export class GameApp {
         const y = lerp(focusPrev.y, focusNext.y, t) + groundHeight(ARENA, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.sceneMgr.setFocus(x, z);
+        this.updateUnderwater();
         sfx.setListener(x, z, this.rig.camYaw);
         this.map.update(next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
         if (this.spectateId === null) {
@@ -399,6 +401,23 @@ export class GameApp {
     this.hud.tick(dt);
     this.sceneMgr.render();
     requestAnimationFrame((n) => this.frame(n));
+  }
+
+  /** Blue wash while the camera is below a lake's surface, WoW-style. */
+  private updateUnderwater(): void {
+    const cam = this.sceneMgr.camera.position;
+    let under = false;
+    for (const lake of ARENA.lakes) {
+      if (Math.hypot(cam.x - lake.x, cam.z - lake.z) < lake.r * 1.05) {
+        // Matches the renderer's lake disc height.
+        const surface = groundHeight(ARENA, lake.x, lake.z) * 0.45;
+        if (cam.y < surface) {
+          under = true;
+          break;
+        }
+      }
+    }
+    document.getElementById('underwater')!.classList.toggle('hidden', !under);
   }
 
   private updateAim(selfX: number, selfZ: number): void {
@@ -428,6 +447,16 @@ export class GameApp {
       if (d < bestDist) {
         bestDist = d;
         best = `Take ${ABILITIES[s.abilityId].name} (${s.rarity})`;
+      }
+    }
+    if (!best) {
+      const held = snap.players.find((p) => p.id === SELF_ID)?.item ?? null;
+      for (const it of snap.items) {
+        const d = dist(x, z, it.x, it.z);
+        if (d < bestDist) {
+          bestDist = d;
+          best = `Take ${ITEMS[it.itemId].name}${held ? ` (swap ${ITEMS[held].name})` : ''}`;
+        }
       }
     }
     if (!best) {
