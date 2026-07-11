@@ -1805,6 +1805,7 @@ export class GameSim {
           : p.healCastTicks > 0
             ? 1 - p.healCastTicks / (HEAL_CAST_SECONDS * TICK_RATE)
             : -1,
+        channelKind: p.channel ? 'chest' : p.healCastTicks > 0 ? 'heal' : null,
         charging:
           p.chargeSlot !== null && p.chargeMaxTicks > 0
             ? Math.min(1, p.chargeTicks / p.chargeMaxTicks)

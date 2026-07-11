@@ -275,6 +275,15 @@ export class GameApp {
     this.views.handleEvents(snap.events, SELF_ID, snap);
     for (const ev of snap.events) {
       if (ev.type === 'hit' && ev.targetId === SELF_ID) this.hud.flashVignette();
+      // Name every cast you make: charge spells stay named while held,
+      // instant spells flash their name briefly.
+      if (ev.type === 'cast' && ev.casterId === SELF_ID) {
+        const def = ABILITIES[ev.abilityId];
+        this.hud.showCast(def.name, def.chargeSeconds ? def.chargeSeconds + 0.4 : 0.9);
+      }
+      if (ev.type === 'chargeRelease' && ev.casterId === SELF_ID) {
+        this.hud.showCast(ABILITIES[ev.abilityId].name, 0.6);
+      }
       if (ev.type === 'death' && ev.id === SELF_ID && !this.deadShown) {
         this.deadShown = true;
         this.deathPlacement = snap.aliveCount + 1;
@@ -380,7 +389,7 @@ export class GameApp {
         const y = lerp(focusPrev.y, focusNext.y, t) + groundHeight(ARENA, x, z);
         this.rig.update(this.sceneMgr.camera, x, y, z);
         this.sceneMgr.setFocus(x, z);
-        this.updateUnderwater();
+        this.updateUnderwater(x, z, focusNext.gliding || focusNext.y > 0.5);
         sfx.setListener(x, z, this.rig.camYaw);
         this.map.update(next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
         if (this.spectateId === null) {
@@ -403,11 +412,18 @@ export class GameApp {
     requestAnimationFrame((n) => this.frame(n));
   }
 
-  /** Blue wash while the camera is below a lake's surface, WoW-style. */
-  private updateUnderwater(): void {
+  /**
+   * Blue wash while you're in the water, WoW-style: wading through a lake
+   * (unless airborne over it) or dipping the camera below the surface.
+   */
+  private updateUnderwater(x: number, z: number, airborne: boolean): void {
     const cam = this.sceneMgr.camera.position;
     let under = false;
     for (const lake of ARENA.lakes) {
+      if (!airborne && Math.hypot(x - lake.x, z - lake.z) < lake.r) {
+        under = true;
+        break;
+      }
       if (Math.hypot(cam.x - lake.x, cam.z - lake.z) < lake.r * 1.05) {
         // Matches the renderer's lake disc height.
         const surface = groundHeight(ARENA, lake.x, lake.z) * 0.45;

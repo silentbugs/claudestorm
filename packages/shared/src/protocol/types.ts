@@ -101,8 +101,10 @@ export interface PlayerSnapshot {
   /** Faeform: fast, damage-reduced, cannot attack. */
   fae: boolean;
   auraActive: boolean;
-  /** Chest-open progress 0..1, or -1 when not channeling. */
+  /** Chest-open/heal progress 0..1, or -1 when not channeling. */
   channeling: number;
+  /** What the channel bar is for. */
+  channelKind: 'chest' | 'heal' | null;
   /** Charge-and-release cast progress 0..1, or -1 when not charging. */
   charging: number;
   slots: PlayerSlots;

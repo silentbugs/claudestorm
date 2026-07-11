@@ -41,6 +41,8 @@ export class Hud {
   private readonly interactPrompt = document.getElementById('interact-prompt')!;
   private readonly channelBar = document.getElementById('channel-bar')!;
   private readonly channelFill = document.getElementById('channel-fill')!;
+  private readonly castName = document.getElementById('cast-name')!;
+  private castNameTimer = 0;
   private readonly hpFill = document.getElementById('hpfill')!;
   private readonly shieldFill = document.getElementById('shieldfill')!;
   private readonly hpText = document.getElementById('hptext')!;
@@ -219,6 +221,22 @@ export class Hud {
     } else {
       this.channelBar.classList.add('hidden');
     }
+    // Channels name themselves for as long as they run; instant casts and
+    // charges are named by showCast() (event-driven) and simply time out.
+    if (self.channeling >= 0 && self.channelKind) {
+      this.castNameTimer = 0;
+      this.castName.textContent = self.channelKind === 'heal' ? 'Heal' : 'Opening chest';
+      this.castName.classList.remove('hidden');
+    } else if (this.castNameTimer <= 0) {
+      this.castName.classList.add('hidden');
+    }
+  }
+
+  /** Flash the name of a cast spell over the hotbar for `seconds`. */
+  showCast(name: string, seconds: number): void {
+    this.castName.textContent = name;
+    this.castName.classList.remove('hidden');
+    this.castNameTimer = seconds;
   }
 
   private updateAbilitySlot(key: string, self: PlayerSnapshot, slotIndex: number): void {
@@ -272,6 +290,10 @@ export class Hud {
     if (this.vignetteStrength > 0) {
       this.vignetteStrength = Math.max(0, this.vignetteStrength - dt * 2.5);
       this.vignette.style.opacity = this.vignetteStrength.toFixed(2);
+    }
+    if (this.castNameTimer > 0) {
+      this.castNameTimer -= dt;
+      if (this.castNameTimer <= 0) this.castName.classList.add('hidden');
     }
   }
 

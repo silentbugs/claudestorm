@@ -152,6 +152,18 @@ button {
   font-weight: bold;
 }
 
+#cast-name {
+  position: absolute;
+  bottom: 268px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 17px;
+  font-weight: bold;
+  color: #ffe9a8;
+  text-shadow: 0 1px 4px #000;
+}
+
 #channel-bar {
   position: absolute;
   bottom: 250px;
