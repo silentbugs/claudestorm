@@ -5,6 +5,15 @@ import type { AssetLibrary, ModelName } from './assets.js';
 
 const SUN_DIR = new THREE.Vector3(0.55, 0.5, 0.32).normalize();
 
+/** Ruined masonry: box obstacles render as clean stone blocks (the sim shape, exactly). */
+const STONE_GEO = new THREE.BoxGeometry(1, 1, 1);
+const STONE_MATS = [
+  new THREE.MeshStandardMaterial({ color: 0x9a938a, roughness: 0.95 }),
+  new THREE.MeshStandardMaterial({ color: 0x867f76, roughness: 0.95 }),
+];
+STONE_MATS[0]!.name = 'stoneA';
+STONE_MATS[1]!.name = 'stoneB';
+
 /** Deterministic smooth value noise in [0, 1] — patchiness for the ground. */
 function hash2(x: number, z: number): number {
   const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
@@ -432,7 +441,18 @@ export class SceneManager {
     const rockPick: ModelName[] = ['rock_tallA', 'rock_tallB', 'rock_tallC'];
 
     ARENA.obstacles.forEach((ob, i) => {
-      if (ob.kind !== 'circle') return; // the island has no box obstacles anymore
+      if (ob.kind === 'box') {
+        // Ruin walls and rubble: a stone block matching the collision exactly.
+        const stone = new THREE.Mesh(STONE_GEO, STONE_MATS[i % 2]!);
+        stone.scale.set(ob.hx * 2, ob.height, ob.hz * 2);
+        stone.position.y = ob.height / 2 - 0.15; // settle into the ground
+        stone.castShadow = true;
+        stone.receiveShadow = true;
+        const holder = new THREE.Group();
+        holder.add(stone);
+        this.place(holder, ob.x, ob.z);
+        return;
+      }
       const rot = i * 2.39; // deterministic "random" facing
       const look = ob.look ?? (ob.height >= 5 ? 'tree' : 'rock');
       if (look === 'none') return; // collision-only footprint under landmark dressing
@@ -490,6 +510,22 @@ export class SceneManager {
           // A camp abandoned at the trench floor.
           this.place(this.assets.modelAtHeight('campfire_logs', 0.9), lm.x + 2, lm.z - 3, 0);
           this.place(this.assets.modelAtHeight('stump_old', 0.8), lm.x - 4, lm.z + 2, 1.2);
+          break;
+        }
+        case 'hamlet': {
+          // What's left of village life among the ruins.
+          this.place(this.assets.modelAtHeight('campfire_logs', 0.9), lm.x + 2, lm.z + 2, 0);
+          this.place(this.assets.modelAtHeight('barrel', 1.0), lm.x - 6, lm.z - 2, 0.7);
+          this.place(this.assets.modelAtHeight('log_stack', 1.0), lm.x + 6, lm.z - 6, 2.1);
+          break;
+        }
+        case 'barrow': {
+          this.place(this.assets.modelAtHeight('stump_old', 0.8), lm.x + 12, lm.z + 4, 0.5);
+          break;
+        }
+        case 'passage': {
+          // A smuggler's cache stash marks the midpoint below.
+          this.place(this.assets.modelAtHeight('campfire_logs', 0.8), lm.x - 2, lm.z + 2, 0);
           break;
         }
       }

@@ -38,10 +38,10 @@ export const JUMP_VELOCITY = 7.5;
 export const GRAVITY = 22;
 
 /** Drop-in glide at match start. */
-export const DROP_START_Y = 170; // 18.9s of fall at 20 m/s glide ≈ 377m of reach
+export const DROP_START_Y = 190; // 21.1s of fall at 20 m/s glide ≈ 422m of reach
 export const GLIDE_FALL_SPEED = 9;
 export const GLIDE_MOVE_SPEED = 20;
-export const DROP_TIMEOUT_SECONDS = 22;
+export const DROP_TIMEOUT_SECONDS = 24;
 
 /** Wading through a lake slows you down. */
 export const LAKE_WADE_FACTOR = 0.55;

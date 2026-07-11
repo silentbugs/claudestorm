@@ -179,8 +179,13 @@ describe('island loot placement', () => {
     for (const list of [ARENA.chests, ARENA.scrolls, ARENA.items]) {
       for (const p of list) {
         for (const ob of ARENA.obstacles) {
-          if (ob.kind !== 'circle') continue;
-          expect(Math.hypot(p.x - ob.x, p.z - ob.z)).toBeGreaterThanOrEqual(ob.r + 1.3);
+          if (ob.kind === 'circle') {
+            expect(Math.hypot(p.x - ob.x, p.z - ob.z)).toBeGreaterThanOrEqual(ob.r + 1.3);
+          } else {
+            const inside =
+              Math.abs(p.x - ob.x) < ob.hx + 1.1 && Math.abs(p.z - ob.z) < ob.hz + 1.1;
+            expect(inside).toBe(false);
+          }
         }
       }
     }

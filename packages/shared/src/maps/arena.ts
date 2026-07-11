@@ -61,7 +61,16 @@ export interface PitDef {
 }
 
 /** The handful of named milestone areas that make the island recognizable. */
-export type LandmarkKind = 'wreck' | 'spire' | 'stonering' | 'pit' | 'grove' | 'ravine';
+export type LandmarkKind =
+  | 'wreck'
+  | 'spire'
+  | 'stonering'
+  | 'pit'
+  | 'grove'
+  | 'ravine'
+  | 'hamlet'
+  | 'barrow'
+  | 'passage';
 
 export interface LandmarkDef {
   kind: LandmarkKind;
@@ -329,6 +338,96 @@ function stampRavine(ctx: PieceCtx, x: number, z: number): void {
   ctx.items.push({ x: x - px * 4, z: z - pz * 4 });
 }
 
+/** One roofless ruined house: walls with a doorway and collapsed gaps. */
+function ruinedHouse(ctx: PieceCtx, cx: number, cz: number, w: number, d: number): void {
+  const h = (): number => ctx.rng.range(2.2, 3.6);
+  ctx.obstacles.push(
+    { kind: 'box', x: cx, z: cz + d, hx: w, hz: 0.7, height: h() },
+    // South wall split by the doorway.
+    { kind: 'box', x: cx - w * 0.55, z: cz - d, hx: w * 0.45, hz: 0.7, height: h() },
+    { kind: 'box', x: cx + w * 0.65, z: cz - d, hx: w * 0.35, hz: 0.7, height: h() },
+    // Side walls partially collapsed.
+    { kind: 'box', x: cx - w, z: cz + d * 0.25, hx: 0.7, hz: d * 0.7, height: h() },
+    { kind: 'box', x: cx + w, z: cz - d * 0.2, hx: 0.7, hz: d * 0.55, height: h() },
+  );
+}
+
+/** Fallen Hamlet: ruined stone buildings around a plaza — juking country. */
+function stampHamlet(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'hamlet', name: 'Fallen Hamlet', x, z, r: 30 });
+  ruinedHouse(ctx, x - 14, z - 8, 5, 4);
+  ruinedHouse(ctx, x + 12, z - 13, 4, 5);
+  ruinedHouse(ctx, x + 11, z + 12, 6, 4);
+  ruinedHouse(ctx, x - 12, z + 14, 4, 3.5);
+  // Rubble in the plaza.
+  ctx.obstacles.push(
+    { kind: 'box', x: x + 1, z: z - 1, hx: 1.5, hz: 1.1, height: 1.4 },
+    { kind: 'circle', x: x - 5, z: z + 3, r: 1.3, height: 2.2, look: 'rock' },
+  );
+  ctx.chests.push({ x: x - 14, z: z - 8 }, { x: x + 12, z: z - 13 }, { x: x + 11, z: z + 12 }, { x: x - 12, z: z + 14 });
+  ctx.elites.push({ x: x + 3, z: z + 3 }, { x: x - 4, z: z - 5 });
+  ctx.scrolls.push({ x: x + 5, z: z - 4 }, { x: x - 2, z: z + 6 });
+  ctx.items.push({ x, z: z - 3 });
+  ctx.mobs.push({ x: x + 18, z: z + 4 });
+}
+
+/** The Barrow: a burial mound crowned with standing stones. */
+function stampBarrow(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'barrow', name: 'The Barrow', x, z, r: 26 });
+  ctx.hills.push({ x, z, r: 30, h: 6 });
+  for (let s = 0; s < 6; s++) {
+    const a = (s / 6) * Math.PI * 2 + 0.4;
+    ctx.obstacles.push({
+      kind: 'circle',
+      x: x + Math.sin(a) * 9,
+      z: z + Math.cos(a) * 9,
+      r: 1.3,
+      height: 5,
+      look: 'rock',
+    });
+  }
+  ctx.chests.push({ x, z }, { x: x + 4, z: z - 3 });
+  ctx.elites.push({ x: x - 3, z: z + 3 });
+  ctx.scrolls.push({ x: x + 3, z: z + 4 });
+}
+
+/**
+ * Smugglers' Passage: a deep, rock-walled trench running underground between
+ * two areas — enter at either end, cross out of sight, come up on the other
+ * side. A little loot rewards taking the low road.
+ */
+function stampPassage(ctx: PieceCtx, ax: number, az: number, bx: number, bz: number): void {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  const start = 32;
+  const end = len - 32;
+  const midX = ax + ux * (len / 2);
+  const midZ = az + uz * (len / 2);
+  ctx.landmarks.push({ kind: 'passage', name: "Smugglers' Passage", x: midX, z: midZ, r: 20 });
+  for (let t = start; t <= end; t += 12) {
+    ctx.hills.push({ x: ax + ux * t, z: az + uz * t, r: 17, h: -7 });
+  }
+  const px = uz;
+  const pz = -ux;
+  for (let t = start + 5; t <= end - 5; t += 9) {
+    for (const side of [-1, 1]) {
+      ctx.obstacles.push({
+        kind: 'circle',
+        x: ax + ux * t + px * side * 10.5,
+        z: az + uz * t + pz * side * 10.5,
+        r: ctx.rng.range(2, 2.8),
+        height: ctx.rng.range(5, 8),
+        look: 'rock',
+      });
+    }
+  }
+  ctx.chests.push({ x: midX, z: midZ });
+  ctx.scrolls.push({ x: midX + px * 3, z: midZ + pz * 3 });
+}
+
 /** Minor filler site: a small stand of trees with loot tucked inside. */
 function stampCopse(ctx: PieceCtx, x: number, z: number, s: number): void {
   ctx.obstacles.push(
@@ -379,14 +478,14 @@ function buildArena(): MapDef {
   const keepOut: Point[] = [];
 
   // The irregular coastline everything must stay inside of.
-  const COAST = 320;
+  const COAST = 356;
   const inland =
     (margin: number) =>
     (x: number, z: number): boolean =>
       Math.hypot(x, z) < coastRadius(COAST, Math.atan2(x, z)) - margin;
 
   // ── Mountain ridges: chains of tall massifs — open high ground, no walls ──
-  const ridges = scatterPoints(rng, 6, 170, 300, [], inland(45));
+  const ridges = scatterPoints(rng, 7, 170, 335, [], inland(45));
   for (const ridge of ridges) {
     const angle = rng.range(0, Math.PI);
     const len = rng.range(75, 115);
@@ -409,7 +508,7 @@ function buildArena(): MapDef {
   }
 
   // ── Lowland basins; the first five hold lakes ──
-  const basins = scatterPoints(rng, 7, 130, 310, keepOut, inland(48));
+  const basins = scatterPoints(rng, 8, 130, 345, keepOut, inland(48));
   basins.forEach((b, i) => {
     hills.push({ x: b.x, z: b.z, r: rng.range(36, 52), h: rng.range(-1.6, -1.0) });
     if (i < 5) {
@@ -422,7 +521,7 @@ function buildArena(): MapDef {
   });
 
   // ── Landmarks: the wreck sits right on the east coast, the rest inland ──
-  const spots = scatterPoints(rng, 5, 165, 250, keepOut, inland(62));
+  const spots = scatterPoints(rng, 6, 165, 285, keepOut, inland(62));
   const wreckAngle = rng.range(1.2, 1.9); // roughly east, atan2(x, z) convention
   const wreckR = coastRadius(COAST, wreckAngle) - 22;
   stampWreck(ctx, Math.sin(wreckAngle) * wreckR, Math.cos(wreckAngle) * wreckR);
@@ -431,16 +530,34 @@ function buildArena(): MapDef {
   stampPit(ctx, spots[2]!.x, spots[2]!.z);
   stampGroveLandmark(ctx, spots[3]!.x, spots[3]!.z);
   stampRavine(ctx, spots[4]!.x, spots[4]!.z);
+  // The hamlet and its barrow sit ~150m apart, joined by the underground
+  // passage — a matched pair you can cross between out of sight.
+  const hamlet = spots[5]!;
+  stampHamlet(ctx, hamlet.x, hamlet.z);
+  let barrow = { x: hamlet.x + 150, z: hamlet.z };
+  for (let k = 0; k < 8; k++) {
+    const a = rng.range(0, Math.PI * 2) + (k * Math.PI) / 4;
+    const candidate = { x: hamlet.x + Math.sin(a) * 150, z: hamlet.z + Math.cos(a) * 150 };
+    if (
+      inland(60)(candidate.x, candidate.z) &&
+      keepOut.every((p) => Math.hypot(p.x - candidate.x, p.z - candidate.z) > 60)
+    ) {
+      barrow = candidate;
+      break;
+    }
+  }
+  stampBarrow(ctx, barrow.x, barrow.z);
+  stampPassage(ctx, hamlet.x, hamlet.z, barrow.x, barrow.z);
   const landmarkAnchors = ctx.landmarks.map((l) => ({ x: l.x, z: l.z }));
   keepOut.push(...landmarkAnchors);
 
   // Rolling hills across the rest of the island.
-  for (const p of scatterPoints(rng, 40, 44, 330, keepOut, inland(28))) {
+  for (const p of scatterPoints(rng, 46, 44, 365, keepOut, inland(28))) {
     hills.push({ x: p.x, z: p.z, r: rng.range(24, 42), h: rng.range(2.5, 7) });
   }
 
   // ── Minor sites: copses and boulder fields with loot tucked inside ──
-  const sites = scatterPoints(rng, 20, 65, 330, keepOut, inland(30));
+  const sites = scatterPoints(rng, 24, 65, 365, keepOut, inland(30));
   sites.forEach((site, i) => {
     const { x: px, z: pz } = site;
     const s = i % 2 === 0 ? 1 : -1;
@@ -455,7 +572,7 @@ function buildArena(): MapDef {
   });
 
   // ── Field cover between the sites (kept clear of them and the geography) ──
-  const cover = scatterPoints(rng, 104, 16, 352, [...sites, ...keepOut], inland(16));
+  const cover = scatterPoints(rng, 120, 16, 390, [...sites, ...keepOut], inland(16));
   cover.forEach((p, i) => {
     if (i % 3 === 0) {
       obstacles.push({ kind: 'circle', x: p.x, z: p.z, r: 2 + (i % 3) * 0.3, height: 3.4, look: 'rock' });
@@ -466,10 +583,10 @@ function buildArena(): MapDef {
 
   // ── Loose pickings and roaming packs for the space between sites ──
   const avoid = [...sites, ...keepOut];
-  for (const p of scatterPoints(rng, 44, 28, 340, avoid, inland(18))) chests.push(p);
-  for (const p of scatterPoints(rng, 52, 22, 348, avoid, inland(18))) mobs.push(p);
-  for (const p of scatterPoints(rng, 26, 32, 336, avoid, inland(18))) scrolls.push(p);
-  for (const p of scatterPoints(rng, 24, 30, 340, avoid, inland(18))) items.push(p);
+  for (const p of scatterPoints(rng, 50, 28, 375, avoid, inland(18))) chests.push(p);
+  for (const p of scatterPoints(rng, 60, 22, 385, avoid, inland(18))) mobs.push(p);
+  for (const p of scatterPoints(rng, 30, 32, 370, avoid, inland(18))) scrolls.push(p);
+  for (const p of scatterPoints(rng, 28, 30, 375, avoid, inland(18))) items.push(p);
 
   // ── Nudge every static pickup out of anything it spawned inside ──
   // A chest inside a tree trunk helps no one.
@@ -478,19 +595,28 @@ function buildArena(): MapDef {
       for (let pass = 0; pass < 3; pass++) {
         let moved = false;
         for (const ob of obstacles) {
-          if (ob.kind !== 'circle') continue;
-          const clearance = ob.r + 1.4;
           const dx = p.x - ob.x;
           const dz = p.z - ob.z;
-          const d = Math.hypot(dx, dz);
-          if (d >= clearance) continue;
-          if (d > 1e-6) {
-            p.x = ob.x + (dx / d) * clearance;
-            p.z = ob.z + (dz / d) * clearance;
+          if (ob.kind === 'circle') {
+            const clearance = ob.r + 1.4;
+            const d = Math.hypot(dx, dz);
+            if (d >= clearance) continue;
+            if (d > 1e-6) {
+              p.x = ob.x + (dx / d) * clearance;
+              p.z = ob.z + (dz / d) * clearance;
+            } else {
+              p.x = ob.x + clearance;
+            }
+            moved = true;
           } else {
-            p.x = ob.x + clearance;
+            // Boxes (ruin walls): push out along the shallower axis.
+            const overX = ob.hx + 1.2 - Math.abs(dx);
+            const overZ = ob.hz + 1.2 - Math.abs(dz);
+            if (overX <= 0 || overZ <= 0) continue;
+            if (overX < overZ) p.x = ob.x + Math.sign(dx || 1) * (ob.hx + 1.2);
+            else p.z = ob.z + Math.sign(dz || 1) * (ob.hz + 1.2);
+            moved = true;
           }
-          moved = true;
         }
         if (!moved) break;
       }
@@ -502,7 +628,7 @@ function buildArena(): MapDef {
   clearLoot(elites);
 
   return {
-    size: 760,
+    size: 840,
     coastR: COAST,
     obstacles,
     chests,
