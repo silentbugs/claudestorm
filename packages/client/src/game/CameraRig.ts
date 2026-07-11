@@ -39,18 +39,38 @@ export class CameraRig {
     this.orbit = 0;
   }
 
-  update(camera: THREE.PerspectiveCamera, x: number, y: number, z: number): void {
-    const horiz = this.dist * Math.cos(this.pitch);
-    const height = this.dist * Math.sin(this.pitch);
+  /** Boom length after terrain collision, smoothed so it never pops outward. */
+  private boomDist = 11;
+
+  update(camera: THREE.PerspectiveCamera, x: number, y: number, z: number, dt: number): void {
+    const px = x;
+    const py = y + 1.6;
+    const pz = z;
+    const ox = -Math.sin(this.camYaw) * Math.cos(this.pitch);
+    const oy = Math.sin(this.pitch);
+    const oz = -Math.cos(this.camYaw) * Math.cos(this.pitch);
+    // WoW-style camera collision: when the boom would dip into terrain, it
+    // shortens (zooms toward the head) instead of riding up over the slope.
+    // That keeps the camera inside lake bowls, so it can actually submerge.
+    const STEPS = 16;
+    let allowed = this.dist;
+    for (let i = 1; i <= STEPS; i++) {
+      const d = (i / STEPS) * this.dist;
+      const floor = groundHeight(ARENA, px + ox * d, pz + oz * d) + 0.35;
+      if (py + oy * d < floor) {
+        allowed = ((i - 1) / STEPS) * this.dist;
+        break;
+      }
+    }
+    allowed = Math.max(1.6, allowed);
+    // Snap inward instantly (never clip), ease back out.
+    this.boomDist =
+      allowed < this.boomDist ? allowed : Math.min(allowed, this.boomDist + dt * 14);
     camera.position.set(
-      x - Math.sin(this.camYaw) * horiz,
-      y + 1.6 + height,
-      z - Math.cos(this.camYaw) * horiz,
+      px + ox * this.boomDist,
+      py + oy * this.boomDist,
+      pz + oz * this.boomDist,
     );
-    // Never sink below the terrain (walking downhill used to poke the camera
-    // through the slope and show the sea under the island).
-    const floor = groundHeight(ARENA, camera.position.x, camera.position.z) + 0.5;
-    if (camera.position.y < floor) camera.position.y = floor;
-    camera.lookAt(x, y + 1.6, z);
+    camera.lookAt(px, py, pz);
   }
 }

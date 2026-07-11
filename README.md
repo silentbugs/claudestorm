@@ -9,9 +9,11 @@ npm install
 npm run dev     # open http://localhost:5173, then hit Start Game
 ```
 
-Set up your match on the start screen — hero color, opponent count (3–23 bots), bot difficulty, time of day (Day / Dusk / Night, previewed live on the menu), how many circles the storm has (3–6), and how fast they close — then hit Start Game.
+Set up your match on the start screen — hero color, opponent count (3–49 bots, up to a 50-player match), bot difficulty, time of day (Day / Dusk / Night, previewed live on the menu), how many circles the storm has (3–6), and how fast they close — then hit Start Game.
 
-- **WASD** — move (relative to your character's facing)
+- **W / S** — move forward / back (relative to your character's facing)
+- **A / D** — turn (WoW keyboard turning); while holding right mouse they strafe instead
+- **Q / E** — strafe
 - **Hold right mouse** — turn your character with the camera (WoW-style)
 - **Hold left mouse** — orbit the camera without turning your character; pressing RMB snaps you to the camera's heading
 - **R** — melee slap (3-hit combo; the third is a two-handed finisher)
@@ -26,6 +28,7 @@ Set up your match on the start screen — hero color, opponent count (3–23 bot
 - **F** — open chests / take scrolls
 - **M** — full-screen map (a minimap sits top right: storm circle, next circle, you)
 - **T** — skills compendium (every spell and item with stats)
+- **Esc** — in-game menu (resume or quit to the main menu; the match keeps running behind it)
 - **Wheel** — zoom
 - After you fall: **Spectate** follows the survivors; **←/→** switch targets
 
@@ -38,7 +41,7 @@ Set up your match on the start screen — hero color, opponent count (3–23 bot
 
 Every finished match (win or death — abandons don't count) is recorded to a local IndexedDB database: placement, kills, damage dealt and taken, plunder, level, creatures and chests, spells cast, slaps thrown, survival time, who got you, and the match settings. **Match History** on the start screen shows lifetime totals and your recent games, and the end screen summarizes the match you just played.
 
-The spell roster is the authentic Plunderstorm set — 11 offensive (Rime Arrow, Fire Whirl, Earthbreaker, Holy Shield, Storm Archon, Mana Sphere, Searing Axe, Slicing Winds, Star Bomb, Toxic Smackerel, Celestial Barrage) and 10 utility (Quaking Leap, Hunter's Chains, Steel Traps, Windstorm, Explosive Caltrops, Snowdrift, Lightning Bulwark, Fade to Shadow, Repel, Faeform) — implemented over the sim's behavior primitives (stun, poison, stealth, immunity, dashes, boomerangs, volleys, traps, pools). **Slicing Winds** and **Celestial Barrage** are charge-and-release casts: press to start charging, press again (or hold to max) to release — charge time scales damage and reach, and Celestial Barrage lifts you into the air before loosing a volley that pierces everything in its path. Press **T** in game for the full compendium.
+The spell roster is the authentic Plunderstorm set — 11 offensive (Rime Arrow, Fire Whirl, Earthbreaker, Holy Shield, Storm Archon, Mana Sphere, Searing Axe, Slicing Winds, Star Bomb, Toxic Smackerel, Celestial Barrage) and 10 utility (Quaking Leap, Hunter's Chains, Steel Traps, Windstorm, Explosive Caltrops, Snowdrift, Lightning Bulwark, Fade to Shadow, Repel, Faeform) — implemented over the sim's behavior primitives (stun, poison, stealth, immunity, dashes, boomerangs, volleys, traps, pools). **Slicing Winds**, **Earthbreaker**, and **Celestial Barrage** are charge-and-release casts: press to start charging, press again (or hold to max) to release — charge time scales damage and reach. Earthbreaker sunders the earth at the aimed spot, stunning everyone caught in the quake, and Celestial Barrage lifts you into the air before loosing a volley that pierces everything in its path. Press **T** in game for the full compendium.
 
 ## Scripts
 

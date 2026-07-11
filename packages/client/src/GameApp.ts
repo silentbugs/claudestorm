@@ -78,6 +78,12 @@ export class GameApp {
   private fpsAccum = 0;
   private fpsFrames = 0;
   private fpsWorst = 0;
+  private readonly underwaterEl = document.getElementById('underwater')!;
+  private isUnder = false;
+  private readonly pauseEl = document.getElementById('pause-menu')!;
+  private pauseOpen = false;
+  /** Set before we exit pointer lock on purpose, so it doesn't open the pause menu. */
+  private expectedUnlock = false;
 
   constructor(private readonly container: HTMLElement) {
     this.hud = new Hud(
@@ -85,10 +91,11 @@ export class GameApp {
       () => this.startSpectate(),
       () => this.returnToMenu(),
     );
-    // Re-engage the lock after Esc released it (click lands on the canvas).
+    // Re-engage the lock after a stray unlock (click lands on the canvas).
     window.addEventListener('mousedown', (e) => {
       if (
         this.inMatch &&
+        !this.pauseOpen &&
         e.target instanceof HTMLCanvasElement &&
         document.getElementById('end-screen')!.classList.contains('hidden')
       ) {
@@ -96,16 +103,71 @@ export class GameApp {
       }
     });
     window.addEventListener('keydown', (e) => {
-      if (this.spectateId === null) return;
-      if (e.code === 'ArrowLeft') this.cycleSpectate(-1);
-      else if (e.code === 'ArrowRight') this.cycleSpectate(1);
-      else if (e.code === 'Escape') {
-        // Back out of spectating to the death screen (Play Again / Main Menu).
-        this.spectateId = null;
-        this.hud.showSpectate(null);
-        this.hud.showEnd(false, this.deathPlacement, true);
+      if (this.spectateId !== null) {
+        if (e.code === 'ArrowLeft') this.cycleSpectate(-1);
+        else if (e.code === 'ArrowRight') this.cycleSpectate(1);
+        else if (e.code === 'Escape') {
+          // Back out of spectating to the death screen (Play Again / Main Menu).
+          this.spectateId = null;
+          this.hud.showSpectate(null);
+          this.hud.showEnd(false, this.deathPlacement, true);
+        }
+        return;
+      }
+      // Esc while unlocked toggles the pause menu (while locked, the browser
+      // consumes Esc to release the lock; the pointerlockchange handler opens
+      // the menu in that case).
+      if (
+        e.code === 'Escape' &&
+        this.inMatch &&
+        !this.deadShown &&
+        document.getElementById('end-screen')!.classList.contains('hidden')
+      ) {
+        if (this.pauseOpen) this.closePause(true);
+        else this.openPause();
       }
     });
+    // Esc during a locked match releases the pointer — that IS the pause key.
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement) return;
+      const expected = this.expectedUnlock;
+      this.expectedUnlock = false;
+      if (
+        !expected &&
+        this.inMatch &&
+        !this.deadShown &&
+        this.spectateId === null &&
+        document.getElementById('end-screen')!.classList.contains('hidden')
+      ) {
+        this.openPause();
+      }
+    });
+    document.getElementById('pause-resume-btn')!.addEventListener('click', () => this.closePause(true));
+    document.getElementById('pause-menu-btn')!.addEventListener('click', () => {
+      this.closePause(false);
+      this.returnToMenu();
+    });
+  }
+
+  /** The in-game menu: the sim keeps running behind it (battle royale — no pausing the storm). */
+  private openPause(): void {
+    if (this.pauseOpen) return;
+    this.pauseOpen = true;
+    this.pauseEl.classList.remove('hidden');
+    // The menu takes the front: fold away the map and skills overlays.
+    document.getElementById('map-overlay')!.classList.add('hidden');
+    document.getElementById('skills-overlay')!.classList.add('hidden');
+    if (document.pointerLockElement) {
+      this.expectedUnlock = true;
+      document.exitPointerLock();
+    }
+  }
+
+  private closePause(relock: boolean): void {
+    if (!this.pauseOpen) return;
+    this.pauseOpen = false;
+    this.pauseEl.classList.add('hidden');
+    if (relock) this.lockPointer();
   }
 
   private startSpectate(): void {
@@ -144,6 +206,7 @@ export class GameApp {
     this.spectateId = null;
     this.tracker = null; // abandoned matches are not recorded
     this.inMatch = false;
+    this.expectedUnlock = true;
     document.exitPointerLock();
     this.map.setActive(false);
     this.sceneMgr.setStorm(0, 0, STORM_START_RADIUS);
@@ -291,6 +354,8 @@ export class GameApp {
         this.deathPlacement = snap.aliveCount + 1;
         // Offer to watch the rest of the match play out.
         if (snap.phase !== 'ended') {
+          this.closePause(false);
+          this.expectedUnlock = true;
           document.exitPointerLock();
           this.hud.showEnd(false, this.deathPlacement, true, this.matchSummary());
         }
@@ -302,6 +367,8 @@ export class GameApp {
       this.hud.showSpectate(null);
       const victory = snap.winnerId === SELF_ID;
       if (victory) sfx.victory();
+      this.closePause(false);
+      this.expectedUnlock = true;
       document.exitPointerLock();
       this.hud.showEnd(
         victory,
@@ -358,6 +425,8 @@ export class GameApp {
     this.wasLooking = this.input.isLooking;
     this.rig.applyLook(look.dx, look.dy, look.zoom);
     this.rig.applyOrbit(look.odx, look.ody);
+    // Keyboard turning (A/D): ~150°/s, close to WoW's default turn rate.
+    this.rig.yaw += this.input.keyTurn * 2.6 * dt;
 
     this.buffer.advance(dt);
     const sampled = this.buffer.sample();
@@ -394,11 +463,11 @@ export class GameApp {
         const x = lerp(focusPrev.x, focusNext.x, t);
         const z = lerp(focusPrev.z, focusNext.z, t);
         const y = lerp(focusPrev.y, focusNext.y, t) + groundHeight(ARENA, x, z);
-        this.rig.update(this.sceneMgr.camera, x, y, z);
+        this.rig.update(this.sceneMgr.camera, x, y, z, dt);
         this.sceneMgr.setFocus(x, z);
         this.updateUnderwater();
         sfx.setListener(x, z, this.rig.camYaw);
-        this.map.update(next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
+        this.map.update(dt, next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
         if (this.spectateId === null) {
           this.updateAim(x, z);
           this.updateInteractPrompt(next, x, z, focusNext.gliding);
@@ -436,7 +505,10 @@ export class GameApp {
         }
       }
     }
-    document.getElementById('underwater')!.classList.toggle('hidden', !under);
+    if (under !== this.isUnder) {
+      this.isUnder = under;
+      this.underwaterEl.classList.toggle('hidden', !under);
+    }
   }
 
   private updateAim(selfX: number, selfZ: number): void {

@@ -162,6 +162,15 @@ export class InputManager {
     return this.rmbHeld;
   }
 
+  /**
+   * Keyboard turning, WoW-style: A/D rotate the character (+1 = left).
+   * While right-mouse steers, A/D become strafes instead (also WoW).
+   */
+  get keyTurn(): number {
+    if (this.rmbHeld) return 0;
+    return (this.keys.has('KeyA') ? 1 : 0) - (this.keys.has('KeyD') ? 1 : 0);
+  }
+
   /** Consume accumulated look/orbit/zoom deltas. */
   takeLook(): { dx: number; dy: number; odx: number; ody: number; zoom: number } {
     const out = {
@@ -182,7 +191,11 @@ export class InputManager {
   /** Build the next command; consumes accumulated edge presses. */
   buildCommand(camYaw: number, aimX: number, aimZ: number): InputCommand {
     const fwd = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
-    const strafe = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
+    // Q/E strafe; A/D only strafe while right-mouse is steering (otherwise
+    // they turn — see keyTurn).
+    const strafe =
+      ((this.keys.has('KeyE') || (this.rmbHeld && this.keys.has('KeyD'))) ? 1 : 0) -
+      ((this.keys.has('KeyQ') || (this.rmbHeld && this.keys.has('KeyA'))) ? 1 : 0);
     // forward = (sin yaw, cos yaw); screen-right = (-cos yaw, sin yaw)
     const fx = Math.sin(camYaw);
     const fz = Math.cos(camYaw);

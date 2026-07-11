@@ -58,6 +58,28 @@ export class Hud {
 
   private readonly skillsOverlay = document.getElementById('skills-overlay')!;
 
+  // update() runs every rendered frame; unconditional textContent/style writes
+  // force style+layout work at 120Hz and starve the main thread (felt as lag
+  // even while the FPS counter reads full rate). Every write goes through
+  // these caches so the DOM is only touched when a value actually changed.
+  private readonly textCache = new Map<HTMLElement, string>();
+  private readonly styleCache = new Map<HTMLElement, Record<string, string>>();
+  private interactText: string | null = null;
+
+  private setText(el: HTMLElement, text: string): void {
+    if (this.textCache.get(el) === text) return;
+    this.textCache.set(el, text);
+    el.textContent = text;
+  }
+
+  private setStyle(el: HTMLElement, prop: string, value: string): void {
+    let props = this.styleCache.get(el);
+    if (!props) this.styleCache.set(el, (props = {}));
+    if (props[prop] === value) return;
+    props[prop] = value;
+    el.style.setProperty(prop, value);
+  }
+
   constructor(onRestart: () => void, onSpectate: () => void, onMenu: () => void) {
     document.getElementById('restart-btn')!.addEventListener('click', onRestart);
     this.spectateBtn.addEventListener('click', onSpectate);
@@ -162,21 +184,21 @@ export class Hud {
   }
 
   update(snap: Snapshot, selfId: number): void {
-    this.alive.textContent = `${snap.aliveCount} alive`;
+    this.setText(this.alive, `${snap.aliveCount} alive`);
 
     if (snap.phase === 'drop') {
-      this.stormStatus.textContent = '';
-      this.centerMsg.textContent = 'Steer with WASD — pick a landing spot!';
+      this.setText(this.stormStatus, '');
+      this.setText(this.centerMsg, 'Steer with WASD — pick a landing spot!');
     } else {
-      if (this.centerMsg.textContent) this.centerMsg.textContent = '';
+      this.setText(this.centerMsg, '');
       if (snap.storm.shrinking) {
-        this.stormStatus.textContent = 'Storm is shrinking!';
+        this.setText(this.stormStatus, 'Storm is shrinking!');
         this.stormStatus.classList.add('warning');
       } else if (snap.storm.nextShrinkIn > 0) {
-        this.stormStatus.textContent = `Storm shrinks in ${Math.ceil(snap.storm.nextShrinkIn)}s`;
+        this.setText(this.stormStatus, `Storm shrinks in ${Math.ceil(snap.storm.nextShrinkIn)}s`);
         this.stormStatus.classList.remove('warning');
       } else {
-        this.stormStatus.textContent = 'Final circle';
+        this.setText(this.stormStatus, 'Final circle');
         this.stormStatus.classList.add('warning');
       }
     }
@@ -184,20 +206,25 @@ export class Hud {
     const self = snap.players.find((p) => p.id === selfId);
     if (!self) return;
 
-    this.plunder.textContent = `⛃ ${self.plunder}`;
-    this.levelBadge.textContent = String(self.level);
+    this.setText(this.plunder, `⛃ ${self.plunder}`);
+    this.setText(this.levelBadge, String(self.level));
     const xpSpan = self.xp + self.xpToNext;
-    this.xpFill.style.width =
-      self.xpToNext > 0 && xpSpan > 0 ? `${Math.min(100, (self.xp / xpSpan) * 100)}%` : '100%';
+    this.setStyle(
+      this.xpFill,
+      'width',
+      self.xpToNext > 0 && xpSpan > 0 ? `${Math.min(100, (self.xp / xpSpan) * 100)}%` : '100%',
+    );
 
     const total = self.maxHp + self.shieldHp;
-    this.hpFill.style.width = `${Math.max(0, (self.hp / total) * 100)}%`;
-    this.shieldFill.style.width = `${Math.max(0, (self.shieldHp / total) * 100)}%`;
-    this.shieldFill.style.left = `${Math.max(0, (self.hp / total) * 100)}%`;
-    this.hpText.textContent =
+    this.setStyle(this.hpFill, 'width', `${Math.max(0, (self.hp / total) * 100)}%`);
+    this.setStyle(this.shieldFill, 'width', `${Math.max(0, (self.shieldHp / total) * 100)}%`);
+    this.setStyle(this.shieldFill, 'left', `${Math.max(0, (self.hp / total) * 100)}%`);
+    this.setText(
+      this.hpText,
       self.shieldHp > 0
         ? `${Math.ceil(self.hp)} +${Math.ceil(self.shieldHp)} / ${self.maxHp}`
-        : `${Math.ceil(self.hp)} / ${self.maxHp}`;
+        : `${Math.ceil(self.hp)} / ${self.maxHp}`,
+    );
 
     this.updateSlot('melee', 'Slap', '👋', null, self.meleeCd, MELEE_INTERVAL, false);
     this.updateAbilitySlot('0', self, 0);
@@ -217,7 +244,7 @@ export class Hud {
     const progress = self.charging >= 0 ? self.charging : self.channeling;
     if (progress >= 0) {
       this.channelBar.classList.remove('hidden');
-      this.channelFill.style.width = `${progress * 100}%`;
+      this.setStyle(this.channelFill, 'width', `${progress * 100}%`);
     } else {
       this.channelBar.classList.add('hidden');
     }
@@ -225,7 +252,7 @@ export class Hud {
     // charges are named by showCast() (event-driven) and simply time out.
     if (self.channeling >= 0 && self.channelKind) {
       this.castNameTimer = 0;
-      this.castName.textContent = self.channelKind === 'heal' ? 'Heal' : 'Opening chest';
+      this.setText(this.castName, self.channelKind === 'heal' ? 'Heal' : 'Opening chest');
       this.castName.classList.remove('hidden');
     } else if (this.castNameTimer <= 0) {
       this.castName.classList.add('hidden');
@@ -234,7 +261,7 @@ export class Hud {
 
   /** Flash the name of a cast spell over the hotbar for `seconds`. */
   showCast(name: string, seconds: number): void {
-    this.castName.textContent = name;
+    this.setText(this.castName, name);
     this.castName.classList.remove('hidden');
     this.castNameTimer = seconds;
   }
@@ -261,12 +288,12 @@ export class Hud {
   ): void {
     const els = this.slotEls.get(key);
     if (!els) return;
-    if (els.icon.textContent !== icon) els.icon.textContent = icon;
-    els.name.textContent = name;
+    this.setText(els.icon, icon);
+    this.setText(els.name, name);
     els.root.classList.toggle('empty', empty);
-    els.root.style.borderColor = rarity ? RARITY_CSS[rarity] : '#444a63';
-    els.overlay.style.height = `${Math.min(100, (cd / cdTotal) * 100)}%`;
-    els.text.textContent = cd > 0.25 ? cd.toFixed(1) : '';
+    this.setStyle(els.root, 'border-color', rarity ? RARITY_CSS[rarity] : '#444a63');
+    this.setStyle(els.overlay, 'height', `${Math.min(100, (cd / cdTotal) * 100)}%`);
+    this.setText(els.text, cd > 0.25 ? cd.toFixed(1) : '');
   }
 
   toggleSkills(): void {
@@ -274,6 +301,8 @@ export class Hud {
   }
 
   showInteract(text: string | null): void {
+    if (text === this.interactText) return;
+    this.interactText = text;
     if (text) {
       this.interactPrompt.innerHTML = `<span class="kb">F</span>${text}`;
       this.interactPrompt.classList.remove('hidden');

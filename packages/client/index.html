@@ -61,10 +61,10 @@
             <div class="setting-desc">Your tint — body, hands, glow, and paraglider. Purely cosmetic.</div>
             <div class="setting-row">
               <label for="bot-count">Opponents</label>
-              <input type="range" id="bot-count" min="3" max="23" value="11" />
+              <input type="range" id="bot-count" min="3" max="49" value="11" />
               <span id="bot-count-value" class="setting-value">11</span>
             </div>
-            <div class="setting-desc">How many bots drop onto the island with you.</div>
+            <div class="setting-desc">How many bots drop onto the island with you — up to a 50-player match.</div>
             <div class="setting-row">
               <label>Difficulty</label>
               <div id="difficulty-choice" class="choices">
@@ -106,7 +106,7 @@
           <button id="start-btn">Start Game</button>
           <button id="skills-btn" class="menu-secondary">Skills Compendium</button>
           <button id="stats-btn" class="menu-secondary">Match History</button>
-          <div id="start-hint">WASD move · hold RMB look · R slap · 1–4 spells · T skills</div>
+          <div id="start-hint">WASD move · A/D turn · Q/E strafe · hold RMB look · R slap · 1–4 spells · T skills</div>
         </div>
       </div>
       <div id="stats-overlay" class="hidden">
@@ -126,6 +126,14 @@
         <button id="menu-btn" class="menu-secondary">Main Menu</button>
       </div>
       <div id="spectate-banner" class="hidden"></div>
+      <div id="pause-menu" class="hidden">
+        <div id="pause-panel">
+          <h1>Paused</h1>
+          <div id="pause-sub">The match keeps running — the storm waits for no one.</div>
+          <button id="pause-resume-btn">Resume</button>
+          <button id="pause-menu-btn" class="menu-secondary">Quit to Main Menu</button>
+        </div>
+      </div>
       <div id="bottombar">
         <div id="hpbar"><div id="hpfill"></div><div id="shieldfill"></div><span id="hptext"></span></div>
         <div id="hotbar">
@@ -162,7 +170,7 @@
             <div class="cd-overlay"></div><span class="cd-text"></span>
           </div>
         </div>
-        <div id="controls-hint">WASD move · RMB turn · LMB orbit camera · R slap · 1/2 offense · 3/4 utility · Z/X swap pairs · G item · H heal · Space jump · Shift roll · F loot · M map · T skills</div>
+        <div id="controls-hint">WS move · A/D turn · Q/E strafe · RMB steer · LMB orbit · R slap · 1/2 offense · 3/4 utility · Z/X swap · G item · H heal · Space jump · Shift roll · F loot · M map · T skills · Esc menu</div>
       </div>
       <div id="vignette"></div>
     </div>

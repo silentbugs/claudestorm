@@ -514,8 +514,9 @@ function buildArena(): MapDef {
     if (i < 5) {
       const r = rng.range(13, 20);
       lakes.push({ x: b.x, z: b.z, r });
-      // Deep enough that a wader is chest-under and the camera can submerge.
-      hills.push({ x: b.x, z: b.z, r: r * 2.1, h: -1.5 });
+      // Deep enough that the middle is over your head and the camera (whose
+      // boom collides with the bowl, not the water) can dip below the surface.
+      hills.push({ x: b.x, z: b.z, r: r * 2.1, h: -2.6 });
       keepOut.push(b);
     }
   });
