@@ -44,10 +44,19 @@
           <div id="start-sub">Drop in, loot spells, outlive the storm.</div>
           <div id="start-settings">
             <div class="setting-row">
+              <label>Hero</label>
+              <div id="model-choice" class="choices">
+                <button data-value="cloud" class="selected">Storm Cloud</button>
+                <button data-value="wisp">Wisp</button>
+                <button data-value="mask">Spectral Mask</button>
+              </div>
+            </div>
+            <div class="setting-desc">Your body — all three slap just as hard. Purely cosmetic.</div>
+            <div class="setting-row">
               <label>Hero color</label>
               <div id="color-swatches" class="choices"></div>
             </div>
-            <div class="setting-desc">Your wisp's tint — body, hands, glow, and paraglider. Purely cosmetic.</div>
+            <div class="setting-desc">Your tint — body, hands, glow, and paraglider. Purely cosmetic.</div>
             <div class="setting-row">
               <label for="bot-count">Opponents</label>
               <input type="range" id="bot-count" min="3" max="23" value="11" />

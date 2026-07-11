@@ -170,6 +170,33 @@ CLOUD_VISOR_GEO.rotateZ(Math.PI / 2 - 0.575); // center the arc upward...
 CLOUD_VISOR_GEO.rotateX(Math.PI / 2); // ...then swing it to face forward
 const BOLT_SEG_GEO = new THREE.BoxGeometry(0.055, 0.17, 0.04);
 
+// Wisp: one smooth ghost-robe silhouette under a faceless helm.
+const WISP_BODY_GEO = new THREE.LatheGeometry(
+  [
+    [0.02, 0.0], [0.10, 0.06], [0.20, 0.16], [0.30, 0.30], [0.365, 0.48],
+    [0.375, 0.66], [0.335, 0.88], [0.315, 1.06], [0.325, 1.22], [0.30, 1.36],
+    [0.22, 1.50], [0.11, 1.58], [0.0, 1.61],
+  ].map(([r, y]) => new THREE.Vector2(r!, y!)),
+  24,
+);
+WISP_BODY_GEO.translate(0, -0.8, 0); // pivot mid-body
+const WISP_HELM_GEO = new THREE.SphereGeometry(0.345, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.58);
+const WISP_VISOR_GEO = new THREE.TorusGeometry(0.315, 0.038, 6, 12, 1.25);
+WISP_VISOR_GEO.rotateZ(Math.PI / 2 - 0.625);
+WISP_VISOR_GEO.rotateX(Math.PI / 2);
+const WISP_CREST_GEO = new THREE.BoxGeometry(0.04, 0.24, 0.34);
+
+// Spectral mask: a floating face plate, a core heart, and trailing rings.
+const MASK_GEO = new THREE.SphereGeometry(0.34, 20, 14, 0, Math.PI);
+MASK_GEO.scale(0.85, 1.3, 0.62);
+const MASK_HORN_GEO = new THREE.TorusGeometry(0.2, 0.028, 6, 10, 1.9);
+const TRAIL_RING_GEOS = [0.24, 0.17, 0.11].map((r) => {
+  const geo = new THREE.TorusGeometry(r, 0.033, 6, 20);
+  geo.rotateX(Math.PI / 2);
+  return geo;
+});
+const CORE_GEO = new THREE.SphereGeometry(0.075, 12, 10);
+
 /** Paraglider canopy: a squashed sphere slice, tinted per hero. */
 const CHUTE_CANOPY_GEO = new THREE.SphereGeometry(1.5, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
 CHUTE_CANOPY_GEO.scale(1, 0.62, 0.85);
@@ -181,15 +208,34 @@ const TINT = new THREE.Color();
 const TINT_MIX = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
 
+/** Selectable body designs; all share the slap hands and the same chassis. */
+export type HeroModel = 'cloud' | 'wisp' | 'mask';
+export const HERO_MODELS: { id: HeroModel; name: string }[] = [
+  { id: 'cloud', name: 'Storm Cloud' },
+  { id: 'wisp', name: 'Wisp' },
+  { id: 'mask', name: 'Spectral Mask' },
+];
+
+/** How a body's materials take the hero tint (and their resting opacity). */
+interface TintMat {
+  mat: THREE.MeshStandardMaterial;
+  mode: 'light' | 'plain' | 'dark';
+  baseOpacity: number;
+}
+
 class PlayerView {
   readonly group = new THREE.Group();
   private readonly bodyPivot = new THREE.Group();
-  private readonly cloudMat: THREE.MeshStandardMaterial;
-  private readonly underMat: THREE.MeshStandardMaterial;
   private readonly handMat: THREE.MeshStandardMaterial;
-  private readonly visorMat: THREE.MeshBasicMaterial;
-  private readonly cloudGroup = new THREE.Group();
-  private readonly bolt = new THREE.Group();
+  private visorMat!: THREE.MeshBasicMaterial;
+  private readonly tintMats: TintMat[] = [];
+  /** Per-model idle/travel animation, assigned by the body builder. */
+  private animateBody: (bob: number, speed: number, dt: number) => void = () => {};
+  private deathStyle: 'dissipate' | 'topple' = 'topple';
+  /** Objects hidden on death (the cloud's bolt gutters out). */
+  private readonly deathHide: THREE.Object3D[] = [];
+  private baseScale = 0.9;
+  private handRestY = 0.06;
   private readonly handL = new THREE.Group();
   private readonly handR = new THREE.Group();
   private readonly chute = new THREE.Group();
@@ -209,62 +255,29 @@ class PlayerView {
   private readonly base: number;
   private readonly glowBase = new THREE.Color();
 
-  constructor(isSelf: boolean, isBot: boolean, selfColor: number = SELF_COLOR) {
+  constructor(
+    isSelf: boolean,
+    isBot: boolean,
+    selfColor: number = SELF_COLOR,
+    model: HeroModel = 'cloud',
+  ) {
     this.base = isSelf || !isBot ? selfColor : BOT_COLOR;
     this.glowBase.setHex(this.base).lerp(WHITE, 0.72);
-    // Hands glow when they strike — the cloud's "weapon" is a giant slap.
+    // Hands glow when they strike — the hero's "weapon" is a giant slap.
     this.handMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(this.base).lerp(WHITE, 0.3),
       roughness: 0.6,
       emissive: this.glowBase,
       emissiveIntensity: 0,
     });
-    this.cloudMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(this.base).lerp(WHITE, 0.45),
-      roughness: 0.95,
-    });
-    this.underMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(this.base).multiplyScalar(0.5),
-      roughness: 0.95,
-    });
     this.visorMat = new THREE.MeshBasicMaterial({ color: this.glowBase });
 
     // Pivot at mid-body so roll tumbles read naturally.
     this.bodyPivot.position.y = 1.0;
-    this.bodyPivot.scale.setScalar(0.9);
-
-    // The cumulus: bright puffs over a darker storm underbelly.
-    for (const [px, py, pz, r] of CLOUD_PUFFS) {
-      const puff = new THREE.Mesh(CLOUD_PUFF_GEO, this.cloudMat);
-      puff.position.set(px, py, pz);
-      puff.scale.setScalar(r);
-      puff.castShadow = true;
-      this.cloudGroup.add(puff);
-    }
-    const belly = new THREE.Mesh(CLOUD_PUFF_GEO, this.underMat);
-    belly.position.y = -0.04;
-    belly.scale.set(0.35, 0.16, 0.32);
-    this.cloudGroup.add(belly);
-    // The only "face": a glowing visor slit on the front of the cloud.
-    const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
-    visor.position.set(0, 0.16, 0.2);
-    this.cloudGroup.add(visor);
-    this.bodyPivot.add(this.cloudGroup);
-
-    // A little lightning bolt dangles beneath like a stinger.
-    let segY = -0.28;
-    for (const [dx, tilt] of [
-      [0.03, 0.4],
-      [-0.03, -0.42],
-      [0.03, 0.38],
-    ] as const) {
-      const seg = new THREE.Mesh(BOLT_SEG_GEO, this.visorMat);
-      seg.position.set(dx, segY, 0.04);
-      seg.rotation.z = tilt;
-      this.bolt.add(seg);
-      segY -= 0.13;
-    }
-    this.bodyPivot.add(this.bolt);
+    if (model === 'wisp') this.buildWisp();
+    else if (model === 'mask') this.buildMask();
+    else this.buildCloud();
+    this.bodyPivot.scale.setScalar(this.baseScale);
 
     // Floating mitten hands — no weapon: swings swell them into giant
     // glowing slaps, alternating sides, both clapping on the finisher.
@@ -276,7 +289,7 @@ class PlayerView {
       palm.position.set(side * 0.02, -0.16, 0.06);
       palm.castShadow = true;
       hand.add(palm);
-      hand.position.set(side * 0.42, 0.06, 0.06);
+      hand.position.set(side * 0.42, this.handRestY, 0.06);
       hand.rotation.x = 0.15;
       this.bodyPivot.add(hand);
     }
@@ -334,6 +347,136 @@ class PlayerView {
     this.group.add(this.hpGroup);
   }
 
+  private tintable(
+    mode: TintMat['mode'],
+    opts: THREE.MeshStandardMaterialParameters = {},
+    baseOpacity = 1,
+  ): THREE.MeshStandardMaterial {
+    const mat = new THREE.MeshStandardMaterial(opts);
+    if (baseOpacity < 1) {
+      mat.transparent = true;
+      mat.opacity = baseOpacity;
+    }
+    this.tintMats.push({ mat, mode, baseOpacity });
+    return mat;
+  }
+
+  /** A tiny living thundercloud with a bolt dangling beneath like a stinger. */
+  private buildCloud(): void {
+    const cloudMat = this.tintable('light', { roughness: 0.95 });
+    const underMat = this.tintable('dark', { roughness: 0.95 });
+    const cloudGroup = new THREE.Group();
+    for (const [px, py, pz, r] of CLOUD_PUFFS) {
+      const puff = new THREE.Mesh(CLOUD_PUFF_GEO, cloudMat);
+      puff.position.set(px, py, pz);
+      puff.scale.setScalar(r);
+      puff.castShadow = true;
+      cloudGroup.add(puff);
+    }
+    const belly = new THREE.Mesh(CLOUD_PUFF_GEO, underMat);
+    belly.position.y = -0.04;
+    belly.scale.set(0.35, 0.16, 0.32);
+    cloudGroup.add(belly);
+    const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
+    visor.position.set(0, 0.16, 0.2);
+    cloudGroup.add(visor);
+    this.bodyPivot.add(cloudGroup);
+
+    const bolt = new THREE.Group();
+    let segY = -0.28;
+    for (const [dx, tilt] of [[0.03, 0.4], [-0.03, -0.42], [0.03, 0.38]] as const) {
+      const seg = new THREE.Mesh(BOLT_SEG_GEO, this.visorMat);
+      seg.position.set(dx, segY, 0.04);
+      seg.rotation.z = tilt;
+      bolt.add(seg);
+      segY -= 0.13;
+    }
+    this.bodyPivot.add(bolt);
+
+    this.deathStyle = 'dissipate';
+    this.deathHide.push(bolt);
+    this.animateBody = (bob, _speed, _dt) => {
+      const breathe = 1 + Math.sin(bob * 1.2) * 0.035;
+      cloudGroup.scale.setScalar(breathe);
+      cloudGroup.rotation.z = Math.sin(bob * 0.55) * 0.07;
+      bolt.visible = true;
+      bolt.rotation.z = Math.sin(bob * 0.9 + 0.5) * 0.18;
+      bolt.position.y = Math.sin(bob * 1.4) * 0.02;
+    };
+  }
+
+  /** A smooth ghost-robe silhouette under a faceless crested helm. */
+  private buildWisp(): void {
+    const robeMat = this.tintable('plain', { roughness: 0.62 });
+    const helmMat = this.tintable('dark', { metalness: 0.5, roughness: 0.35 });
+    const body = new THREE.Mesh(WISP_BODY_GEO, robeMat);
+    body.castShadow = true;
+    this.bodyPivot.add(body);
+    const helm = new THREE.Mesh(WISP_HELM_GEO, helmMat);
+    helm.position.y = 0.5;
+    helm.castShadow = true;
+    this.bodyPivot.add(helm);
+    const visor = new THREE.Mesh(WISP_VISOR_GEO, this.visorMat);
+    visor.position.y = 0.45;
+    this.bodyPivot.add(visor);
+    const crest = new THREE.Mesh(WISP_CREST_GEO, helmMat);
+    crest.position.set(0, 0.82, -0.04);
+    crest.rotation.x = -0.3;
+    this.bodyPivot.add(crest);
+
+    this.baseScale = 0.86;
+    this.handRestY = 0.28;
+    this.animateBody = (bob, speed, _dt) => {
+      body.rotation.z = Math.sin(bob * 0.8) * (0.04 + Math.min(0.05, speed * 0.006));
+    };
+  }
+
+  /** A floating mask over a bright core, translucent rings trailing below. */
+  private buildMask(): void {
+    const maskMat = this.tintable('dark', {
+      metalness: 0.45,
+      roughness: 0.3,
+      side: THREE.DoubleSide,
+    });
+    const ringMat = this.tintable('plain', { roughness: 0.55, depthWrite: false }, 0.42);
+    const maskGroup = new THREE.Group();
+    const plate = new THREE.Mesh(MASK_GEO, maskMat);
+    plate.castShadow = true;
+    maskGroup.add(plate);
+    const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
+    visor.position.set(0, 0.05, 0.05);
+    maskGroup.add(visor);
+    for (const side of [-1, 1]) {
+      const horn = new THREE.Mesh(MASK_HORN_GEO, maskMat);
+      horn.position.set(side * 0.2, 0.3, -0.06);
+      horn.rotation.y = Math.PI / 2;
+      horn.rotation.z = side * -0.45;
+      horn.castShadow = true;
+      maskGroup.add(horn);
+    }
+    maskGroup.position.y = 0.34;
+    this.bodyPivot.add(maskGroup);
+    const core = new THREE.Mesh(CORE_GEO, this.visorMat);
+    core.position.y = -0.02;
+    this.bodyPivot.add(core);
+    const rings: THREE.Mesh[] = [];
+    TRAIL_RING_GEOS.forEach((geo, i) => {
+      const ring = new THREE.Mesh(geo, ringMat);
+      ring.position.y = -0.22 - i * 0.2;
+      rings.push(ring);
+      this.bodyPivot.add(ring);
+    });
+
+    this.animateBody = (bob, _speed, dt) => {
+      maskGroup.rotation.z = Math.sin(bob * 0.55) * 0.09;
+      maskGroup.position.y = 0.34 + Math.sin(bob * 1.15 + 0.7) * 0.02;
+      rings.forEach((ring, i) => {
+        ring.rotation.y += dt * (0.8 + i * 0.5) * (i % 2 === 0 ? 1 : -1);
+        ring.position.y = -0.22 - i * 0.2 + Math.sin(bob + i * 0.9) * 0.025;
+      });
+    };
+  }
+
   update(
     p: {
       x: number;
@@ -360,16 +503,20 @@ class PlayerView {
   ): void {
     this.group.position.set(p.x, p.y, p.z);
     if (!p.alive) {
-      // A dead cloud doesn't fall — it goes gray, sinks, and dissipates.
       this.deadFor += dt;
-      this.bodyPivot.rotation.x = 0.35;
-      this.bodyPivot.position.y = Math.max(0.45, 1.0 - this.deadFor * 0.4);
-      this.bodyPivot.scale.setScalar(0.9 * Math.max(0.25, 1 - this.deadFor * 0.35));
-      this.cloudMat.color.setHex(DEAD_COLOR);
-      this.underMat.color.setHex(0x33333c);
+      if (this.deathStyle === 'dissipate') {
+        // A dead cloud doesn't fall — it goes gray, sinks, and dissipates.
+        this.bodyPivot.rotation.x = 0.35;
+        this.bodyPivot.position.y = Math.max(0.45, 1.0 - this.deadFor * 0.4);
+        this.bodyPivot.scale.setScalar(this.baseScale * Math.max(0.25, 1 - this.deadFor * 0.35));
+      } else {
+        this.bodyPivot.rotation.x = Math.PI / 2;
+        this.bodyPivot.position.y = 0.5;
+      }
+      for (const t of this.tintMats) t.mat.color.setHex(t.mode === 'dark' ? 0x33333c : DEAD_COLOR);
       this.handMat.color.setHex(DEAD_COLOR);
       this.visorMat.color.setHex(0x777788);
-      this.bolt.visible = false;
+      for (const o of this.deathHide) o.visible = false;
       this.hpGroup.visible = false;
       this.shield.visible = false;
       this.aura.visible = false;
@@ -377,8 +524,7 @@ class PlayerView {
       if (this.deadFor > 2.5) this.group.visible = false;
       return;
     }
-    this.bodyPivot.scale.setScalar(0.9);
-    this.bolt.visible = true;
+    this.bodyPivot.scale.setScalar(this.baseScale);
 
     this.group.rotation.y = p.facing;
     this.shield.visible = p.shielded || p.immune;
@@ -399,12 +545,7 @@ class PlayerView {
     const airborne = p.y > 0.08 && !p.gliding;
     this.bobPhase += dt * (2.4 + Math.min(9, speed * 1.1));
     this.bodyPivot.position.y = 1.0 + Math.sin(this.bobPhase) * (speed > 0.6 ? 0.06 : 0.035);
-    // The cloud breathes and wobbles; the bolt swings beneath like a stinger.
-    const breathe = 1 + Math.sin(this.bobPhase * 1.2) * 0.035;
-    this.cloudGroup.scale.setScalar(breathe);
-    this.cloudGroup.rotation.z = Math.sin(this.bobPhase * 0.55) * 0.07;
-    this.bolt.rotation.z = Math.sin(this.bobPhase * 0.9 + 0.5) * 0.18;
-    this.bolt.position.y = Math.sin(this.bobPhase * 1.4) * 0.02;
+    this.animateBody(this.bobPhase, speed, dt);
     if (p.rolling) {
       this.rollSpin += dt * 18;
       this.bodyPivot.rotation.x = this.rollSpin;
@@ -431,8 +572,10 @@ class PlayerView {
     }
 
     // Hands drift on their own slightly offset rhythms.
-    this.handL.position.y = 0.06 + Math.sin(this.bobPhase + 1.6) * 0.03;
-    if (this.swingTimer <= 0) this.handR.position.y = 0.06 + Math.sin(this.bobPhase) * 0.03;
+    this.handL.position.y = this.handRestY + Math.sin(this.bobPhase + 1.6) * 0.03;
+    if (this.swingTimer <= 0) {
+      this.handR.position.y = this.handRestY + Math.sin(this.bobPhase) * 0.03;
+    }
 
     // The slap: the striking hand swells into a giant glowing mitt and whips
     // through the arc — right, then left, then BOTH on the combo finisher.
@@ -476,23 +619,22 @@ class PlayerView {
     if (p.slowed) TINT.lerp(TINT_MIX.setHex(SLOW_COLOR), 0.55);
     if (p.poisoned) TINT.lerp(TINT_MIX.setHex(0x5fce6a), 0.4);
     if (p.fae) TINT.lerp(TINT_MIX.setHex(0xe98fd8), 0.7);
-    this.cloudMat.color.copy(TINT).lerp(WHITE, 0.45);
-    this.underMat.color.copy(TINT).multiplyScalar(0.5);
     this.handMat.color.copy(TINT).lerp(WHITE, 0.3);
-    // The visor and bolt flicker like distant lightning, blazing on the finisher.
+    // The visor (and any glow bits) flicker, blazing on the finisher.
     this.visorMat.color
       .copy(this.glowBase)
       .multiplyScalar(0.82 + Math.sin(this.bobPhase * 1.3) * 0.1 + Math.sin(this.bobPhase * 7.7) * 0.08);
     if (this.swingCombo === 3) this.visorMat.color.lerp(WHITE, Math.min(1, slapR));
     // Stealth: nearly invisible to enemies, ghostly to yourself.
     const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
-    this.cloudMat.transparent =
-      this.underMat.transparent =
-      this.handMat.transparent =
-      this.visorMat.transparent =
-        opacity < 1;
-    this.cloudMat.opacity = opacity;
-    this.underMat.opacity = opacity;
+    for (const t of this.tintMats) {
+      if (t.mode === 'light') t.mat.color.copy(TINT).lerp(WHITE, 0.45);
+      else if (t.mode === 'dark') t.mat.color.copy(TINT).multiplyScalar(0.5);
+      else t.mat.color.copy(TINT);
+      t.mat.transparent = t.baseOpacity * opacity < 1;
+      t.mat.opacity = t.baseOpacity * opacity;
+    }
+    this.handMat.transparent = this.visorMat.transparent = opacity < 1;
     this.handMat.opacity = opacity;
     this.visorMat.opacity = opacity;
     this.hpGroup.visible = !p.stealthed;
@@ -786,6 +928,7 @@ export class EntityViews {
   });
 
   private selfColor = SELF_COLOR;
+  private selfModel: HeroModel = 'cloud';
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -795,6 +938,11 @@ export class EntityViews {
   /** Hero color from the start screen; applies to views created afterwards. */
   setSelfColor(color: number): void {
     this.selfColor = color;
+  }
+
+  /** Hero body from the start screen; applies to views created afterwards. */
+  setSelfModel(model: HeroModel): void {
+    this.selfModel = model;
   }
 
   /** Refresh the prev-snapshot lookup maps only when `prev` actually changed. */
@@ -823,7 +971,12 @@ export class EntityViews {
     for (const p of next.players) {
       let view = this.players.get(p.id);
       if (!view) {
-        view = new PlayerView(p.id === selfId, p.isBot, this.selfColor);
+        // You wear your chosen body; bots spread across the roster for variety.
+        const model =
+          p.id === selfId || !p.isBot
+            ? this.selfModel
+            : HERO_MODELS[p.id % HERO_MODELS.length]!.id;
+        view = new PlayerView(p.id === selfId, p.isBot, this.selfColor, model);
         this.players.set(p.id, view);
         this.scene.add(view.group);
       }
