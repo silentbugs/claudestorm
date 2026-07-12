@@ -60,14 +60,14 @@ export class TouchControls {
       const key = el.dataset.slot!;
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (key === 'melee') this.input.padMelee = true;
+        if (key === 'melee') this.input.touchMelee = true;
         else if (key === 'heal') this.input.pressEdge('heal');
         else if (key === 'item') this.input.pressEdge('useItem');
         else if (key === 'roll') this.input.pressEdge('roll');
         else this.input.pressSlot(Number(key));
       });
       const stop = () => {
-        if (key === 'melee') this.input.padMelee = false;
+        if (key === 'melee') this.input.touchMelee = false;
       };
       el.addEventListener('pointerup', stop);
       el.addEventListener('pointercancel', stop);
@@ -96,6 +96,8 @@ export class TouchControls {
   private readonly onDown = (e: PointerEvent): void => {
     if (e.pointerType !== 'touch') return;
     e.preventDefault();
+    // Keep receiving moves even when the finger drifts over HUD elements.
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     if (e.clientX < window.innerWidth * 0.45 && this.stickId === null) {
       // The stick floats: it appears where the thumb lands.
       this.stickId = e.pointerId;
@@ -123,8 +125,8 @@ export class TouchControls {
         dy *= R / mag;
       }
       this.nub.style.transform = `translate(${dx}px, ${dy}px)`;
-      this.input.padMoveS = dx / R;
-      this.input.padMoveF = -dy / R;
+      this.input.touchMoveS = dx / R;
+      this.input.touchMoveF = -dy / R;
     } else if (e.pointerId === this.lookId) {
       // Right-half drags steer like holding right-mouse.
       this.input.lookDX += (e.clientX - this.lastLookX) * 2.2;
@@ -137,8 +139,8 @@ export class TouchControls {
   private readonly onEnd = (e: PointerEvent): void => {
     if (e.pointerId === this.stickId) {
       this.stickId = null;
-      this.input.padMoveS = 0;
-      this.input.padMoveF = 0;
+      this.input.touchMoveS = 0;
+      this.input.touchMoveF = 0;
       this.stick.classList.add('hidden');
     } else if (e.pointerId === this.lookId) {
       this.lookId = null;

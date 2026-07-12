@@ -35,11 +35,17 @@ export class InputManager {
   orbitDY = 0;
   /** Accumulated wheel delta — consumed by the camera. */
   zoomDelta = 0;
-  /** Analog movement from gamepad or the touch stick (forward / strafe, −1..1). */
+  /**
+   * Analog movement (forward / strafe, −1..1) and held melee. Gamepad and
+   * touch write SEPARATE channels: the pad poller resets its own every frame
+   * (sticks are stateless), which must never wipe what a touch drag wrote.
+   */
   padMoveF = 0;
   padMoveS = 0;
-  /** Held melee from gamepad trigger or the touch slap button. */
   padMelee = false;
+  touchMoveF = 0;
+  touchMoveS = 0;
+  touchMelee = false;
 
   /** Gamepad/touch: queue a one-shot button press. */
   pressEdge(edge: EdgeButton): void {
@@ -215,13 +221,17 @@ export class InputManager {
   /** Build the next command; consumes accumulated edge presses. */
   buildCommand(camYaw: number, aimX: number, aimZ: number): InputCommand {
     const fwd =
-      (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0) + this.padMoveF;
+      (this.keys.has('KeyW') ? 1 : 0) -
+      (this.keys.has('KeyS') ? 1 : 0) +
+      this.padMoveF +
+      this.touchMoveF;
     // Q/E strafe; A/D only strafe while right-mouse is steering (otherwise
     // they turn — see keyTurn).
     const strafe =
       ((this.keys.has('KeyE') || (this.rmbHeld && this.keys.has('KeyD'))) ? 1 : 0) -
       ((this.keys.has('KeyQ') || (this.rmbHeld && this.keys.has('KeyA'))) ? 1 : 0) +
-      this.padMoveS;
+      this.padMoveS +
+      this.touchMoveS;
     // forward = (sin yaw, cos yaw); screen-right = (-cos yaw, sin yaw)
     const fx = Math.sin(camYaw);
     const fz = Math.cos(camYaw);
@@ -240,7 +250,7 @@ export class InputManager {
       aimX,
       aimZ,
       buttons: {
-        melee: this.keys.has('KeyR') || this.padMelee,
+        melee: this.keys.has('KeyR') || this.padMelee || this.touchMelee,
         roll: this.pendingEdges.has('roll'),
         jump: this.pendingEdges.has('jump'),
         interact: this.pendingEdges.has('interact'),
