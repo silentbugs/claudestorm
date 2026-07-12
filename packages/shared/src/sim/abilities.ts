@@ -181,14 +181,14 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   holyShield: {
     id: 'holyShield',
     name: 'Holy Shield',
-    icon: '✨',
+    icon: '🥏',
     description: 'Hurl a blessed shield that damages enemies in its path, then returns to you.',
     category: 'offense',
     behavior: 'projectile',
     cooldown: 7,
     damage: 16,
     projectileSpeed: 24,
-    projectileRadius: 0.7,
+    projectileRadius: 1.05,
     projectileLifetime: 0.8, // outward leg; it flies back after
     boomerang: true,
   },
@@ -255,7 +255,7 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   starBomb: {
     id: 'starBomb',
     name: 'Star Bomb',
-    icon: '💫',
+    icon: '💥',
     description: 'Compress the cosmic void into a bomb that blankets a huge area at the aimed spot.',
     category: 'offense',
     behavior: 'groundAoE',
@@ -348,7 +348,7 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   windstorm: {
     id: 'windstorm',
     name: 'Windstorm',
-    icon: '🌬️',
+    icon: '🍃',
     description: 'Turbulent winds surge forward, damaging and stunning the first enemy struck.',
     category: 'utility',
     behavior: 'projectile',
@@ -425,7 +425,7 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   repel: {
     id: 'repel',
     name: 'Repel',
-    icon: '🌀',
+    icon: '⛔',
     description: 'Erect an arcane barrier that repels all damage for a short moment.',
     category: 'utility',
     behavior: 'buff',
