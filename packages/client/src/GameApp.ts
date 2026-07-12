@@ -226,6 +226,7 @@ export class GameApp {
     this.spectateId = null;
     this.tracker = null; // abandoned matches are not recorded
     this.inMatch = false;
+    sfx.updateGlideWinds([]);
     this.expectedUnlock = true;
     document.exitPointerLock();
     this.map.setActive(false);
@@ -500,6 +501,12 @@ export class GameApp {
         this.sceneMgr.setFocus(x, z);
         this.updateUnderwater();
         sfx.setListener(x, z, this.rig.camYaw);
+        // The drop is audible: every open parachute streams positional wind.
+        sfx.updateGlideWinds(
+          next.players
+            .filter((p) => p.alive && p.gliding)
+            .map((p) => ({ id: p.id, x: p.x, z: p.z, isSelf: p.id === focusNext.id })),
+        );
         this.map.update(dt, next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
         if (this.spectateId === null) {
           if (this.touchMode || this.gamepads.recentlyActive) {
