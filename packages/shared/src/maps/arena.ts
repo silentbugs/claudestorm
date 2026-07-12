@@ -137,6 +137,20 @@ export function coastRadius(base: number, angle: number): number {
 }
 
 /**
+ * Lake water geometry, shared by the sim (wading), the renderer (the water
+ * disc), the map paint, and the camera's underwater check — one source of
+ * truth so "the camera is below the surface" means the same thing everywhere.
+ * The waterline sits where the surface meets the bowl's slope.
+ */
+export const LAKE_SURFACE_FRACTION = 0.25;
+export const LAKE_WATERLINE_FACTOR = 1.45;
+
+/** World-space height of a lake's water surface. */
+export function lakeSurfaceY(map: MapDef, lake: LakeDef): number {
+  return groundHeight(map, lake.x, lake.z) * LAKE_SURFACE_FRACTION;
+}
+
+/**
  * Render/placement ground height: the hills, flattening into a beach at the
  * coastline and diving under the sea beyond it. The sim itself stays flat —
  * players simply can't cross the coast (see resolveCollisions).
@@ -514,9 +528,10 @@ function buildArena(): MapDef {
     if (i < 5) {
       const r = rng.range(13, 20);
       lakes.push({ x: b.x, z: b.z, r });
-      // Deep enough that the middle is over your head and the camera (whose
-      // boom collides with the bowl, not the water) can dip below the surface.
-      hills.push({ x: b.x, z: b.z, r: r * 2.1, h: -2.6 });
+      // A real pool: over your head in the middle, water filling the bowl up
+      // to the waterline, so a chest-deep wader only has to nudge the camera
+      // down for it to submerge.
+      hills.push({ x: b.x, z: b.z, r: r * 2.1, h: -3.6 });
       keepOut.push(b);
     }
   });

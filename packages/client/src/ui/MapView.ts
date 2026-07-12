@@ -1,4 +1,10 @@
-import { ARENA, coastRadius, groundHeight, type StormSnapshot } from '@claudestorm/shared';
+import {
+  ARENA,
+  LAKE_WATERLINE_FACTOR,
+  coastRadius,
+  groundHeight,
+  type StormSnapshot,
+} from '@claudestorm/shared';
 
 /** Background paint resolution; upscaled smoothly onto both canvases. */
 const BG_RES = 704;
@@ -49,6 +55,11 @@ export class MapView {
       if (e.code === 'KeyM') this.overlay.classList.toggle('hidden');
       else if (e.code === 'Escape') this.overlay.classList.add('hidden');
     });
+  }
+
+  /** Gamepad Select / minimap tap: same as pressing M. */
+  toggleOverlay(): void {
+    if (this.active) this.overlay.classList.toggle('hidden');
   }
 
   /** Only meaningful during a match; hides everything otherwise. */
@@ -128,7 +139,7 @@ export class MapView {
           if (over > -12) mix(c, SAND, (over + 12) / 10);
           let water = false;
           for (const lake of ARENA.lakes) {
-            if (Math.hypot(x - lake.x, z - lake.z) < lake.r) {
+            if (Math.hypot(x - lake.x, z - lake.z) < lake.r * LAKE_WATERLINE_FACTOR) {
               c[0] = LAKE[0]; c[1] = LAKE[1]; c[2] = LAKE[2];
               mix(c, LAKE_DEEP, -h / 4); // darker where it's deep
               water = true;

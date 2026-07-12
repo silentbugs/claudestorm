@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { ARENA, Rng, STORM_START_RADIUS, coastRadius, groundHeight } from '@claudestorm/shared';
+import {
+  ARENA,
+  LAKE_WATERLINE_FACTOR,
+  Rng,
+  STORM_START_RADIUS,
+  coastRadius,
+  groundHeight,
+  lakeSurfaceY,
+} from '@claudestorm/shared';
 import type { AssetLibrary, ModelName } from './assets.js';
 
 const SUN_DIR = new THREE.Vector3(0.55, 0.5, 0.32).normalize();
@@ -81,6 +89,7 @@ export class SceneManager {
   private readonly stormWall: THREE.Mesh;
   private readonly stormWallMat: THREE.ShaderMaterial;
   private readonly waterMat: THREE.ShaderMaterial;
+  private lakeMat!: THREE.ShaderMaterial;
   private readonly clouds: { group: THREE.Group; speed: number }[] = [];
   private readonly clock = new THREE.Clock();
   private readonly sun: THREE.DirectionalLight;
@@ -261,10 +270,11 @@ export class SceneManager {
       if (h > 7) tmp.lerp(rock, Math.min(1, (h - 7) / 5));
       if (h < -0.3) tmp.lerp(marsh, Math.min(1, -(h + 0.3) / 1.5));
       if (h < -2.5) tmp.lerp(rock, Math.min(1, -(h + 2.5) / 3));
-      // Muddy shores around the lakes.
+      // Muddy shores ringing the waterline.
       for (const lake of ARENA.lakes) {
         const d = Math.hypot(x - lake.x, z - lake.z);
-        if (d < lake.r + 7) tmp.lerp(mud, 0.6 * Math.min(1, (lake.r + 7 - d) / 9));
+        const shore = lake.r * LAKE_WATERLINE_FACTOR + 5;
+        if (d < shore) tmp.lerp(mud, 0.6 * Math.min(1, (shore - d) / 9));
       }
       // Beach where the land meets the sea; the drowned skirt is all sand.
       const over = Math.hypot(x, z) - coastRadius(coastBase, Math.atan2(x, z));
@@ -299,11 +309,16 @@ export class SceneManager {
     this.scene.add(ground);
   }
 
-  /** The sea: normal-mapped waves with a sun glint, fading into the fog. */
-  private buildWater(): THREE.ShaderMaterial {
-    // Opaque on purpose: this plane fills half the screen at the horizon, and
-    // blending it would be the single biggest fill cost in the frame.
-    const mat = new THREE.ShaderMaterial({
+  /**
+   * One shader, two materials: the sea stays opaque (it fills half the screen
+   * at the horizon — blending it would be the biggest fill cost in the frame),
+   * while the lakes are translucent and double-sided so you can see your
+   * character in the pool and the surface from below when the camera dives.
+   */
+  private makeWaterMat(alpha: number): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      transparent: alpha < 1,
+      side: alpha < 1 ? THREE.DoubleSide : THREE.FrontSide,
       uniforms: {
         uTime: { value: 0 },
         uNormals: { value: this.assets.waterNormals },
@@ -311,6 +326,7 @@ export class SceneManager {
         uFogColor: { value: new THREE.Color(FOG_COLOR) },
         uDeep: { value: new THREE.Color(0x0a1c33) },
         uSkyTint: { value: new THREE.Color(0x5c5c7a) },
+        uAlpha: { value: alpha },
       },
       vertexShader: `
         uniform float uTime;
@@ -335,6 +351,7 @@ export class SceneManager {
         uniform vec3 uFogColor;
         uniform vec3 uDeep;
         uniform vec3 uSkyTint;
+        uniform float uAlpha;
         varying vec3 vWorld;
         varying vec3 vView;
         varying float vDist;
@@ -348,9 +365,14 @@ export class SceneManager {
           float spec = pow(max(dot(n, normalize(viewDir + uSunDir)), 0.0), 70.0);
           col += vec3(1.0, 0.82, 0.55) * spec * 0.9;
           col = mix(col, uFogColor, smoothstep(280.0, 920.0, vDist));
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(col, uAlpha);
         }`,
     });
+  }
+
+  /** The sea: normal-mapped waves with a sun glint, fading into the fog. */
+  private buildWater(): THREE.ShaderMaterial {
+    const mat = this.makeWaterMat(1);
     const water = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3800, 32, 32), mat);
     water.geometry.rotateX(-Math.PI / 2);
     water.position.y = -0.55;
@@ -358,13 +380,16 @@ export class SceneManager {
     return mat;
   }
 
-  /** Water discs sitting in the lowland bowls, sharing the sea's shader. */
+  /** Translucent pools filling the lowland bowls up to the shared waterline. */
   private buildLakes(): void {
+    this.lakeMat = this.makeWaterMat(0.62);
     for (const lake of ARENA.lakes) {
-      const bottom = groundHeight(ARENA, lake.x, lake.z);
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(lake.r * 1.05, 28), this.waterMat);
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(lake.r * LAKE_WATERLINE_FACTOR, 28),
+        this.lakeMat,
+      );
       disc.geometry.rotateX(-Math.PI / 2);
-      disc.position.set(lake.x, bottom * 0.45, lake.z);
+      disc.position.set(lake.x, lakeSurfaceY(ARENA, lake), lake.z);
       this.scene.add(disc);
     }
   }
@@ -586,9 +611,11 @@ export class SceneManager {
     this.hemi.intensity = env.hemiIntensity;
     this.sun.color.setHex(env.sun);
     this.sun.intensity = env.sunIntensity;
-    (this.waterMat.uniforms.uFogColor!.value as THREE.Color).setHex(env.fog);
-    (this.waterMat.uniforms.uDeep!.value as THREE.Color).setHex(env.waterDeep);
-    (this.waterMat.uniforms.uSkyTint!.value as THREE.Color).setHex(env.waterSky);
+    for (const mat of [this.waterMat, this.lakeMat]) {
+      (mat.uniforms.uFogColor!.value as THREE.Color).setHex(env.fog);
+      (mat.uniforms.uDeep!.value as THREE.Color).setHex(env.waterDeep);
+      (mat.uniforms.uSkyTint!.value as THREE.Color).setHex(env.waterSky);
+    }
     this.renderer.toneMappingExposure = env.exposure;
     this.cloudMat.color.setHex(env.cloud);
     this.cloudMat.opacity = env.cloudOpacity;
@@ -612,6 +639,7 @@ export class SceneManager {
     this.sky.position.copy(this.camera.position);
     this.stormWallMat.uniforms.uTime!.value = t;
     this.waterMat.uniforms.uTime!.value = t;
+    this.lakeMat.uniforms.uTime!.value = t;
     for (const cloud of this.clouds) {
       cloud.group.position.x += cloud.speed * dt;
       if (cloud.group.position.x > 800) cloud.group.position.x = -800;

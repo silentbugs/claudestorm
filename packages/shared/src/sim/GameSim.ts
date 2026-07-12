@@ -57,7 +57,7 @@ import {
   XP_THRESHOLDS,
   levelDamageMult,
 } from '../constants.js';
-import { ARENA, type MapDef } from '../maps/arena.js';
+import { ARENA, LAKE_WATERLINE_FACTOR, type MapDef } from '../maps/arena.js';
 import { Rng } from '../math/rng.js';
 import { dist, lerp, norm, yawToward } from '../math/vec.js';
 import type {
@@ -705,7 +705,8 @@ export class GameSim {
 
   private inLake(x: number, z: number): boolean {
     for (const lake of this.map.lakes) {
-      if (dist(x, z, lake.x, lake.z) < lake.r) return true;
+      // Wading slows anywhere inside the visible waterline.
+      if (dist(x, z, lake.x, lake.z) < lake.r * LAKE_WATERLINE_FACTOR) return true;
     }
     return false;
   }
