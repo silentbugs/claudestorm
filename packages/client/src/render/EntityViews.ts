@@ -170,42 +170,46 @@ CLOUD_VISOR_GEO.rotateZ(Math.PI / 2 - 0.575); // center the arc upward...
 CLOUD_VISOR_GEO.rotateX(Math.PI / 2); // ...then swing it to face forward
 const BOLT_SEG_GEO = new THREE.BoxGeometry(0.055, 0.17, 0.04);
 
-// Wisp: one smooth ghost-robe silhouette under a faceless helm.
-const WISP_BODY_GEO = new THREE.LatheGeometry(
-  [
-    [0.02, 0.0], [0.10, 0.06], [0.20, 0.16], [0.30, 0.30], [0.365, 0.48],
-    [0.375, 0.66], [0.335, 0.88], [0.315, 1.06], [0.325, 1.22], [0.30, 1.36],
-    [0.22, 1.50], [0.11, 1.58], [0.0, 1.61],
-  ].map(([r, y]) => new THREE.Vector2(r!, y!)),
-  24,
-);
-WISP_BODY_GEO.translate(0, -0.8, 0); // pivot mid-body
-const WISP_HELM_GEO = new THREE.SphereGeometry(0.345, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.58);
-const WISP_VISOR_GEO = new THREE.TorusGeometry(0.315, 0.038, 6, 12, 1.25);
-WISP_VISOR_GEO.rotateZ(Math.PI / 2 - 0.625);
-WISP_VISOR_GEO.rotateX(Math.PI / 2);
-const WISP_CREST_GEO = new THREE.BoxGeometry(0.04, 0.24, 0.34);
-
-// Spectral mask: a floating face plate, a core heart, and trailing rings.
-const MASK_GEO = new THREE.SphereGeometry(0.34, 20, 14, 0, Math.PI);
-MASK_GEO.scale(0.85, 1.3, 0.62);
-const MASK_HORN_GEO = new THREE.TorusGeometry(0.2, 0.028, 6, 10, 1.9);
-const TRAIL_RING_GEOS = [0.24, 0.17, 0.11].map((r) => {
-  const geo = new THREE.TorusGeometry(r, 0.033, 6, 20);
-  geo.rotateX(Math.PI / 2);
-  return geo;
-});
 const CORE_GEO = new THREE.SphereGeometry(0.075, 12, 10);
 
-// Slime: one smooth dome blob, translucent, with a glowing nucleus.
-const SLIME_GEO = new THREE.LatheGeometry(
+// Ember: a living flame — one smooth teardrop lathe; the inner tongue reuses
+// the same geometry at a smaller scale in the glow material.
+const FLAME_GEO = new THREE.LatheGeometry(
   [
-    [0.02, 0.0], [0.3, 0.02], [0.42, 0.14], [0.44, 0.3], [0.38, 0.5],
-    [0.26, 0.66], [0.12, 0.76], [0.0, 0.8],
+    [0.02, 0.0], [0.24, 0.05], [0.36, 0.18], [0.40, 0.36], [0.34, 0.58],
+    [0.22, 0.78], [0.10, 0.95], [0.03, 1.08], [0.0, 1.14],
   ].map(([r, y]) => new THREE.Vector2(r!, y!)),
   20,
 );
-SLIME_GEO.translate(0, -0.4, 0); // pivot mid-blob
+FLAME_GEO.translate(0, -0.55, 0); // pivot mid-flame
+const SPARK_GEO = new THREE.SphereGeometry(0.05, 8, 6);
+
+// Sky Jelly: a translucent bell with trailing tendrils, swimming in place.
+const JELLY_BELL_GEO = new THREE.LatheGeometry(
+  [
+    [0.02, -0.10], [0.30, -0.06], [0.40, 0.04], [0.43, 0.16], [0.38, 0.30],
+    [0.26, 0.41], [0.12, 0.47], [0.0, 0.49],
+  ].map(([r, y]) => new THREE.Vector2(r!, y!)),
+  22,
+);
+const JELLY_TENDRIL_GEO = new THREE.CylinderGeometry(0.026, 0.006, 0.62, 5);
+JELLY_TENDRIL_GEO.translate(0, -0.31, 0); // pivot at the bell rim
+
+// Tempest: a funnel of horizontal rings, wide crown to narrow base. Slightly
+// elliptical so their spin actually reads; top ring first.
+const VORTEX_RING_GEOS = [0.34, 0.27, 0.2, 0.13].map((r, i) => {
+  const geo = new THREE.TorusGeometry(r, 0.075 - i * 0.009, 8, 22);
+  geo.rotateX(Math.PI / 2);
+  geo.scale(1, 1, 0.86);
+  return geo;
+});
+const PEBBLE_GEO = new THREE.SphereGeometry(0.05, 7, 6);
+
+// Crescent: a fat moon-sliver cradle, opening upward, a star orbiting through.
+const MOON_ARC = Math.PI * 1.25;
+const MOON_GEO = new THREE.TorusGeometry(0.4, 0.15, 12, 28, MOON_ARC);
+MOON_GEO.rotateZ(-Math.PI / 2 - MOON_ARC / 2); // center the arc at the bottom
+const STAR_GEO = new THREE.OctahedronGeometry(0.08);
 
 /** Paraglider canopy: a squashed sphere slice, tinted per hero. */
 const CHUTE_CANOPY_GEO = new THREE.SphereGeometry(1.5, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
@@ -218,14 +222,20 @@ const TINT = new THREE.Color();
 const TINT_MIX = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
 
-/** Selectable body designs; all share the slap hands and the same chassis. */
-export type HeroModel = 'cloud' | 'wisp' | 'mask' | 'dust' | 'slime';
+/**
+ * Selectable body designs; all share the slap hands and the same chassis.
+ * Every body follows the Storm Cloud recipe the user liked: one cohesive
+ * elemental silhouette, a glowing visor slit for a face, one signature
+ * accent (the cloud's bolt, the moon's star…), and an idle that never sits
+ * still.
+ */
+export type HeroModel = 'cloud' | 'ember' | 'jelly' | 'vortex' | 'moon';
 export const HERO_MODELS: { id: HeroModel; name: string }[] = [
   { id: 'cloud', name: 'Storm Cloud' },
-  { id: 'wisp', name: 'Wisp' },
-  { id: 'mask', name: 'Spectral Mask' },
-  { id: 'dust', name: 'Dust Devil' },
-  { id: 'slime', name: 'Slime' },
+  { id: 'ember', name: 'Ember' },
+  { id: 'jelly', name: 'Sky Jelly' },
+  { id: 'vortex', name: 'Tempest' },
+  { id: 'moon', name: 'Crescent' },
 ];
 
 /** How a body's materials take the hero tint (and their resting opacity). */
@@ -286,10 +296,10 @@ class PlayerView {
 
     // Pivot at mid-body so roll tumbles read naturally.
     this.bodyPivot.position.y = 1.0;
-    if (model === 'wisp') this.buildWisp();
-    else if (model === 'mask') this.buildMask();
-    else if (model === 'dust') this.buildDust();
-    else if (model === 'slime') this.buildSlime();
+    if (model === 'ember') this.buildEmber();
+    else if (model === 'jelly') this.buildJelly();
+    else if (model === 'vortex') this.buildVortex();
+    else if (model === 'moon') this.buildMoon();
     else this.buildCloud();
     this.bodyPivot.scale.setScalar(this.baseScale);
 
@@ -419,133 +429,150 @@ class PlayerView {
     };
   }
 
-  /** A smooth ghost-robe silhouette under a faceless crested helm. */
-  private buildWisp(): void {
-    const robeMat = this.tintable('plain', { roughness: 0.62 });
-    const helmMat = this.tintable('dark', { metalness: 0.5, roughness: 0.35 });
-    const body = new THREE.Mesh(WISP_BODY_GEO, robeMat);
-    body.castShadow = true;
-    this.bodyPivot.add(body);
-    const helm = new THREE.Mesh(WISP_HELM_GEO, helmMat);
-    helm.position.y = 0.5;
-    helm.castShadow = true;
-    this.bodyPivot.add(helm);
-    const visor = new THREE.Mesh(WISP_VISOR_GEO, this.visorMat);
-    visor.position.y = 0.45;
-    this.bodyPivot.add(visor);
-    const crest = new THREE.Mesh(WISP_CREST_GEO, helmMat);
-    crest.position.set(0, 0.82, -0.04);
-    crest.rotation.x = -0.3;
-    this.bodyPivot.add(crest);
-
-    this.baseScale = 0.86;
-    this.handRestY = 0.28;
-    this.animateBody = (bob, speed, _dt) => {
-      body.rotation.z = Math.sin(bob * 0.8) * (0.04 + Math.min(0.05, speed * 0.006));
-    };
-  }
-
-  /** A floating mask over a bright core, translucent rings trailing below. */
-  private buildMask(): void {
-    const maskMat = this.tintable('dark', {
-      metalness: 0.45,
-      roughness: 0.3,
-      side: THREE.DoubleSide,
-    });
-    const ringMat = this.tintable('plain', { roughness: 0.55, depthWrite: false }, 0.42);
-    const maskGroup = new THREE.Group();
-    const plate = new THREE.Mesh(MASK_GEO, maskMat);
-    plate.castShadow = true;
-    maskGroup.add(plate);
+  /** A living flame: flickering teardrop, hot heart, sparks spiraling off. */
+  private buildEmber(): void {
+    const flameMat = this.tintable('light', { roughness: 0.9 }, 0.92);
+    const flame = new THREE.Mesh(FLAME_GEO, flameMat);
+    flame.castShadow = true;
+    const heart = new THREE.Mesh(FLAME_GEO, this.visorMat);
+    heart.scale.setScalar(0.55);
+    heart.position.y = -0.18;
+    const flameGroup = new THREE.Group();
+    flameGroup.add(flame, heart);
+    this.bodyPivot.add(flameGroup);
     const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
-    visor.position.set(0, 0.05, 0.05);
-    maskGroup.add(visor);
-    for (const side of [-1, 1]) {
-      const horn = new THREE.Mesh(MASK_HORN_GEO, maskMat);
-      horn.position.set(side * 0.2, 0.3, -0.06);
-      horn.rotation.y = Math.PI / 2;
-      horn.rotation.z = side * -0.45;
-      horn.castShadow = true;
-      maskGroup.add(horn);
+    visor.position.set(0, 0.08, 0.3);
+    this.bodyPivot.add(visor);
+    const sparks: THREE.Mesh[] = [];
+    for (let i = 0; i < 3; i++) {
+      const spark = new THREE.Mesh(SPARK_GEO, this.visorMat);
+      sparks.push(spark);
+      this.bodyPivot.add(spark);
     }
-    maskGroup.position.y = 0.34;
-    this.bodyPivot.add(maskGroup);
-    const core = new THREE.Mesh(CORE_GEO, this.visorMat);
-    core.position.y = -0.02;
-    this.bodyPivot.add(core);
-    const rings: THREE.Mesh[] = [];
-    TRAIL_RING_GEOS.forEach((geo, i) => {
-      const ring = new THREE.Mesh(geo, ringMat);
-      ring.position.y = -0.22 - i * 0.2;
-      rings.push(ring);
-      this.bodyPivot.add(ring);
-    });
 
-    this.animateBody = (bob, _speed, dt) => {
-      maskGroup.rotation.z = Math.sin(bob * 0.55) * 0.09;
-      maskGroup.position.y = 0.34 + Math.sin(bob * 1.15 + 0.7) * 0.02;
-      rings.forEach((ring, i) => {
-        ring.rotation.y += dt * (0.8 + i * 0.5) * (i % 2 === 0 ? 1 : -1);
-        ring.position.y = -0.22 - i * 0.2 + Math.sin(bob + i * 0.9) * 0.025;
+    this.deathStyle = 'dissipate';
+    this.deathHide.push(...sparks);
+    this.handRestY = 0.1;
+    this.animateBody = (bob, speed, _dt) => {
+      // Fluid: two beat frequencies so the flicker never visibly repeats,
+      // volume-preserving, leaning back like a blown candle at speed.
+      const flicker = 1 + Math.sin(bob * 4.3) * 0.05 + Math.sin(bob * 9.7 + 1.3) * 0.04;
+      flameGroup.scale.set(2 - flicker, flicker, 2 - flicker);
+      flameGroup.rotation.x = -Math.min(0.35, speed * 0.035);
+      flameGroup.rotation.z = Math.sin(bob * 2.1) * 0.05;
+      // Sparks spiral up off the crown and are reborn at the base.
+      sparks.forEach((s, i) => {
+        const t = (bob * 0.35 + i / 3) % 1;
+        const a = t * 5 + i * 2.1;
+        const r = 0.2 * (1 - t * 0.6);
+        s.position.set(Math.sin(a) * r, 0.15 + t * 0.85, Math.cos(a) * r);
+        s.scale.setScalar(Math.max(0.2, 1 - t * 0.8));
       });
     };
   }
 
-  /** A little whirlwind: two counter-rotating tiers of dust, always turning. */
-  private buildDust(): void {
-    const dustMat = this.tintable('light', { roughness: 1 });
-    const darkMat = this.tintable('dark', { roughness: 1 });
-    const swirlA = new THREE.Group();
-    const swirlB = new THREE.Group();
-    for (let i = 0; i < 10; i++) {
-      const t = i / 9;
-      const a = i * 2.4; // golden-angle spiral
-      const r = 0.08 + t * 0.3; // narrow base, wide crown
-      const puff = new THREE.Mesh(CLOUD_PUFF_GEO, i % 3 === 0 ? darkMat : dustMat);
-      puff.position.set(Math.sin(a) * r, -0.45 + t * 0.95, Math.cos(a) * r);
-      puff.scale.setScalar(0.09 + t * 0.14);
-      puff.castShadow = i % 2 === 0;
-      (i % 2 === 0 ? swirlA : swirlB).add(puff);
-    }
-    this.bodyPivot.add(swirlA, swirlB);
+  /** A sky jellyfish: pulsing translucent bell, tendrils trailing the swim. */
+  private buildJelly(): void {
+    const bellMat = this.tintable('plain', { roughness: 0.3, metalness: 0.05 }, 0.72);
+    const tendrilMat = this.tintable('light', { roughness: 0.6 }, 0.85);
+    const bell = new THREE.Mesh(JELLY_BELL_GEO, bellMat);
+    bell.castShadow = true;
+    this.bodyPivot.add(bell);
+    const nucleus = new THREE.Mesh(CORE_GEO, this.visorMat);
+    nucleus.scale.setScalar(1.6);
+    nucleus.position.y = 0.1;
+    this.bodyPivot.add(nucleus);
     const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
-    visor.position.set(0, 0.3, 0.12);
+    visor.position.set(0, 0.14, 0.33);
+    this.bodyPivot.add(visor);
+    const tendrils: THREE.Mesh[] = [];
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + 0.4;
+      const tendril = new THREE.Mesh(JELLY_TENDRIL_GEO, tendrilMat);
+      tendril.position.set(Math.sin(a) * 0.24, -0.04, Math.cos(a) * 0.24);
+      tendrils.push(tendril);
+      this.bodyPivot.add(tendril);
+    }
+
+    this.deathStyle = 'dissipate';
+    this.handRestY = 0.14;
+    this.animateBody = (bob, speed, _dt) => {
+      // Fluid: real medusa swimming — the bell contracts, the body rises on
+      // the stroke, and the tendrils lag half a beat behind.
+      const pulse = Math.sin(bob * 2.2);
+      bell.scale.set(1 + pulse * 0.08, 1 - pulse * 0.11, 1 + pulse * 0.08);
+      this.bodyPivot.position.y += Math.sin(bob * 2.2 - 1.1) * 0.06;
+      const drag = Math.min(0.55, speed * 0.055);
+      tendrils.forEach((t, i) => {
+        t.rotation.x = drag + Math.sin(bob * 2.2 - 1.9 + i * 0.7) * 0.24;
+        t.rotation.z = Math.cos(bob * 1.6 + i * 1.3) * 0.12;
+      });
+    };
+  }
+
+  /** A storm funnel: a ring vortex spinning wide crown over narrow base. */
+  private buildVortex(): void {
+    const lightMat = this.tintable('light', { roughness: 0.85 });
+    const darkMat = this.tintable('dark', { roughness: 0.85 });
+    const rings: THREE.Group[] = [];
+    VORTEX_RING_GEOS.forEach((geo, i) => {
+      const holder = new THREE.Group();
+      const ring = new THREE.Mesh(geo, i % 2 === 0 ? lightMat : darkMat);
+      ring.castShadow = i < 2;
+      holder.add(ring);
+      holder.position.y = 0.38 - i * 0.27;
+      rings.push(holder);
+      this.bodyPivot.add(holder);
+    });
+    // Debris caught in the spin — the funnel's bolt-equivalent accent.
+    for (const [ringIdx, a] of [[0, 1.1], [2, 3.9]] as const) {
+      const pebble = new THREE.Mesh(PEBBLE_GEO, this.visorMat);
+      const r = 0.36 - ringIdx * 0.07 + 0.09;
+      pebble.position.set(Math.sin(a) * r, 0.02, Math.cos(a) * r);
+      rings[ringIdx]!.add(pebble);
+    }
+    const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
+    visor.position.set(0, 0.52, 0.18);
     this.bodyPivot.add(visor);
 
     this.deathStyle = 'dissipate';
     this.animateBody = (bob, speed, dt) => {
-      // Fluid: the vortex never stops turning, and speeds up with travel.
-      const spin = 2.2 + Math.min(9, speed * 0.9);
-      swirlA.rotation.y += dt * spin;
-      swirlB.rotation.y -= dt * spin * 0.7;
-      const sway = Math.sin(bob * 0.7) * 0.06;
-      swirlA.rotation.z = sway;
-      swirlB.rotation.z = -sway * 0.6;
+      // Fluid: never stops spinning — faster toward the base like a real
+      // funnel, the whole stack wobbling off-axis, harder when traveling.
+      const spin = 2.6 + Math.min(10, speed * 0.9);
+      rings.forEach((holder, i) => {
+        holder.rotation.y += dt * spin * (1 + i * 0.45);
+        holder.position.x = Math.sin(bob * 1.4 + i * 1.2) * (0.02 + i * 0.012);
+        holder.position.z = Math.cos(bob * 1.1 + i * 1.2) * (0.02 + i * 0.012);
+      });
     };
   }
 
-  /** A grounded blob that hops and squash-stretches instead of hovering. */
-  private buildSlime(): void {
-    const slimeMat = this.tintable('plain', { roughness: 0.25, metalness: 0.05 }, 0.88);
-    const blob = new THREE.Mesh(SLIME_GEO, slimeMat);
-    blob.castShadow = true;
-    this.bodyPivot.add(blob);
-    const core = new THREE.Mesh(CORE_GEO, this.visorMat);
-    core.position.y = -0.06;
-    core.scale.setScalar(1.4);
-    this.bodyPivot.add(core);
+  /** A crescent-moon sprite rocking like a cradle, a star sailing its gap. */
+  private buildMoon(): void {
+    const moonMat = this.tintable('plain', { metalness: 0.3, roughness: 0.4 });
+    const moon = new THREE.Mesh(MOON_GEO, moonMat);
+    moon.castShadow = true;
+    const moonGroup = new THREE.Group();
+    moonGroup.add(moon);
     const visor = new THREE.Mesh(CLOUD_VISOR_GEO, this.visorMat);
-    visor.position.set(0, 0.08, 0.22);
-    this.bodyPivot.add(visor);
+    visor.position.set(0, -0.1, 0.2);
+    moonGroup.add(visor);
+    const star = new THREE.Mesh(STAR_GEO, this.visorMat);
+    moonGroup.add(star);
+    this.bodyPivot.add(moonGroup);
 
     this.deathStyle = 'dissipate';
-    this.animateBody = (bob, speed, _dt) => {
-      // Fluid: hop along the ground with volume-preserving squash & stretch.
-      const hop = Math.abs(Math.sin(bob * 1.3)) * Math.min(0.3, 0.04 + speed * 0.03);
-      this.bodyPivot.position.y = 0.42 + hop;
-      const amp = 0.05 + Math.min(0.09, speed * 0.009);
-      const wobble = Math.sin(bob * 2.6) * amp;
-      blob.scale.set(1 - wobble * 0.55, 1 + wobble, 1 - wobble * 0.55);
+    this.deathHide.push(star);
+    this.animateBody = (bob, speed, dt) => {
+      // Fluid: a hammock rock that deepens on the move, while the signature
+      // star loops through the crescent's opening.
+      moonGroup.rotation.z = Math.sin(bob * 0.8) * (0.12 + Math.min(0.1, speed * 0.012));
+      moonGroup.rotation.x = Math.min(0.3, speed * 0.03);
+      const a = bob * 1.3;
+      star.position.set(Math.sin(a) * 0.42, Math.cos(a) * 0.42 + 0.12, 0.05);
+      star.rotation.y += dt * 3;
+      star.rotation.x += dt * 2.2;
     };
   }
 
