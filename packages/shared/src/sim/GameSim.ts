@@ -1335,7 +1335,13 @@ export class GameSim {
             rootDuration: 0,
           });
         }
-        this.events.push({ type: 'projectileGone', id: proj.id, x: proj.x, z: proj.z });
+        this.events.push({
+          type: 'projectileGone',
+          id: proj.id,
+          abilityId: proj.abilityId,
+          x: proj.x,
+          z: proj.z,
+        });
       } else {
         survivors.push(proj);
       }

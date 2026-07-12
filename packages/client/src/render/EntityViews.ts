@@ -69,6 +69,16 @@ const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
   celestialBarrage: 0xd8c8ff,
 };
 
+/** Ground circles tinted per spell [outline, fill]; unlisted fall back by kind. */
+const ZONE_COLORS: Partial<Record<AbilityId, [number, number]>> = {
+  snowdrift: [0x9fd8ff, 0x4d9be6],
+  rimeArrow: [0x9fd8ff, 0x4d9be6],
+  starBomb: [0xc9a8ff, 0x8a5aff],
+  earthbreaker: [0xd9a86a, 0xa8703a],
+  toxicSmackerel: [0x9fe07a, 0x5da83a],
+  explosiveCaltrops: [0xffab6a, 0xd45a2e],
+};
+
 /*
  * Shared unit geometries for everything transient. Effects and zones fire
  * constantly (every swing, hit, and endgame lightning); building a fresh
@@ -912,30 +922,198 @@ interface Effect {
   ownsGeometry?: boolean;
 }
 
-/** Per-ability projectile geometry (built once; anything unlisted is a glowing orb). */
-function buildProjectileGeometry(abilityId: AbilityId): { geo: THREE.BufferGeometry; glow: number } {
+/*
+ * Per-ability projectile bodies. Every look is a small composite (core +
+ * ornaments + an additive motion tail) with its own flight animation, all
+ * assembled from these shared geometries — nothing is built per shot.
+ */
+const ARROW_GEO = new THREE.ConeGeometry(0.16, 0.95, 8);
+ARROW_GEO.rotateX(Math.PI / 2); // point along +z so rotation.y aims it
+const SHARD_TRAIL_GEO = new THREE.OctahedronGeometry(0.12);
+const DISC_GEO = new THREE.CylinderGeometry(0.55, 0.55, 0.12, 18);
+DISC_GEO.rotateX(Math.PI / 2);
+const DISC_RIM_GEO = new THREE.TorusGeometry(0.56, 0.05, 6, 20);
+const DISC_BOSS_GEO = new THREE.SphereGeometry(0.15, 10, 8);
+const ARCHON_GEO = new THREE.OctahedronGeometry(0.28);
+const MANA_GEO = new THREE.SphereGeometry(0.5, 14, 12);
+const ORBIT_RING_GEO = new THREE.TorusGeometry(0.66, 0.035, 6, 22);
+const KNOT_GEO = new THREE.TorusKnotGeometry(0.3, 0.1, 32, 6);
+const CHAIN_LINK_GEO = new THREE.TorusGeometry(0.11, 0.036, 6, 10);
+CHAIN_LINK_GEO.rotateX(Math.PI / 2); // link plane contains the flight axis
+const ORB_GEO = new THREE.SphereGeometry(0.32, 12, 10);
+/** Motion tail: an additive cone streaming back from the projectile. */
+const TAIL_GEO = new THREE.ConeGeometry(0.22, 1.3, 8, 1, true);
+TAIL_GEO.rotateX(-Math.PI / 2); // apex points backward (−z)
+TAIL_GEO.translate(0, 0, -0.55);
+
+/** Cached materials per ability: lit core, additive tail, unlit glow bits. */
+const projMats = new Map<
+  AbilityId,
+  { core: THREE.MeshStandardMaterial; tail: THREE.MeshBasicMaterial; glow: THREE.MeshBasicMaterial }
+>();
+function projMaterials(abilityId: AbilityId): NonNullable<ReturnType<typeof projMats.get>> {
+  let m = projMats.get(abilityId);
+  if (!m) {
+    const color = PROJECTILE_COLORS[abilityId] ?? 0xffe38a;
+    m = {
+      core: new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5 }),
+      tail: new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.4,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+      glow: new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }),
+    };
+    projMats.set(abilityId, m);
+  }
+  return m;
+}
+
+/** A live projectile: the scene object plus its per-frame flight animation. */
+interface ProjView {
+  obj: THREE.Object3D;
+  anim: (now: number) => void;
+}
+
+function makeProjectileView(abilityId: AbilityId): ProjView {
+  if (abilityId === 'celestialBarrage') {
+    return { obj: new THREE.Mesh(CELESTIAL_GEO, CELESTIAL_MAT), anim: () => {} };
+  }
+  const { core, tail, glow } = projMaterials(abilityId);
+  const group = new THREE.Group();
+  const addTail = (len: number, width: number): void => {
+    const t = new THREE.Mesh(TAIL_GEO, tail);
+    t.scale.set(width, width, len);
+    group.add(t);
+  };
   switch (abilityId) {
     case 'rimeArrow': {
-      const geo = new THREE.ConeGeometry(0.16, 0.95, 8);
-      geo.rotateX(Math.PI / 2); // point along +z so rotation.y aims it
-      return { geo, glow: 1.6 };
+      // An ice bolt rolling in flight, shedding crystal shards behind it.
+      const head = new THREE.Mesh(ARROW_GEO, core);
+      const shards = [-0.55, -0.95].map((z, i) => {
+        const s = new THREE.Mesh(SHARD_TRAIL_GEO, glow);
+        s.position.z = z;
+        s.scale.setScalar(1 - i * 0.4);
+        group.add(s);
+        return s;
+      });
+      group.add(head);
+      addTail(0.9, 0.7);
+      return {
+        obj: group,
+        anim: (now) => {
+          head.rotation.z = now * 7;
+          shards.forEach((s, i) => {
+            s.rotation.x = now * (5 + i * 2);
+            s.position.y = Math.sin(now * 9 + i * 2.4) * 0.06;
+          });
+        },
+      };
     }
     case 'holyShield': {
-      // Spinning golden disc.
-      const geo = new THREE.CylinderGeometry(0.55, 0.55, 0.12, 16);
-      geo.rotateX(Math.PI / 2);
-      return { geo, glow: 1.3 };
+      // A blessed discus: rim and boss gleaming, wobbling on its axis.
+      const spinner = new THREE.Group();
+      spinner.add(new THREE.Mesh(DISC_GEO, core), new THREE.Mesh(DISC_RIM_GEO, glow));
+      const boss = new THREE.Mesh(DISC_BOSS_GEO, glow);
+      boss.position.z = 0.09;
+      spinner.add(boss);
+      group.add(spinner);
+      return {
+        obj: group,
+        anim: (now) => {
+          spinner.rotation.z = now * 13;
+          spinner.rotation.y = Math.sin(now * 4.5) * 0.3;
+        },
+      };
     }
-    case 'stormArchon':
-      return { geo: new THREE.OctahedronGeometry(0.28), glow: 1.8 };
-    case 'manaSphere':
-      return { geo: new THREE.SphereGeometry(0.5, 14, 12), glow: 1.3 };
-    case 'windstorm':
-      return { geo: new THREE.TorusKnotGeometry(0.3, 0.1, 32, 6), glow: 1.2 };
-    case 'huntersChains':
-      return { geo: new THREE.BoxGeometry(0.24, 0.24, 0.24), glow: 1.2 };
-    default:
-      return { geo: new THREE.SphereGeometry(0.32, 12, 10), glow: 1.4 };
+    case 'stormArchon': {
+      // A crackling core with stray sparks snapping around it.
+      const orb = new THREE.Mesh(ARCHON_GEO, core);
+      group.add(orb);
+      const bolts = [0, 1].map((i) => {
+        const b = new THREE.Mesh(BOLT_SEG_GEO, glow);
+        b.scale.setScalar(1.4 - i * 0.4);
+        group.add(b);
+        return b;
+      });
+      addTail(0.8, 0.6);
+      return {
+        obj: group,
+        anim: (now) => {
+          orb.rotation.x = now * 9;
+          orb.rotation.y = now * 7;
+          bolts.forEach((b, i) => {
+            const a = now * 23 + i * Math.PI;
+            b.position.set(Math.sin(a) * 0.34, Math.cos(a * 1.3) * 0.22, Math.sin(a * 0.7) * 0.12);
+            b.rotation.z = a;
+          });
+        },
+      };
+    }
+    case 'manaSphere': {
+      // A heavy arcane orb inside two counter-tumbling rings.
+      const orb = new THREE.Mesh(MANA_GEO, core);
+      const ringA = new THREE.Mesh(ORBIT_RING_GEO, glow);
+      const ringB = new THREE.Mesh(ORBIT_RING_GEO, glow);
+      ringB.scale.setScalar(0.82);
+      group.add(orb, ringA, ringB);
+      addTail(1.1, 1.1);
+      return {
+        obj: group,
+        anim: (now) => {
+          orb.scale.setScalar(1 + 0.1 * Math.sin(now * 11));
+          ringA.rotation.x = now * 5;
+          ringA.rotation.y = now * 3;
+          ringB.rotation.x = -now * 4;
+          ringB.rotation.z = now * 6;
+        },
+      };
+    }
+    case 'windstorm': {
+      // A tumbling gust knot with a long streaming wake.
+      const knot = new THREE.Mesh(KNOT_GEO, core);
+      group.add(knot);
+      addTail(1.7, 1.5);
+      return {
+        obj: group,
+        anim: (now) => {
+          knot.rotation.z = now * 8;
+          knot.rotation.y = now * 3;
+        },
+      };
+    }
+    case 'huntersChains': {
+      // Real chain links, planes alternating around the flight axis.
+      const chain = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const holder = new THREE.Group();
+        holder.add(new THREE.Mesh(CHAIN_LINK_GEO, core));
+        holder.position.z = -i * 0.21;
+        holder.rotation.z = (i % 2) * (Math.PI / 2);
+        chain.add(holder);
+      }
+      group.add(chain);
+      return {
+        obj: group,
+        anim: (now) => {
+          chain.rotation.z = now * 9;
+        },
+      };
+    }
+    default: {
+      // Glowing orb with a modest wake.
+      const orb = new THREE.Mesh(ORB_GEO, core);
+      group.add(orb);
+      addTail(0.9, 0.9);
+      return {
+        obj: group,
+        anim: (now) => {
+          orb.scale.setScalar(1 + 0.08 * Math.sin(now * 13));
+        },
+      };
+    }
   }
 }
 
@@ -981,23 +1159,6 @@ const CELESTIAL_MAT = new THREE.ShaderMaterial({
     }`,
 });
 
-/** Projectiles share one geometry + material per ability across the whole match. */
-const projLooks = new Map<AbilityId, { geo: THREE.BufferGeometry; mat: THREE.MeshStandardMaterial }>();
-function makeProjectileMesh(abilityId: AbilityId): THREE.Mesh {
-  if (abilityId === 'celestialBarrage') return new THREE.Mesh(CELESTIAL_GEO, CELESTIAL_MAT);
-  let look = projLooks.get(abilityId);
-  if (!look) {
-    const color = PROJECTILE_COLORS[abilityId] ?? 0xffffff;
-    const { geo, glow } = buildProjectileGeometry(abilityId);
-    look = {
-      geo,
-      mat: new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: glow }),
-    };
-    projLooks.set(abilityId, look);
-  }
-  return new THREE.Mesh(look.geo, look.mat);
-}
-
 /** Creates/updates meshes for everything dynamic in a snapshot, plus transient effects. */
 export class EntityViews {
   private players = new Map<number, PlayerView>();
@@ -1006,7 +1167,7 @@ export class EntityViews {
   private scrolls = new Map<number, THREE.Group>();
   private coins = new Map<number, THREE.Mesh>();
   private items = new Map<number, THREE.Group>();
-  private projectiles = new Map<number, THREE.Mesh>();
+  private projectiles = new Map<number, ProjView>();
   private zones = new Map<
     number,
     { group: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh; radius: number; kind: string }
@@ -1242,30 +1403,28 @@ export class EntityViews {
       }
     }
 
-    // Projectiles
+    // Projectiles: each look animates itself (spin, sparks, tumbling rings).
     const prevProj = this.prevProjMap;
     const liveProj = new Set<number>();
     for (const proj of next.projectiles) {
       liveProj.add(proj.id);
-      let mesh = this.projectiles.get(proj.id);
-      if (!mesh) {
-        mesh = makeProjectileMesh(proj.abilityId);
-        this.projectiles.set(proj.id, mesh);
-        this.scene.add(mesh);
+      let view = this.projectiles.get(proj.id);
+      if (!view) {
+        view = makeProjectileView(proj.abilityId);
+        this.projectiles.set(proj.id, view);
+        this.scene.add(view.obj);
       }
       const pp = prevProj.get(proj.id) ?? proj;
       const px = lerp(pp.x, proj.x, t);
       const pz = lerp(pp.z, proj.z, t);
-      mesh.position.set(px, groundAt(px, pz) + 1.1, pz);
-      mesh.rotation.y = Math.atan2(proj.dirX, proj.dirZ);
-      if (proj.abilityId === 'huntersChains') mesh.rotation.z = now * 14;
-      else if (proj.abilityId === 'holyShield') mesh.rotation.z = now * 12;
-      else if (proj.abilityId === 'manaSphere') mesh.scale.setScalar(1 + 0.1 * Math.sin(now * 11));
-      else if (proj.abilityId === 'windstorm') mesh.rotation.z = now * 8;
+      view.obj.position.set(px, groundAt(px, pz) + 1.1, pz);
+      view.obj.rotation.y = Math.atan2(proj.dirX, proj.dirZ);
+      view.anim(now);
     }
-    for (const [id, mesh] of this.projectiles) {
+    for (const [id, view] of this.projectiles) {
       if (!liveProj.has(id)) {
-        this.scene.remove(mesh);
+        // Geometries and materials are shared per ability — nothing to dispose.
+        this.scene.remove(view.obj);
         this.projectiles.delete(id);
       }
     }
@@ -1277,15 +1436,17 @@ export class EntityViews {
       liveZones.add(zone.id);
       let view = this.zones.get(zone.id);
       if (!view) {
-        const icy = zone.abilityId === 'snowdrift' || zone.abilityId === 'rimeArrow';
         let color: number;
         let fillColor: number;
-        if (zone.kind === 'trap') {
+        const tinted = ZONE_COLORS[zone.abilityId];
+        if (tinted) {
+          [color, fillColor] = tinted;
+        } else if (zone.kind === 'trap') {
           [color, fillColor] = [0xb8bcc8, 0x6a6f7d];
         } else if (zone.kind === 'pool') {
-          [color, fillColor] = icy ? [0x9fd8ff, 0x4d9be6] : [0xff8c5e, 0xd45a2e];
+          [color, fillColor] = [0xff8c5e, 0xd45a2e];
         } else {
-          [color, fillColor] = icy ? [0x9fd8ff, 0x4d9be6] : [0xffb14d, 0xff8c2e];
+          [color, fillColor] = [0xffb14d, 0xff8c2e];
         }
         const group = new THREE.Group();
         const outline = new THREE.Mesh(
@@ -1315,6 +1476,8 @@ export class EntityViews {
         const progress = 1 - Math.min(1, zone.endsIn / telegraph);
         view.fill.scale.setScalar(Math.max(0.01, progress) * view.radius);
         (view.fill.material as THREE.MeshBasicMaterial).opacity = 0.3 + 0.15 * Math.sin(now * 18);
+        // The rim breathes urgently while the strike winds up.
+        view.outline.scale.setScalar(view.radius * (1 + 0.035 * Math.sin(now * 12)));
       } else {
         (view.fill.material as THREE.MeshBasicMaterial).opacity =
           0.35 + 0.1 * Math.sin(now * 6 + zone.id);
@@ -1352,9 +1515,20 @@ export class EntityViews {
               this.spawnBurst(ev.x, ev.z, 1.4, 0xa8845a, 0.3);
               break;
             case 'fireWhirl':
-            case 'searingAxe':
               this.spawnBurst(ev.x, ev.z, 1.2, 0xff7b2e, 0.3);
               break;
+            case 'searingAxe': {
+              // The lava spews forward: a molten arc wave along the facing.
+              this.spawnBurst(ev.x, ev.z, 1.2, 0xff7b2e, 0.3);
+              const caster = playerById.get(ev.casterId);
+              if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, 0xff8c3a);
+              break;
+            }
+            case 'toxicSmackerel': {
+              const caster = playerById.get(ev.casterId);
+              if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, 0x9fe07a);
+              break;
+            }
             case 'fadeToShadow':
               this.spawnBurst(ev.x, ev.z, 1.4, 0x3a2f55, 0.45, 0.8); // shadow puff at origin
               break;
@@ -1413,9 +1587,15 @@ export class EntityViews {
           if (ev.sourceId !== null) this.spawnFlash(ev.x, ev.z, 0.8, 0xff5b4d, 0.18);
           if (ev.sourceId !== null && ev.amount > 3) sfx.hit(ev);
           break;
-        case 'projectileGone':
-          this.spawnFlash(ev.x, ev.z, 0.5, 0x9fd8ff, 0.14);
+        case 'projectileGone': {
+          // Spend the projectile in its own color, sized to the spell.
+          const color = PROJECTILE_COLORS[ev.abilityId] ?? 0xffe38a;
+          this.spawnFlash(ev.x, ev.z, 0.7, color, 0.16);
+          if (ev.abilityId === 'manaSphere' || ev.abilityId === 'windstorm') {
+            this.spawnBurst(ev.x, ev.z, 1.3, color, 0.25);
+          }
           break;
+        }
         case 'death':
           this.spawnBurst(ev.x, ev.z, 2.2, 0x3a3a4a, 0.6);
           sfx.death(ev.id === selfId, ev);
@@ -1467,9 +1647,10 @@ export class EntityViews {
     }
   }
 
-  private spawnMeleeArc(x: number, z: number, facing: number, combo: number): void {
+  /** A sweeping front arc: the slap's wave, and cone spells in their color. */
+  private spawnMeleeArc(x: number, z: number, facing: number, combo: number, color?: number): void {
     const mat = new THREE.MeshBasicMaterial({
-      color: combo === 3 ? 0xffe38a : 0xe8e6d9,
+      color: color ?? (combo === 3 ? 0xffe38a : 0xe8e6d9),
       transparent: true,
       opacity: 0.75,
       side: THREE.DoubleSide,
@@ -1555,7 +1736,7 @@ export class EntityViews {
     for (const group of this.scrolls.values()) this.scene.remove(group);
     for (const mesh of this.coins.values()) this.scene.remove(mesh);
     for (const mesh of this.items.values()) this.scene.remove(mesh);
-    for (const mesh of this.projectiles.values()) this.scene.remove(mesh);
+    for (const view of this.projectiles.values()) this.scene.remove(view.obj);
     for (const view of this.zones.values()) {
       this.scene.remove(view.group);
       (view.fill.material as THREE.Material).dispose();

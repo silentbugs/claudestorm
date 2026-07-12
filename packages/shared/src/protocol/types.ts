@@ -194,7 +194,7 @@ export type GameEvent =
   | { type: 'cast'; casterId: number; abilityId: AbilityId; x: number; z: number }
   | { type: 'chargeRelease'; casterId: number; abilityId: AbilityId; x: number; z: number; fraction: number }
   | { type: 'detonate'; x: number; z: number; radius: number; abilityId: AbilityId }
-  | { type: 'projectileGone'; id: number; x: number; z: number }
+  | { type: 'projectileGone'; id: number; abilityId: AbilityId; x: number; z: number }
   | { type: 'melee'; casterId: number; x: number; z: number; facing: number; combo: number }
   | { type: 'chestOpened'; playerId: number; x: number; z: number }
   | { type: 'mobDeath'; killerId: number | null; x: number; z: number; elite: boolean }
