@@ -22,6 +22,88 @@ button {
 
 #app canvas {
   display: block;
+  touch-action: none; /* the canvas is the move/look surface on touch devices */
+}
+
+/* ── Touch mode (phones/tablets): tappable HUD + on-screen controls ── */
+.touch-mode #hud {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touch-mode .slot,
+.touch-mode #interact-prompt,
+.touch-mode #minimap,
+.touch-mode #map-overlay {
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#touch-stick {
+  position: fixed;
+  width: 124px;
+  height: 124px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(16, 19, 31, 0.3);
+  pointer-events: none;
+  z-index: 30;
+}
+
+#touch-nub {
+  position: absolute;
+  left: 34px;
+  top: 34px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+#touch-jump {
+  display: none;
+  position: fixed;
+  right: 26px;
+  bottom: 128px;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 2px solid #4da6ff;
+  background: rgba(42, 53, 80, 0.75);
+  color: #e8e6d9;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: bold;
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 30;
+}
+
+#touch-menu {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 14px; /* takes the FPS readout's corner (hidden in touch mode) */
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid #333a55;
+  background: rgba(16, 19, 31, 0.7);
+  color: #e8e6d9;
+  font-size: 20px;
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 30;
+}
+
+.touch-mode #touch-jump,
+.touch-mode #touch-menu {
+  display: block;
+}
+
+.touch-mode #controls-hint,
+.touch-mode #start-hint,
+.touch-mode #fps {
+  display: none;
 }
 
 #hud {

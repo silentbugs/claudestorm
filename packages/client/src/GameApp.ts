@@ -4,16 +4,20 @@ import {
   ARENA,
   INTERACT_RADIUS,
   ITEMS,
+  LAKE_WATERLINE_FACTOR,
   STORM_START_RADIUS,
   buildStormPhases,
   dist,
   groundHeight,
+  lakeSurfaceY,
   lerp,
   type BotDifficulty,
   type Snapshot,
 } from '@claudestorm/shared';
 import { CameraRig } from './game/CameraRig.js';
+import { GamepadManager } from './game/GamepadManager.js';
 import { InputManager } from './game/InputManager.js';
+import { TouchControls } from './game/TouchControls.js';
 import { SnapshotBuffer } from './game/SnapshotBuffer.js';
 import { LocalTransport } from './net/LocalTransport.js';
 import { AssetLibrary } from './render/assets.js';
@@ -53,6 +57,9 @@ export class GameApp {
   private readonly hud: Hud;
   private readonly map = new MapView();
   private readonly input = new InputManager();
+  private readonly gamepads = new GamepadManager();
+  /** Coarse pointer = phone/tablet: touch controls, no pointer lock. */
+  private readonly touchMode = window.matchMedia('(pointer: coarse)').matches;
   private readonly rig = new CameraRig();
   private readonly buffer = new SnapshotBuffer();
   private transport: LocalTransport | null = null;
@@ -149,6 +156,18 @@ export class GameApp {
     });
   }
 
+  private togglePause(): void {
+    if (this.pauseOpen) this.closePause(true);
+    else if (
+      this.inMatch &&
+      !this.deadShown &&
+      this.spectateId === null &&
+      document.getElementById('end-screen')!.classList.contains('hidden')
+    ) {
+      this.openPause();
+    }
+  }
+
   /** The in-game menu: the sim keeps running behind it (battle royale — no pausing the storm). */
   private openPause(): void {
     if (this.pauseOpen) return;
@@ -183,6 +202,7 @@ export class GameApp {
    * pointer-lock banner now shows once per match instead of on every turn.
    */
   private lockPointer(): void {
+    if (this.touchMode) return; // no pointer to lock on a touchscreen
     if (document.pointerLockElement) return;
     try {
       const lock = this.sceneMgr.renderer.domElement.requestPointerLock() as
@@ -273,6 +293,11 @@ export class GameApp {
     void AssetLibrary.load().then((assets) => {
       this.sceneMgr = new SceneManager(this.container, assets);
       this.views = new EntityViews(this.sceneMgr.scene, assets);
+      if (this.touchMode) {
+        new TouchControls(this.input, this.sceneMgr.renderer.domElement, this.map, () =>
+          this.togglePause(),
+        );
+      }
       startBtn.disabled = false;
       startBtn.textContent = 'Start Game';
       requestAnimationFrame((now) => this.frame(now));
@@ -427,6 +452,14 @@ export class GameApp {
     this.rig.applyOrbit(look.odx, look.ody);
     // Keyboard turning (A/D): ~150°/s, close to WoW's default turn rate.
     this.rig.yaw += this.input.keyTurn * 2.6 * dt;
+    // Gamepad: right stick steers like right-mouse; buttons feed the same input state.
+    const padLook = this.gamepads.poll(
+      this.input,
+      this.pauseOpen,
+      () => this.togglePause(),
+      () => this.map.toggleOverlay(),
+    );
+    this.rig.applyLook(padLook.lookX * 850 * dt, padLook.lookY * 620 * dt, 0);
 
     this.buffer.advance(dt);
     const sampled = this.buffer.sample();
@@ -469,7 +502,13 @@ export class GameApp {
         sfx.setListener(x, z, this.rig.camYaw);
         this.map.update(dt, next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
         if (this.spectateId === null) {
-          this.updateAim(x, z);
+          if (this.touchMode || this.gamepads.recentlyActive) {
+            // No cursor to aim with: ground circles land mid-range along the facing.
+            this.aimX = x + Math.sin(this.rig.yaw) * 16;
+            this.aimZ = z + Math.cos(this.rig.yaw) * 16;
+          } else {
+            this.updateAim(x, z);
+          }
           this.updateInteractPrompt(next, x, z, focusNext.gliding);
         } else {
           this.hud.showInteract(null);
@@ -496,10 +535,9 @@ export class GameApp {
     const cam = this.sceneMgr.camera.position;
     let under = false;
     for (const lake of ARENA.lakes) {
-      if (Math.hypot(cam.x - lake.x, cam.z - lake.z) < lake.r * 1.05) {
-        // Matches the renderer's lake disc height.
-        const surface = groundHeight(ARENA, lake.x, lake.z) * 0.45;
-        if (cam.y < surface) {
+      if (Math.hypot(cam.x - lake.x, cam.z - lake.z) < lake.r * LAKE_WATERLINE_FACTOR) {
+        // lakeSurfaceY is the exact height the water disc renders at.
+        if (cam.y < lakeSurfaceY(ARENA, lake)) {
           under = true;
           break;
         }

@@ -32,6 +32,22 @@ Set up your match on the start screen — hero color, opponent count (3–49 bot
 - **Wheel** — zoom
 - After you fall: **Spectate** follows the survivors; **←/→** switch targets
 
+### Gamepad
+
+Plug in (or pair) a controller and it just works — standard mapping, Xbox naming: **left stick** move · **right stick** steer character + camera (WoW right-mouse style) · **RT** slap (hold) · **LT / LB / RB / Y** spells 1–4 · **A** jump · **B** roll · **X** loot/open · **d-pad up** heal · **d-pad down** item · **d-pad left/right** swap spell pairs · **Start** menu · **Select** map. With a pad (or touch), ground-circle spells land mid-range along your facing instead of at the cursor.
+
+### Mobile / touch
+
+On a phone or tablet the game switches to touch controls automatically: touch the **left half** of the screen for a floating move stick, drag on the **right half** to steer, tap the **hotbar** to cast (hold the slap slot to keep swinging), tap the **interact prompt** to loot, the **minimap** for the full map, **JUMP** to jump, and **⚙** for the menu.
+
+To play on your phone, serve the dev build on your network:
+
+```bash
+npm run dev -- --host   # note the "Network:" URL it prints
+```
+
+then open that `http://<your-computers-ip>:5173` URL in the phone's browser (same Wi-Fi). Add it to the home screen for fullscreen play.
+
 ## The match
 
 1. **Drop in** — steer your glide onto an 840×840 island with real geography: mountain ridges of open high ground, lowland basins, lakes deep enough to submerge in, and nine named landmarks that each do their own thing — **Shipwreck Cove**, **Skyreach Spire** (the tallest peak, watchtower on top), **The Stone Ring**, **The Sunken Pit** (loot-rich, but climbing out is a crawl unless you find the ramp), **Elder Grove**, **The Undercroft** ravine, the **Fallen Hamlet** (ruined stone buildings to juke through), **The Barrow**, and **Smugglers' Passage**, an underground trench connecting the hamlet to the barrow so you can cross between them out of sight — with copses, boulder fields, and roaming creatures filling the space between. Landmarks are stamped by per-piece functions, the pool a future procedural island generator will shuffle.

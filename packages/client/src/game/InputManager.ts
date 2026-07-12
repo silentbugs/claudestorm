@@ -1,15 +1,24 @@
 import type { InputCommand } from '@claudestorm/shared';
 
+export type EdgeButton =
+  | 'roll'
+  | 'jump'
+  | 'interact'
+  | 'heal'
+  | 'useItem'
+  | 'swapOffense'
+  | 'swapUtility';
+
 /**
  * WoW-style controls: free cursor for aiming, hold right-mouse to look around,
  * WASD camera-relative movement. Edge presses are accumulated so taps between
  * command sends are never lost; melee (R) is a held state.
+ * Gamepad and touch layers feed the same state through padMoveF/S, padMelee,
+ * pressEdge, and pressSlot.
  */
 export class InputManager {
   private keys = new Set<string>();
-  private pendingEdges = new Set<
-    'roll' | 'jump' | 'interact' | 'heal' | 'useItem' | 'swapOffense' | 'swapUtility'
-  >();
+  private pendingEdges = new Set<EdgeButton>();
   private pendingSlots = new Set<number>();
   private seq = 0;
   private rmbHeld = false;
@@ -26,6 +35,21 @@ export class InputManager {
   orbitDY = 0;
   /** Accumulated wheel delta — consumed by the camera. */
   zoomDelta = 0;
+  /** Analog movement from gamepad or the touch stick (forward / strafe, −1..1). */
+  padMoveF = 0;
+  padMoveS = 0;
+  /** Held melee from gamepad trigger or the touch slap button. */
+  padMelee = false;
+
+  /** Gamepad/touch: queue a one-shot button press. */
+  pressEdge(edge: EdgeButton): void {
+    this.pendingEdges.add(edge);
+  }
+
+  /** Gamepad/touch: queue a spell slot cast (0–3). */
+  pressSlot(slot: number): void {
+    this.pendingSlots.add(slot);
+  }
 
   private readonly onKeyDown = (e: KeyboardEvent) => {
     if (e.repeat) return;
@@ -190,12 +214,14 @@ export class InputManager {
 
   /** Build the next command; consumes accumulated edge presses. */
   buildCommand(camYaw: number, aimX: number, aimZ: number): InputCommand {
-    const fwd = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
+    const fwd =
+      (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0) + this.padMoveF;
     // Q/E strafe; A/D only strafe while right-mouse is steering (otherwise
     // they turn — see keyTurn).
     const strafe =
       ((this.keys.has('KeyE') || (this.rmbHeld && this.keys.has('KeyD'))) ? 1 : 0) -
-      ((this.keys.has('KeyQ') || (this.rmbHeld && this.keys.has('KeyA'))) ? 1 : 0);
+      ((this.keys.has('KeyQ') || (this.rmbHeld && this.keys.has('KeyA'))) ? 1 : 0) +
+      this.padMoveS;
     // forward = (sin yaw, cos yaw); screen-right = (-cos yaw, sin yaw)
     const fx = Math.sin(camYaw);
     const fz = Math.cos(camYaw);
@@ -214,7 +240,7 @@ export class InputManager {
       aimX,
       aimZ,
       buttons: {
-        melee: this.keys.has('KeyR'),
+        melee: this.keys.has('KeyR') || this.padMelee,
         roll: this.pendingEdges.has('roll'),
         jump: this.pendingEdges.has('jump'),
         interact: this.pendingEdges.has('interact'),
