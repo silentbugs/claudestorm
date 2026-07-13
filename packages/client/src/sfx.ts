@@ -105,16 +105,30 @@ class Sfx {
   }
 
   /**
-   * Rushing-wind loops for everyone mid-glide, called every frame with the
-   * current gliders: the sky is loud with parachutes at the drop, each one
-   * fading and panning with distance like every other world sound. Loops for
-   * players who landed (or died) fade out and stop.
+   * Rushing-wind loops for players mid-glide, called every frame with the
+   * current gliders, each fading and panning with distance like every other
+   * world sound. Noise loops stack additively, and a full 50-player drop
+   * launches everyone from the same spot — unmanaged, that's a deafening
+   * wall of hiss. Two guards keep it sane: only the loudest few chutes get a
+   * voice at all, and the ensemble is normalized to a fixed total loudness
+   * (your own chute always keeps its place). Loops for players who landed
+   * (or died) fade out and stop.
    */
   updateGlideWinds(gliders: { id: number; x: number; z: number; isSelf: boolean }[]): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
+    // Loudest chutes first; everyone past the voice cap is dropped outright.
+    const MAX_VOICES = 5;
+    const voiced = gliders
+      .map((g) => ({ ...g, ...(g.isSelf ? { vol: 1, pan: 0 } : this.spatial(g.x, g.z)) }))
+      .filter((g) => g.vol > 0.01)
+      .sort((a, b) => (b.isSelf ? 1 : 0) - (a.isSelf ? 1 : 0) || b.vol - a.vol)
+      .slice(0, MAX_VOICES);
+    // Normalize: alone you get full volume, a crowded sky shares one budget.
+    const total = voiced.reduce((sum, g) => sum + g.vol, 0);
+    const ensemble = Math.min(1, 1.4 / Math.max(1, total));
     const live = new Set<number>();
-    for (const g of gliders) {
+    for (const g of voiced) {
       live.add(g.id);
       let loop = this.glideLoops.get(g.id);
       if (!loop) {
@@ -135,10 +149,9 @@ class Sfx {
         loop = { gain, pan, filter, src };
         this.glideLoops.set(g.id, loop);
       }
-      const target = g.isSelf ? { vol: 1, pan: 0 } : this.spatial(g.x, g.z);
       // Smooth per-frame retargeting; the flutter wobbles the pitch a little.
-      loop.gain.gain.setTargetAtTime(0.22 * target.vol, ctx.currentTime, 0.08);
-      loop.pan.pan.setTargetAtTime(target.pan, ctx.currentTime, 0.08);
+      loop.gain.gain.setTargetAtTime(0.2 * g.vol * ensemble, ctx.currentTime, 0.08);
+      loop.pan.pan.setTargetAtTime(g.pan, ctx.currentTime, 0.08);
       loop.filter.frequency.setTargetAtTime(
         (g.isSelf ? 520 : 480 + (g.id % 5) * 60) + Math.sin(ctx.currentTime * 2.3 + g.id) * 40,
         ctx.currentTime,
