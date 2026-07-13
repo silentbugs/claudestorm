@@ -23,7 +23,13 @@ class Sfx {
   private noiseBuf: AudioBuffer | null = null;
   private readonly glideLoops = new Map<
     number,
-    { gain: GainNode; pan: StereoPannerNode; filter: BiquadFilterNode; src: AudioBufferSourceNode }
+    {
+      gain: GainNode;
+      pan: StereoPannerNode;
+      filter: BiquadFilterNode;
+      src: AudioBufferSourceNode;
+      lfo: OscillatorNode;
+    }
   >();
 
   unlock(): void {
@@ -77,13 +83,22 @@ class Sfx {
     osc.stop(ctx.currentTime + duration);
   }
 
-  /** Two seconds of white noise, looped by every wind sound. */
+  /**
+   * Two seconds of looped brown noise. White noise spreads its energy evenly
+   * and reads as hiss; integrating it pushes everything down the spectrum,
+   * which is the deep airy rumble of wind over fabric.
+   */
   private noiseBuffer(ctx: AudioContext): AudioBuffer {
     if (!this.noiseBuf) {
       const len = ctx.sampleRate * 2;
       this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
       const data = this.noiseBuf.getChannelData(0);
-      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      let last = 0;
+      for (let i = 0; i < len; i++) {
+        const white = Math.random() * 2 - 1;
+        last = (last + 0.02 * white) / 1.02;
+        data[i] = last * 3.5;
+      }
     }
     return this.noiseBuf;
   }
@@ -135,33 +150,44 @@ class Sfx {
         const src = ctx.createBufferSource();
         src.buffer = this.noiseBuffer(ctx);
         src.loop = true;
-        // Band-passed noise reads as wind; a touch of detune per glider keeps
-        // a sky full of parachutes from phasing into one flat hiss.
+        // Low-passed brown noise: a deep canvas rumble, no hiss on top. A
+        // touch of per-glider detune keeps a crowded sky from phasing.
         const filter = ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.value = 480 + (g.id % 5) * 60;
-        filter.Q.value = 0.9;
+        filter.type = 'lowpass';
+        filter.frequency.value = 340 + (g.id % 5) * 35;
+        filter.Q.value = 0.4;
+        // The cloth flap: a slow LFO pumps a flutter stage so the canopy
+        // audibly beats in the wind instead of streaming evenly.
+        const flutter = ctx.createGain();
+        flutter.gain.value = 1;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 3.6 + (g.id % 7) * 0.45; // each chute flaps its own rhythm
+        const lfoDepth = ctx.createGain();
+        lfoDepth.gain.value = 0.4;
+        lfo.connect(lfoDepth).connect(flutter.gain);
+        lfo.start();
         const gain = ctx.createGain();
         gain.gain.value = 0;
         const pan = ctx.createStereoPanner();
-        src.connect(filter).connect(gain).connect(pan).connect(ctx.destination);
+        src.connect(filter).connect(flutter).connect(gain).connect(pan).connect(ctx.destination);
         src.start();
-        loop = { gain, pan, filter, src };
+        loop = { gain, pan, filter, src, lfo };
         this.glideLoops.set(g.id, loop);
       }
-      // Smooth per-frame retargeting; the flutter wobbles the pitch a little.
-      loop.gain.gain.setTargetAtTime(0.2 * g.vol * ensemble, ctx.currentTime, 0.08);
+      // Smooth per-frame retargeting; the slow sweep billows the timbre.
+      loop.gain.gain.setTargetAtTime(0.3 * g.vol * ensemble, ctx.currentTime, 0.08);
       loop.pan.pan.setTargetAtTime(g.pan, ctx.currentTime, 0.08);
       loop.filter.frequency.setTargetAtTime(
-        (g.isSelf ? 520 : 480 + (g.id % 5) * 60) + Math.sin(ctx.currentTime * 2.3 + g.id) * 40,
+        (g.isSelf ? 380 : 340 + (g.id % 5) * 35) + Math.sin(ctx.currentTime * 0.9 + g.id) * 70,
         ctx.currentTime,
-        0.1,
+        0.15,
       );
     }
     for (const [id, loop] of this.glideLoops) {
       if (!live.has(id)) {
         loop.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.12);
         loop.src.stop(ctx.currentTime + 0.6);
+        loop.lfo.stop(ctx.currentTime + 0.6);
         this.glideLoops.delete(id);
       }
     }
