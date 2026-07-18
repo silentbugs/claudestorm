@@ -30,10 +30,11 @@ function shaped(v: number): number {
 
 /**
  * Gamepad layer, polled once per frame. Left stick moves, right stick steers
- * character + camera (WoW right-mouse style). A jump · B roll · X loot ·
- * Y spell 4 · LT/LB/RB spells 1–3 · RT slap (held) · d-pad heal/item/swaps ·
- * Start menu · Select map. Everything funnels into the same InputManager
- * state the keyboard uses, so the sim can't tell the difference.
+ * character + camera (WoW right-mouse style). A jump (or dive, held, while
+ * gliding) · B roll · X loot · Y spell 4 · LT/LB/RB spells 1–3 · RT slap
+ * (held) · d-pad heal/item/swaps · Start menu · Select map. Everything
+ * funnels into the same InputManager state the keyboard uses, so the sim
+ * can't tell the difference.
  */
 export class GamepadManager {
   private prev: boolean[] = [];
@@ -59,6 +60,7 @@ export class GamepadManager {
       input.padMoveF = 0;
       input.padMoveS = 0;
       input.padMelee = false;
+      input.padDive = false;
       return { lookX: 0, lookY: 0 };
     }
     const pressed = (i: number): boolean => pad.buttons[i]?.pressed ?? false;
@@ -71,12 +73,15 @@ export class GamepadManager {
       input.padMoveF = 0;
       input.padMoveS = 0;
       input.padMelee = false;
+      input.padDive = false;
     } else {
       input.padMoveS = shaped(pad.axes[0] ?? 0);
       input.padMoveF = -shaped(pad.axes[1] ?? 0);
       lookX = shaped(pad.axes[2] ?? 0);
       lookY = shaped(pad.axes[3] ?? 0);
       input.padMelee = pressed(BTN.RT);
+      // A double-duties as jump (edge, grounded) and dive (held, gliding).
+      input.padDive = pressed(BTN.A);
       if (edge(BTN.A)) input.pressEdge('jump');
       if (edge(BTN.B)) input.pressEdge('roll');
       if (edge(BTN.X)) input.pressEdge('interact');

@@ -168,6 +168,34 @@ describe('mobs and leveling', () => {
     expect(sim.players.get(1)!.xp).toBeGreaterThanOrEqual(XP_PER_ELITE);
   });
 
+  it('dive-bombing a landing instantly kills an elite underfoot, even mid-drop', () => {
+    const map = { ...FLAT_MAP, elites: [{ x: 0, z: 0 }] };
+    // skipDrop: false keeps the match in the 'drop' phase (not yet 'live')
+    // for as long as someone is still gliding — exactly the initial-spawn case.
+    const sim = makeSim([player(1, 0, 0)], { map, skipDrop: false });
+    const p = sim.players.get(1)!;
+    p.y = 5; // skip the grind: close enough to dive straight into a landing
+    p.gliding = true;
+    sim.applyInput(1, cmd({ buttons: buttons({ dive: true }) }));
+    let snap = sim.step();
+    while (p.gliding) snap = sim.step();
+    expect(snap.events.some((e) => e.type === 'diveImpact')).toBe(true);
+    expect(snap.events.some((e) => e.type === 'mobDeath' && e.elite)).toBe(true);
+    expect(sim.mobs.size).toBe(0);
+  });
+
+  it('a normal (non-diving) landing does not damage a mob underfoot', () => {
+    const map = { ...FLAT_MAP, mobs: [{ x: 0, z: 0 }] };
+    const sim = makeSim([player(1, 0, 0)], { map });
+    const p = sim.players.get(1)!;
+    const mob = [...sim.mobs.values()][0]!;
+    p.y = 2;
+    p.gliding = true;
+    sim.applyInput(1, cmd());
+    while (p.gliding) sim.step();
+    expect(mob.hp).toBe(mob.maxHp);
+  });
+
   it('mobs aggro and bite a player in range', () => {
     const map = { ...FLAT_MAP, mobs: [{ x: 5, z: 0 }] };
     const sim = makeSim([player(1, 0, 0)], { map });

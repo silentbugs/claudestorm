@@ -60,6 +60,7 @@ export function loadout(
 export function buttons(partial: Partial<InputButtons> = {}): InputButtons {
   return {
     melee: false,
+    dive: false,
     roll: false,
     jump: false,
     interact: false,

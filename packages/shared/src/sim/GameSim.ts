@@ -7,6 +7,10 @@ import {
   DEATH_COIN_DROP_FRACTION,
   DEATH_COIN_DROP_MAX,
   DEFAULT_MAX_LEVEL,
+  DIVE_FALL_SPEED,
+  DIVE_IMPACT_DAMAGE,
+  DIVE_IMPACT_RADIUS,
+  DIVE_MOVE_MULT,
   DROP_START_Y,
   DROP_TIMEOUT_SECONDS,
   GLIDE_FALL_SPEED,
@@ -237,6 +241,7 @@ export class GameSim {
         aimX: 0,
         aimZ: 0,
         meleeHeld: false,
+        diveHeld: false,
         pendingButtons: new Set(),
         pendingSlotCasts: new Set(),
         slotCds: [0, 0, 0, 0],
@@ -417,6 +422,7 @@ export class GameSim {
     p.aimX = cmd.aimX;
     p.aimZ = cmd.aimZ;
     p.meleeHeld = cmd.buttons.melee;
+    p.diveHeld = cmd.buttons.dive;
     if (cmd.buttons.roll) p.pendingButtons.add('roll');
     if (cmd.buttons.jump) p.pendingButtons.add('jump');
     if (cmd.buttons.interact) p.pendingButtons.add('interact');
@@ -613,12 +619,15 @@ export class GameSim {
     let vx = 0;
     let vz = 0;
     if (p.gliding) {
-      vx = p.moveX * GLIDE_MOVE_SPEED;
-      vz = p.moveZ * GLIDE_MOVE_SPEED;
-      p.y -= GLIDE_FALL_SPEED * TICK_DT;
+      const diving = p.diveHeld;
+      const moveMult = diving ? DIVE_MOVE_MULT : 1;
+      vx = p.moveX * GLIDE_MOVE_SPEED * moveMult;
+      vz = p.moveZ * GLIDE_MOVE_SPEED * moveMult;
+      p.y -= (diving ? DIVE_FALL_SPEED : GLIDE_FALL_SPEED) * TICK_DT;
       if (p.y <= 0) {
         p.y = 0;
         p.gliding = false;
+        if (diving) this.diveImpact(p);
       }
     } else if (p.pullTicks > 0) {
       const remaining = p.pullTicks;
@@ -1733,8 +1742,20 @@ export class GameSim {
     }
   }
 
+  /** Touching down mid-dive crushes any mob (elites included) underfoot. */
+  private diveImpact(p: PlayerEntity): void {
+    this.events.push({ type: 'diveImpact', playerId: p.id, x: p.x, z: p.z });
+    for (const mob of this.mobs.values()) {
+      if (dist(p.x, p.z, mob.x, mob.z) <= DIVE_IMPACT_RADIUS + mob.radius) {
+        this.damageMob(mob, DIVE_IMPACT_DAMAGE, p.id);
+      }
+    }
+  }
+
   private damageMob(mob: MobEntity, amount: number, sourceId: number | null): void {
-    if (this.phase !== 'live' || mob.hp <= 0) return;
+    // 'drop' included: a dive-bomb landing can crush a mob before the match
+    // is otherwise 'live' (no other damage source can act while gliding).
+    if (this.phase === 'ended' || mob.hp <= 0) return;
     mob.hp -= amount;
     this.events.push({ type: 'hit', targetId: mob.id, sourceId, amount, x: mob.x, z: mob.z });
     // Getting hit always aggros, no matter how far the attacker is — the
@@ -1837,6 +1858,7 @@ export class GameSim {
         plunder: p.plunder,
         shieldHp: p.shieldHp,
         gliding: p.gliding,
+        diving: p.gliding && p.diveHeld,
         rolling: p.rollTicks > 0,
         rooted: p.rootTicks > 0,
         slowed: p.slowTicks > 0,

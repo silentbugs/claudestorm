@@ -647,6 +647,7 @@ class PlayerView {
       alive: boolean;
       slowed: boolean;
       gliding: boolean;
+      diving: boolean;
       rolling: boolean;
       shielded: boolean;
       stealthed: boolean;
@@ -725,17 +726,22 @@ class PlayerView {
       this.bodyPivot.rotation.x = this.rollSpin;
     } else if (p.gliding) {
       this.rollSpin = 0;
-      this.bodyPivot.rotation.x = -0.9;
+      // Nose down harder mid-dive — the plunge reads in the posture alone.
+      this.bodyPivot.rotation.x = p.diving ? -1.3 : -0.9;
     } else {
       this.rollSpin = 0;
       // Lean into the direction of travel; pull up a touch mid-jump.
       this.bodyPivot.rotation.x = airborne ? -0.12 : Math.min(0.2, speed * 0.018);
     }
 
-    // Paraglider: pops open on deploy, then breathes and sways on the wind.
+    // Paraglider: pops open on deploy, folds in for a dive, and re-pops the
+    // instant the dive releases — the same ease-out pop, just retargetable.
     this.chute.visible = p.gliding;
     if (p.gliding) {
-      this.deploy = Math.min(1, this.deploy + dt / 0.4);
+      const target = p.diving ? 0.15 : 1;
+      const rate = p.diving ? 1 / 0.25 : 1 / 0.4; // folding is snappier than opening
+      const delta = target - this.deploy;
+      this.deploy += Math.sign(delta) * Math.min(Math.abs(delta), dt * rate);
       const e = 1 - (1 - this.deploy) * (1 - this.deploy); // ease-out pop
       const breathe = 1 + Math.sin(this.bobPhase * 1.7) * 0.03;
       this.chute.scale.set((0.25 + 0.75 * e) * breathe, 0.25 + 0.75 * e, (0.25 + 0.75 * e) * breathe);
@@ -1346,6 +1352,7 @@ export class EntityViews {
           alive: p.alive,
           slowed: p.slowed,
           gliding: p.gliding,
+          diving: p.diving,
           rolling: p.rolling,
           shielded: p.shieldHp > 0,
           stealthed: p.stealthed,
@@ -1741,6 +1748,11 @@ export class EntityViews {
           if (a && b) this.spawnChainLine(a.x, a.z, b.x, b.z);
           break;
         }
+        case 'diveImpact':
+          this.spawnBurst(ev.x, ev.z, 2.4, 0xc9b48a, 0.5);
+          this.spawnFlash(ev.x, ev.z, 1.6, 0xfff2d0, 0.2);
+          sfx.diveImpact(ev.x, ev.z, ev.playerId === selfId);
+          break;
       }
     }
   }

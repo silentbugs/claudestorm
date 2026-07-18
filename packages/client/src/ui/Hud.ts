@@ -162,6 +162,8 @@ export class Hud {
         'Channel a mend that pulses every second. Taking damage or attacking interrupts it — and the cooldown is spent either way.'),
       row('🤸', 'Barrel Roll', 'Shift', 'Builtin', `${ROLL_DISTANCE}m · ${ROLL_COOLDOWN}s cooldown`,
         'Quick dodge roll. You are immune to projectiles while rolling.'),
+      row('🪂', 'Dive', 'Space', 'Builtin', 'hold to plunge · release to re-pop the canopy',
+        'While gliding, hold to accelerate straight down. Landing on a mob crushes it instantly — even elites.'),
     ].join('');
 
     const abilities = Object.values(ABILITIES)
@@ -192,7 +194,7 @@ export class Hud {
 
     if (snap.phase === 'drop') {
       this.setText(this.stormStatus, '');
-      this.setText(this.centerMsg, 'Steer with WASD — pick a landing spot!');
+      this.setText(this.centerMsg, 'Steer with WASD — pick a landing spot! Hold Space to dive.');
     } else {
       this.setText(this.centerMsg, '');
       if (snap.storm.shrinking) {

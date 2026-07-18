@@ -43,6 +43,17 @@ export const GLIDE_FALL_SPEED = 9;
 export const GLIDE_MOVE_SPEED = 20;
 export const DROP_TIMEOUT_SECONDS = 24;
 
+/**
+ * Diving: hold to plunge, release to re-pop the canopy back to a normal
+ * glide. Landing while still diving crushes anything underfoot.
+ */
+export const DIVE_FALL_SPEED = 42;
+/** Lateral control is much narrower while plunging straight down. */
+export const DIVE_MOVE_MULT = 0.3;
+export const DIVE_IMPACT_RADIUS = 2.4;
+/** Enough to instant-kill a full-health elite in one landing. */
+export const DIVE_IMPACT_DAMAGE = 9999;
+
 /** Wading through a lake slows you down. */
 export const LAKE_WADE_FACTOR = 0.55;
 

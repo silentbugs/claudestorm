@@ -7,7 +7,8 @@ import type { MapView } from '../ui/MapView.js';
  * - drag anywhere on the right half to steer character + camera;
  * - the hotbar becomes tappable (hold the slap slot to keep swinging),
  *   the interact prompt is a button, tapping the minimap opens the map;
- * - dedicated JUMP button and a menu (⚙) button.
+ * - dedicated JUMP button (doubles as hold-to-dive while gliding) and a
+ *   menu (⚙) button.
  * Everything funnels into the same InputManager state the keyboard uses.
  */
 export class TouchControls {
@@ -44,7 +45,16 @@ export class TouchControls {
     jump.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.input.pressEdge('jump');
+      // Same button doubles as dive (held) while gliding — mutually
+      // exclusive sim states, so grounded jump and mid-air dive never clash.
+      this.input.touchDive = true;
     });
+    const stopDive = () => {
+      this.input.touchDive = false;
+    };
+    jump.addEventListener('pointerup', stopDive);
+    jump.addEventListener('pointercancel', stopDive);
+    jump.addEventListener('pointerleave', stopDive);
 
     const menu = document.createElement('button');
     menu.id = 'touch-menu';

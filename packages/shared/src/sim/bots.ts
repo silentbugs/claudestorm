@@ -24,6 +24,7 @@ export interface BotContext {
 function noButtons() {
   return {
     melee: false,
+    dive: false,
     roll: false,
     jump: false,
     interact: false,

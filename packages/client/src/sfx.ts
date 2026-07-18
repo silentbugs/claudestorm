@@ -271,6 +271,13 @@ class Sfx {
     this.tone(freq, 0.06, 'sine', isSelf ? 0.025 : 0.05, freq * 0.55, { x, z });
   }
 
+  /** A dive-bomb landing: a heavy low thump with a short crunch on top. */
+  diveImpact(x: number, z: number, isSelf: boolean): void {
+    const at = { x, z };
+    this.tone(70, 0.28, 'sine', isSelf ? 0.35 : 0.22, 32, at);
+    this.tone(220, 0.09, 'sawtooth', isSelf ? 0.12 : 0.08, 60, at);
+  }
+
   cast(ability: AbilityId, at?: SoundAt): void {
     const t = (freq: number, dur: number, type: OscillatorType, vol: number, freqEnd?: number) =>
       this.tone(freq, dur, type, vol, freqEnd, at);

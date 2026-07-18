@@ -15,6 +15,8 @@ export type EdgeButton =
  * command sends are never lost; melee (R) is a held state.
  * Gamepad and touch layers feed the same state through padMoveF/S, padMelee,
  * pressEdge, and pressSlot.
+ * Space double-duties as jump (edge, grounded) and dive (held, gliding) —
+ * the sim states are mutually exclusive so the same key does both for free.
  */
 export class InputManager {
   private keys = new Set<string>();
@@ -43,9 +45,11 @@ export class InputManager {
   padMoveF = 0;
   padMoveS = 0;
   padMelee = false;
+  padDive = false;
   touchMoveF = 0;
   touchMoveS = 0;
   touchMelee = false;
+  touchDive = false;
 
   /** Gamepad/touch: queue a one-shot button press. */
   pressEdge(edge: EdgeButton): void {
@@ -251,6 +255,7 @@ export class InputManager {
       aimZ,
       buttons: {
         melee: this.keys.has('KeyR') || this.padMelee || this.touchMelee,
+        dive: this.keys.has('Space') || this.padDive || this.touchDive,
         roll: this.pendingEdges.has('roll'),
         jump: this.pendingEdges.has('jump'),
         interact: this.pendingEdges.has('interact'),

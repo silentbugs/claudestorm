@@ -40,6 +40,8 @@ export interface PlayerEntity {
   aimX: number;
   aimZ: number;
   meleeHeld: boolean;
+  /** Held while gliding to plunge; release re-pops the canopy. */
+  diveHeld: boolean;
   pendingButtons: Set<'roll' | 'jump' | 'interact' | 'heal' | 'useItem' | 'swapOffense' | 'swapUtility'>;
   pendingSlotCasts: Set<number>;
 

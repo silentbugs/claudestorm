@@ -36,6 +36,8 @@ export interface EquippedAbility {
 export interface InputButtons {
   /** Held state — sword swings repeat while held. */
   melee: boolean;
+  /** Held state — accelerates the glide's descent; release re-pops the canopy. */
+  dive: boolean;
   /** Edge-triggered presses accumulated since the last command. */
   roll: boolean;
   jump: boolean;
@@ -91,6 +93,8 @@ export interface PlayerSnapshot {
   plunder: number;
   shieldHp: number;
   gliding: boolean;
+  /** Plunging fast during a glide — canopy folded, imminent lethal landing. */
+  diving: boolean;
   rolling: boolean;
   rooted: boolean;
   slowed: boolean;
@@ -208,7 +212,8 @@ export type GameEvent =
   | { type: 'coin'; playerId: number }
   | { type: 'heal'; playerId: number; amount: number; x: number; z: number }
   | { type: 'itemPickup'; playerId: number; itemId: import('../sim/items.js').ItemId }
-  | { type: 'itemUsed'; playerId: number; itemId: import('../sim/items.js').ItemId; x: number; z: number };
+  | { type: 'itemUsed'; playerId: number; itemId: import('../sim/items.js').ItemId; x: number; z: number }
+  | { type: 'diveImpact'; playerId: number; x: number; z: number };
 
 export interface Snapshot {
   tick: number;
