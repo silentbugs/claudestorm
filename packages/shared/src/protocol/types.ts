@@ -83,6 +83,8 @@ export interface PlayerSnapshot {
   maxHp: number;
   alive: boolean;
   level: number;
+  /** Level cap for this match (a match setting, not a fixed constant). */
+  maxLevel: number;
   xp: number;
   /** XP needed for next level; 0 at max level. */
   xpToNext: number;

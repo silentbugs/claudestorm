@@ -275,14 +275,16 @@ button {
 #level-badge {
   min-width: 30px;
   height: 30px;
-  border-radius: 50%;
+  padding: 0 8px;
+  border-radius: 15px;
   background: #2a3550;
   border: 2px solid #f3c53d;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 15px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 #xpbar {

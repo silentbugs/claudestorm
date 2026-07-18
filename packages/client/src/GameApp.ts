@@ -324,6 +324,7 @@ export class GameApp {
     const difficulty = (choiceValue('difficulty-choice') || 'normal') as BotDifficulty;
     const circles = Number(choiceValue('circles-choice')) || 5;
     const paceMult = Number(choiceValue('pace-choice')) || 1;
+    const maxLevel = Number(choiceValue('max-level-choice')) || 10;
     this.tracker = new StatsTracker(SELF_ID, { bots: botCount, difficulty, circles });
     this.lastMatch = null;
     this.transport = new LocalTransport(
@@ -339,6 +340,7 @@ export class GameApp {
         ],
         stormPhases: buildStormPhases(circles, paceMult),
         botDifficulty: difficulty,
+        maxLevel,
       },
       SELF_ID,
     );

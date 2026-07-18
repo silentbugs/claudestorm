@@ -207,7 +207,7 @@ export class Hud {
     if (!self) return;
 
     this.setText(this.plunder, `⛃ ${self.plunder}`);
-    this.setText(this.levelBadge, String(self.level));
+    this.setText(this.levelBadge, `${self.level}/${self.maxLevel}`);
     const xpSpan = self.xp + self.xpToNext;
     this.setStyle(
       this.xpFill,

@@ -49,11 +49,27 @@ export const LAKE_WADE_FACTOR = 0.55;
 /** Climbing out of a pit (moving outward through the rim band, off the ramp). */
 export const PIT_CLIMB_FACTOR = 0.35;
 
-/** Leveling: plunder/XP gathered mid-match. */
-export const XP_THRESHOLDS = [0, 40, 90, 150, 220, 300, 390, 490];
-export const MAX_LEVEL = XP_THRESHOLDS.length;
+/** Leveling: plunder/XP gathered mid-match. Max level is a match setting (default 10, up to 20). */
+export const DEFAULT_MAX_LEVEL = 10;
+export const HARD_MAX_LEVEL = 20;
 export const LEVEL_HP_BONUS = 10;
 export const LEVEL_DAMAGE_BONUS = 0.08;
+
+/**
+ * XP required to reach each level past 1, generated for an arbitrary cap so
+ * the max-level match setting scales cleanly instead of needing a fixed
+ * table. Same progression curve the old fixed table used (each level's gap
+ * grows by 10 over the last), just extended to whatever cap the match picked.
+ */
+export function buildXpThresholds(maxLevel: number): number[] {
+  const thresholds = [0];
+  let cum = 0;
+  for (let i = 1; i < maxLevel; i++) {
+    cum += 40 + (i - 1) * 10;
+    thresholds.push(cum);
+  }
+  return thresholds;
+}
 
 export const XP_PER_COIN = 5;
 export const XP_PER_MOB = 30;

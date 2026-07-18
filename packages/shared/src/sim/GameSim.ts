@@ -1,10 +1,12 @@
 import {
+  buildXpThresholds,
   CHEST_CHANNEL_SECONDS,
   COIN_MAGNET_RADIUS,
   COIN_MAGNET_SPEED,
   COIN_PICKUP_RADIUS,
   DEATH_COIN_DROP_FRACTION,
   DEATH_COIN_DROP_MAX,
+  DEFAULT_MAX_LEVEL,
   DROP_START_Y,
   DROP_TIMEOUT_SECONDS,
   GLIDE_FALL_SPEED,
@@ -24,7 +26,6 @@ import {
   JUMP_VELOCITY,
   LAKE_WADE_FACTOR,
   LEVEL_HP_BONUS,
-  MAX_LEVEL,
   MELEE_ARC_COS,
   MELEE_COMBO_FINISHER_MULT,
   MELEE_COMBO_WINDOW,
@@ -54,7 +55,6 @@ import {
   XP_PER_ELITE,
   XP_PER_MOB,
   XP_PER_PLAYER_KILL,
-  XP_THRESHOLDS,
   levelDamageMult,
 } from '../constants.js';
 import { ARENA, LAKE_WATERLINE_FACTOR, type MapDef } from '../maps/arena.js';
@@ -137,6 +137,8 @@ export interface GameSimOptions {
   stormStartRadius?: number;
   /** How sharp the bots are (aim, trigger discipline, awareness). Default 'normal'. */
   botDifficulty?: BotDifficulty;
+  /** Level cap for the match. Default DEFAULT_MAX_LEVEL (10). */
+  maxLevel?: number;
   /** Test hook: skip the glide drop and start the match live on the ground. */
   skipDrop?: boolean;
 }
@@ -166,6 +168,8 @@ export class GameSim {
 
   private readonly stormPhases: StormPhaseDef[];
   private readonly botDifficulty: BotDifficulty;
+  private readonly maxLevel: number;
+  private readonly xpThresholds: number[];
   private stormPhaseIndex = 0;
   private stormPhaseTime = 0;
   private stormRadius: number;
@@ -187,6 +191,8 @@ export class GameSim {
     this.rng = new Rng(opts.seed);
     this.stormPhases = opts.stormPhases ?? STORM_PHASES;
     this.botDifficulty = opts.botDifficulty ?? 'normal';
+    this.maxLevel = Math.max(2, opts.maxLevel ?? DEFAULT_MAX_LEVEL);
+    this.xpThresholds = buildXpThresholds(this.maxLevel);
     this.stormRadius = opts.stormStartRadius ?? STORM_START_RADIUS;
     this.stormRadiusAtPhaseStart = this.stormRadius;
     this.phase = opts.skipDrop ? 'live' : 'drop';
@@ -1551,7 +1557,7 @@ export class GameSim {
   private awardXp(p: PlayerEntity, amount: number): void {
     if (!p.alive) return;
     p.xp += amount;
-    while (p.level < MAX_LEVEL && p.xp >= XP_THRESHOLDS[p.level]!) {
+    while (p.level < this.maxLevel && p.xp >= this.xpThresholds[p.level]!) {
       p.level++;
       p.maxHp += LEVEL_HP_BONUS;
       p.hp = Math.min(p.maxHp, p.hp + LEVEL_HP_BONUS);
@@ -1801,8 +1807,9 @@ export class GameSim {
         maxHp: p.maxHp,
         alive: p.alive,
         level: p.level,
+        maxLevel: this.maxLevel,
         xp: p.xp,
-        xpToNext: p.level < MAX_LEVEL ? XP_THRESHOLDS[p.level]! - p.xp : 0,
+        xpToNext: p.level < this.maxLevel ? this.xpThresholds[p.level]! - p.xp : 0,
         plunder: p.plunder,
         shieldHp: p.shieldHp,
         gliding: p.gliding,
