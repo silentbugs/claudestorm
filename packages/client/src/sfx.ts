@@ -1,4 +1,7 @@
-import type { AbilityId } from '@claudestorm/shared';
+import { GLIDE_FALL_SPEED, GLIDE_MOVE_SPEED, type AbilityId } from '@claudestorm/shared';
+
+/** Cruise speed used to normalize glide-wind intensity (drop dive + full lateral push). */
+const GLIDE_CRUISE_SPEED = GLIDE_MOVE_SPEED + GLIDE_FALL_SPEED;
 
 /** A world position a sound comes from; omit for UI/self sounds. */
 export interface SoundAt {
@@ -29,6 +32,16 @@ class Sfx {
       filter: BiquadFilterNode;
       src: AudioBufferSourceNode;
       lfo: OscillatorNode;
+      lfoDepth: GainNode;
+      // Motion tracking, smoothed frame to frame so the wind reacts to the
+      // flight itself rather than jittering with raw per-tick deltas.
+      lastX: number;
+      lastZ: number;
+      lastY: number;
+      lastT: number;
+      lastHeading: number;
+      speed: number;
+      turnRate: number;
     }
   >();
 
@@ -128,8 +141,14 @@ class Sfx {
    * voice at all, and the ensemble is normalized to a fixed total loudness
    * (your own chute always keeps its place). Loops for players who landed
    * (or died) fade out and stop.
+   *
+   * On top of that, each loop tracks its own velocity and turn rate frame to
+   * frame: diving/accelerating swells the volume and brightens the filter,
+   * decelerating dulls and quiets it, and a hard direction change kicks the
+   * flutter deeper for a beat — the CoD-Warzone-flight feel of wind actually
+   * responding to how you're flying, not just a static loop.
    */
-  updateGlideWinds(gliders: { id: number; x: number; z: number; isSelf: boolean }[]): void {
+  updateGlideWinds(gliders: { id: number; x: number; z: number; y: number; isSelf: boolean }[]): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
     // Loudest chutes first; everyone past the voice cap is dropped outright.
@@ -142,6 +161,7 @@ class Sfx {
     // Normalize: alone you get full volume, a crowded sky shares one budget.
     const total = voiced.reduce((sum, g) => sum + g.vol, 0);
     const ensemble = Math.min(1, 1.4 / Math.max(1, total));
+    const now = ctx.currentTime;
     const live = new Set<number>();
     for (const g of voiced) {
       live.add(g.id);
@@ -171,23 +191,70 @@ class Sfx {
         const pan = ctx.createStereoPanner();
         src.connect(filter).connect(flutter).connect(gain).connect(pan).connect(ctx.destination);
         src.start();
-        loop = { gain, pan, filter, src, lfo };
+        loop = {
+          gain,
+          pan,
+          filter,
+          src,
+          lfo,
+          lfoDepth,
+          lastX: g.x,
+          lastZ: g.z,
+          lastY: g.y,
+          lastT: now,
+          lastHeading: 0,
+          speed: GLIDE_CRUISE_SPEED * 0.55, // start mid-cruise, not silent
+          turnRate: 0,
+        };
         this.glideLoops.set(g.id, loop);
       }
+      // Instantaneous velocity from the position delta since last frame.
+      const dt = Math.max(0.001, now - loop.lastT);
+      const dx = g.x - loop.lastX;
+      const dz = g.z - loop.lastZ;
+      const dy = g.y - loop.lastY;
+      const lateral = Math.hypot(dx, dz) / dt;
+      const descent = Math.max(0, -dy / dt); // diving adds extra rush, climbing doesn't
+      const rawSpeed = lateral + descent * 1.2;
+      const heading = lateral > 0.05 ? Math.atan2(dx, dz) : loop.lastHeading;
+      let headingDelta = heading - loop.lastHeading;
+      // Wrap to [-pi, pi] so a heading crossing +-pi doesn't register as a spin.
+      headingDelta = Math.atan2(Math.sin(headingDelta), Math.cos(headingDelta));
+      const rawTurn = Math.abs(headingDelta) / dt;
+      // Smooth so the sound follows the flight, not per-tick jitter.
+      loop.speed += (rawSpeed - loop.speed) * Math.min(1, dt * 6);
+      loop.turnRate += (rawTurn - loop.turnRate) * Math.min(1, dt * 8);
+      loop.lastX = g.x;
+      loop.lastZ = g.z;
+      loop.lastY = g.y;
+      loop.lastHeading = heading;
+      loop.lastT = now;
+
+      const norm = Math.min(1.4, loop.speed / GLIDE_CRUISE_SPEED);
+      const turnBoost = Math.min(1, loop.turnRate / 3.5); // hard bank ~= full kick
+
       // Smooth per-frame retargeting; the slow sweep billows the timbre.
-      loop.gain.gain.setTargetAtTime(0.3 * g.vol * ensemble, ctx.currentTime, 0.08);
-      loop.pan.pan.setTargetAtTime(g.pan, ctx.currentTime, 0.08);
+      const intensity = 0.55 + 0.75 * norm;
+      loop.gain.gain.setTargetAtTime(0.3 * g.vol * ensemble * intensity, now, 0.08);
+      loop.pan.pan.setTargetAtTime(g.pan, now, 0.08);
+      const baseCutoff = g.isSelf ? 380 : 340 + (g.id % 5) * 35;
       loop.filter.frequency.setTargetAtTime(
-        (g.isSelf ? 380 : 340 + (g.id % 5) * 35) + Math.sin(ctx.currentTime * 0.9 + g.id) * 70,
-        ctx.currentTime,
-        0.15,
+        baseCutoff +
+          norm * 620 +
+          turnBoost * 260 +
+          Math.sin(now * 0.9 + g.id) * 70,
+        now,
+        0.1,
       );
+      // Flapping speeds up and deepens the faster/harder you're flying.
+      loop.lfo.frequency.setTargetAtTime(3.2 + (g.id % 7) * 0.45 + norm * 4.5, now, 0.12);
+      loop.lfoDepth.gain.setTargetAtTime(0.32 + norm * 0.25 + turnBoost * 0.35, now, 0.1);
     }
     for (const [id, loop] of this.glideLoops) {
       if (!live.has(id)) {
-        loop.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.12);
-        loop.src.stop(ctx.currentTime + 0.6);
-        loop.lfo.stop(ctx.currentTime + 0.6);
+        loop.gain.gain.setTargetAtTime(0, now, 0.12);
+        loop.src.stop(now + 0.6);
+        loop.lfo.stop(now + 0.6);
         this.glideLoops.delete(id);
       }
     }

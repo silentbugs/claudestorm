@@ -505,7 +505,7 @@ export class GameApp {
         sfx.updateGlideWinds(
           next.players
             .filter((p) => p.alive && p.gliding)
-            .map((p) => ({ id: p.id, x: p.x, z: p.z, isSelf: p.id === focusNext.id })),
+            .map((p) => ({ id: p.id, x: p.x, z: p.z, y: p.y, isSelf: p.id === focusNext.id })),
         );
         this.map.update(dt, next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
         if (this.spectateId === null) {
