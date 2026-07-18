@@ -107,6 +107,49 @@ const ABILITY_ELEMENT: Partial<Record<AbilityId, Element>> = {
 function elementOf(abilityId: AbilityId): { core: number; glow: number; deep?: number } {
   return ELEMENT_PALETTE[ABILITY_ELEMENT[abilityId] ?? 'holy'];
 }
+function elementKeyOf(abilityId: AbilityId): Element {
+  return ABILITY_ELEMENT[abilityId] ?? 'holy';
+}
+
+/** Small per-element particle shapes for spawnElementBurst — one geometry per motif, scattered per-instance. */
+const EMBER_GEO = new THREE.TetrahedronGeometry(0.12);
+const SHARD_GEO = new THREE.OctahedronGeometry(0.15, 0);
+const CHUNK_GEO = new THREE.BoxGeometry(0.22, 0.22, 0.22);
+const MOTE_GEO = new THREE.SphereGeometry(0.12, 6, 5);
+const LEAF_GEO = new THREE.PlaneGeometry(0.18, 0.3);
+const BEAM_GEO = new THREE.BoxGeometry(0.05, 0.05, 0.4);
+
+/**
+ * Per-element particle motifs for spawnElementBurst: fire flicks up in warm
+ * embers, frost scatters icy shards, electric snaps out as jittery bolts,
+ * earth pops chunky debris, nature swirls leaves, holy radiates rays, arcane
+ * scatters glowing motes, shadow's motes collapse inward instead of out,
+ * wind streaks low and fast, physical kicks up plain debris.
+ */
+const ELEMENT_PARTICLE_SPEC: Record<
+  Element,
+  {
+    geo: THREE.BufferGeometry;
+    count: number;
+    speed: number;
+    rise: number;
+    spin: number;
+    ttl: number;
+    growth: number;
+    inward?: boolean;
+  }
+> = {
+  fire: { geo: EMBER_GEO, count: 7, speed: 2.2, rise: 1.9, spin: 6, ttl: 0.5, growth: 0.4 },
+  frost: { geo: SHARD_GEO, count: 6, speed: 3.0, rise: -0.5, spin: 4, ttl: 0.45, growth: 0.3 },
+  electric: { geo: BEAM_GEO, count: 6, speed: 6.5, rise: 0, spin: 0, ttl: 0.14, growth: 0.8 },
+  earth: { geo: CHUNK_GEO, count: 6, speed: 2.4, rise: 2.3, spin: 5, ttl: 0.5, growth: 0.25 },
+  nature: { geo: LEAF_GEO, count: 7, speed: 1.7, rise: 1.0, spin: 7, ttl: 0.6, growth: 0.2 },
+  holy: { geo: BEAM_GEO, count: 8, speed: 3.4, rise: 0.5, spin: 0, ttl: 0.3, growth: 1.3 },
+  arcane: { geo: MOTE_GEO, count: 6, speed: 1.6, rise: 0.9, spin: 8, ttl: 0.5, growth: 0.4 },
+  shadow: { geo: MOTE_GEO, count: 6, speed: 2.8, rise: 0.2, spin: 3, ttl: 0.4, growth: -0.7, inward: true },
+  wind: { geo: BEAM_GEO, count: 5, speed: 6.5, rise: 0, spin: 0, ttl: 0.18, growth: 0.5 },
+  physical: { geo: CHUNK_GEO, count: 5, speed: 2.0, rise: 0.6, spin: 5, ttl: 0.35, growth: 0.2 },
+};
 
 const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
   rimeArrow: ELEMENT_PALETTE.frost.glow,
@@ -1003,6 +1046,11 @@ interface Effect {
   baseZ: number;
   /** Upward drift in m/s (heal sparkles, smoke). */
   rise?: number;
+  /** Horizontal drift in m/s — scattering or converging particle bursts. */
+  vx?: number;
+  vz?: number;
+  /** Tumble rate in rad/s, for debris/leaves/motes. */
+  spin?: number;
   /** Set when the effect owns its geometry (chain lines) and must dispose it. */
   ownsGeometry?: boolean;
 }
@@ -1647,7 +1695,7 @@ export class EntityViews {
               this.spawnFlash(ev.x, ev.z, 0.7, ELEMENT_PALETTE.electric.glow, 0.15);
               break;
             default:
-              this.spawnFlash(ev.x, ev.z, 1.1, 0xcfe8ff, 0.16);
+              this.spawnElementBurst(ev.x, ev.z, elementKeyOf(ev.abilityId));
           }
           sfx.cast(ev.abilityId, ev);
           break;
@@ -1670,18 +1718,22 @@ export class EntityViews {
             // Cosmic blast: a bright column stabbing down from the sky.
             this.spawnColumn(ev.x, ev.z, 0.5, 16, ELEMENT_PALETTE.arcane.glow, 0.25);
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.arcane.core, 0.35);
+            this.spawnElementBurst(ev.x, ev.z, 'arcane', ev.radius * 0.5);
           } else if (ev.abilityId === 'snowdrift') {
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.frost.glow, 0.4);
+            this.spawnElementBurst(ev.x, ev.z, 'frost', ev.radius * 0.5);
           } else if (ev.abilityId === 'earthbreaker') {
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.earth.core, 0.4);
             this.spawnFlash(ev.x, ev.z, ev.radius * 0.5, ELEMENT_PALETTE.earth.glow, 0.25);
+            this.spawnElementBurst(ev.x, ev.z, 'earth', ev.radius * 0.6);
           } else if (ev.abilityId === 'quakingLeap') {
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.earth.glow, 0.35);
+            this.spawnElementBurst(ev.x, ev.z, 'earth', ev.radius * 0.5);
           } else if (ev.abilityId === 'steelTraps') {
             this.spawnFlash(ev.x, ev.z, 1.0, ELEMENT_PALETTE.physical.glow, 0.2);
           } else {
-            this.spawnBurst(ev.x, ev.z, ev.radius, 0xffe38a, 0.35);
-            this.spawnFlash(ev.x, ev.z, ev.radius * 0.6, 0xfff6d9, 0.25);
+            this.spawnElementBurst(ev.x, ev.z, elementKeyOf(ev.abilityId), ev.radius * 0.5);
+            this.spawnFlash(ev.x, ev.z, ev.radius * 0.6, elementOf(ev.abilityId).glow, 0.25);
           }
           sfx.detonate(ev);
           break;
@@ -1690,9 +1742,12 @@ export class EntityViews {
           if (ev.sourceId !== null && ev.amount > 3) sfx.hit(ev);
           break;
         case 'projectileGone': {
-          // Spend the projectile in its own color, sized to the spell.
-          const color = PROJECTILE_COLORS[ev.abilityId] ?? 0xffe38a;
+          // Spend the projectile in its own color, sized to the spell, plus
+          // a small element-flavored scatter so impacts read distinctly.
+          const element = elementKeyOf(ev.abilityId);
+          const color = PROJECTILE_COLORS[ev.abilityId] ?? ELEMENT_PALETTE[element].core;
           this.spawnFlash(ev.x, ev.z, 0.7, color, 0.16);
+          this.spawnElementBurst(ev.x, ev.z, element, 0.6);
           if (ev.abilityId === 'stormArchon') {
             this.spawnFlash(ev.x, ev.z, 0.4, ELEMENT_PALETTE.electric.glow, 0.1); // yellow spark on impact
           }
@@ -1786,6 +1841,49 @@ export class EntityViews {
     this.effects.push({ obj: line, mat, age: 0, ttl: 0.25, growth: 0, baseX: 1, baseY: 1, baseZ: 1, ownsGeometry: true });
   }
 
+  /**
+   * A scatter of small particles shaped and moved after the element's own
+   * motif (see ELEMENT_PARTICLE_SPEC) rather than one uniform blob — this is
+   * what makes fire read as fire and shadow read as shadow beyond just hue.
+   */
+  private spawnElementBurst(x: number, z: number, element: Element, size = 1): void {
+    const palette = ELEMENT_PALETTE[element];
+    const spec = ELEMENT_PARTICLE_SPEC[element];
+    const y = groundAt(x, z) + 0.4;
+    const startRadius = spec.inward ? 1.4 * size : 0;
+    for (let i = 0; i < spec.count; i++) {
+      const angle = (i / spec.count) * Math.PI * 2 + Math.random() * 0.5;
+      const dirX = Math.sin(angle);
+      const dirZ = Math.cos(angle);
+      const mat = new THREE.MeshBasicMaterial({
+        color: i % 2 === 0 ? palette.core : palette.glow,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(spec.geo, mat);
+      mesh.position.set(x + dirX * startRadius, y, z + dirZ * startRadius);
+      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      this.scene.add(mesh);
+      const jitter = 0.7 + Math.random() * 0.6;
+      const sign = spec.inward ? -1 : 1;
+      this.effects.push({
+        obj: mesh,
+        mat,
+        age: 0,
+        ttl: spec.ttl * (0.85 + Math.random() * 0.3),
+        growth: spec.growth,
+        baseX: size,
+        baseY: size,
+        baseZ: size,
+        vx: dirX * spec.speed * jitter * sign,
+        vz: dirZ * spec.speed * jitter * sign,
+        rise: spec.rise * size,
+        spin: spec.spin * (Math.random() < 0.5 ? 1 : -1),
+      });
+    }
+  }
+
   private spawnFlash(x: number, z: number, size: number, color: number, ttl: number): void {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
     const mesh = new THREE.Mesh(FLASH_GEO, mat);
@@ -1825,9 +1923,15 @@ export class EntityViews {
         this.disposeEffect(fx);
         continue;
       }
-      const s = 1 + fx.growth * t;
+      const s = Math.max(0.001, 1 + fx.growth * t);
       fx.obj.scale.set(fx.baseX * s, fx.baseY * s, fx.baseZ * s);
       if (fx.rise) fx.obj.position.y += fx.rise * dt;
+      if (fx.vx) fx.obj.position.x += fx.vx * dt;
+      if (fx.vz) fx.obj.position.z += fx.vz * dt;
+      if (fx.spin) {
+        fx.obj.rotation.x += fx.spin * dt;
+        fx.obj.rotation.y += fx.spin * 0.7 * dt;
+      }
       fx.mat.opacity = (1 - t) * 0.85;
       survivors.push(fx);
     }
