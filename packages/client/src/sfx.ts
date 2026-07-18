@@ -260,6 +260,17 @@ class Sfx {
     }
   }
 
+  /**
+   * A soft, low footfall tick, timed to the stride by the caller. Directional
+   * and distance-faded like any other world sound; your own steps use the
+   * same math but land at ~zero distance from the listener, so they stay
+   * quiet and centered rather than panning around underfoot.
+   */
+  footstep(x: number, z: number, isSelf: boolean, alt: boolean): void {
+    const freq = alt ? 92 : 104; // alternating feet, a hair apart in pitch
+    this.tone(freq, 0.06, 'sine', isSelf ? 0.025 : 0.05, freq * 0.55, { x, z });
+  }
+
   cast(ability: AbilityId, at?: SoundAt): void {
     const t = (freq: number, dur: number, type: OscillatorType, vol: number, freqEnd?: number) =>
       this.tone(freq, dur, type, vol, freqEnd, at);

@@ -4,6 +4,7 @@ import {
   ABILITIES,
   ARENA,
   ITEMS,
+  PLAYER_SPEED,
   groundHeight,
   lerp,
   type AbilityId,
@@ -331,6 +332,8 @@ class PlayerView {
   private deploy = 0;
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
+  private stepTimer = 0;
+  private stepAlt = false;
   private readonly base: number;
   private readonly glowBase = new THREE.Color();
 
@@ -700,6 +703,19 @@ class PlayerView {
     this.lastZ = p.z;
     const speed = dt > 0 ? moved / dt : 0;
     const airborne = p.y > 0.08 && !p.gliding;
+    // Footsteps: a soft directional tick timed to the stride, silent while
+    // airborne, gliding, or rolling — those are tumbles, not a walking gait.
+    if (!airborne && !p.gliding && !p.rolling && speed > 0.6) {
+      this.stepTimer -= dt;
+      if (this.stepTimer <= 0) {
+        this.stepAlt = !this.stepAlt;
+        sfx.footstep(p.x, p.z, isSelf, this.stepAlt);
+        // Faster stride ticks faster; clamp so a sprint or crawl still reads.
+        this.stepTimer = Math.max(0.24, Math.min(0.7, (0.5 * PLAYER_SPEED) / speed));
+      }
+    } else {
+      this.stepTimer = 0; // next step lands immediately once moving resumes
+    }
     this.bobPhase += dt * (2.4 + Math.min(9, speed * 1.1));
     this.bodyPivot.position.y = 1.0 + Math.sin(this.bobPhase) * (speed > 0.6 ? 0.06 : 0.035);
     this.animateBody(this.bobPhase, speed, dt);
