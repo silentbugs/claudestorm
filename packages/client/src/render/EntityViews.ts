@@ -4,6 +4,7 @@ import {
   ABILITIES,
   ARENA,
   ITEMS,
+  MOB_MAX_LEVEL,
   PLAYER_SPEED,
   groundHeight,
   lerp,
@@ -837,12 +838,14 @@ class MobView {
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
 
-  constructor(elite: boolean, seed: number) {
+  constructor(elite: boolean, seed: number, level: number) {
     this.elite = elite;
     const beast = new THREE.Group();
     // Slight per-critter hue/lightness variation so packs don't look cloned.
     const hide = new THREE.Color(elite ? ELITE_COLOR : MOB_COLOR);
     hide.offsetHSL(((seed % 5) - 2) * 0.015, 0, ((seed % 3) - 1) * 0.04);
+    // Higher-level mobs read as battle-worn: darker, more saturated hide.
+    if (level > 1) hide.offsetHSL(0.02 * (level - 1), 0.08 * (level - 1), -0.05 * (level - 1));
     const hideMat = new THREE.MeshStandardMaterial({ color: hide, roughness: 0.85 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x6e5430, roughness: 0.8 });
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.55, 4, 10), hideMat);
@@ -920,6 +923,18 @@ class MobView {
     this.hpFill = bar.fill;
     this.hpGroup.position.y = elite ? 2.1 : 1.4;
     this.group.add(this.hpGroup);
+
+    // A tier strip above the bar reads the danger level at a glance without
+    // cluttering the beast with a floating number: amber at 2, red at 3.
+    if (level > 1) {
+      const tierColor = level >= MOB_MAX_LEVEL ? 0xe64d3a : 0xe6a83a;
+      const tier = new THREE.Mesh(
+        new THREE.PlaneGeometry(this.barWidth, 0.06),
+        new THREE.MeshBasicMaterial({ color: tierColor }),
+      );
+      tier.position.y = 0.13;
+      this.hpGroup.add(tier);
+    }
   }
 
   update(x: number, z: number, facing: number, hpFrac: number, camera: THREE.Camera, dt: number): void {
@@ -1354,7 +1369,7 @@ export class EntityViews {
       liveMobs.add(m.id);
       let view = this.mobs.get(m.id);
       if (!view) {
-        view = new MobView(m.elite, m.id);
+        view = new MobView(m.elite, m.id, m.level);
         this.mobs.set(m.id, view);
         this.scene.add(view.group);
       }

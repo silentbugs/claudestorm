@@ -124,6 +124,8 @@ export interface PlayerEntity {
 export interface MobEntity {
   id: number;
   elite: boolean;
+  /** Tougher near the match's endgame (rolled final storm center) than on the periphery. */
+  level: number;
   x: number;
   z: number;
   facing: number;

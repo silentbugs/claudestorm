@@ -38,6 +38,10 @@ import {
   MOB_BITE_RANGE,
   MOB_HP,
   MOB_LEASH_RADIUS,
+  MOB_LEVEL_DAMAGE_BONUS,
+  MOB_LEVEL_HP_BONUS,
+  MOB_LEVEL_XP_BONUS,
+  MOB_MAX_LEVEL,
   MOB_RADIUS,
   MOB_SPEED,
   PIT_CLIMB_FACTOR,
@@ -56,6 +60,7 @@ import {
   XP_PER_MOB,
   XP_PER_PLAYER_KILL,
   levelDamageMult,
+  mobLevelMult,
 } from '../constants.js';
 import { ARENA, LAKE_WATERLINE_FACTOR, type MapDef } from '../maps/arena.js';
 import { Rng } from '../math/rng.js';
@@ -327,22 +332,38 @@ export class GameSim {
     this.items.set(id, { id, x, z, itemId });
   }
 
+  /**
+   * Tougher near the match's pre-rolled final storm center: the endgame
+   * zone stays dangerous instead of every mob being equally trivial.
+   */
+  private mobLevelAt(x: number, z: number): number {
+    const d = dist(x, z, this.stormFinalX, this.stormFinalZ);
+    if (d < this.map.size * 0.15) return MOB_MAX_LEVEL;
+    if (d < this.map.size * 0.35) return Math.max(1, MOB_MAX_LEVEL - 1);
+    return 1;
+  }
+
   private spawnMob(x: number, z: number, elite: boolean): void {
     const id = this.nextEntityId++;
+    const level = this.mobLevelAt(x, z);
+    const hpMult = mobLevelMult(level, MOB_LEVEL_HP_BONUS);
+    const dmgMult = mobLevelMult(level, MOB_LEVEL_DAMAGE_BONUS);
+    const baseHp = (elite ? ELITE_HP : MOB_HP) * hpMult;
     this.mobs.set(id, {
       id,
       elite,
+      level,
       x,
       z,
       facing: 0,
-      hp: elite ? ELITE_HP : MOB_HP,
-      maxHp: elite ? ELITE_HP : MOB_HP,
+      hp: baseHp,
+      maxHp: baseHp,
       radius: elite ? ELITE_RADIUS : MOB_RADIUS,
       speed: elite ? ELITE_SPEED : MOB_SPEED,
       aggroRadius: elite ? ELITE_AGGRO_RADIUS : MOB_AGGRO_RADIUS,
       leashRadius: elite ? ELITE_LEASH_RADIUS : MOB_LEASH_RADIUS,
       biteRange: elite ? ELITE_BITE_RANGE : MOB_BITE_RANGE,
-      biteDamage: elite ? ELITE_BITE_DAMAGE : MOB_BITE_DAMAGE,
+      biteDamage: (elite ? ELITE_BITE_DAMAGE : MOB_BITE_DAMAGE) * dmgMult,
       homeX: x,
       homeZ: z,
       targetId: null,
@@ -1742,7 +1763,10 @@ export class GameSim {
         this.spawnScroll(mob.x, mob.z, rollAbility(this.rng), rollRarity(this.rng));
       }
       const killer = sourceId !== null ? this.players.get(sourceId) : undefined;
-      if (killer && killer.alive) this.awardXp(killer, mob.elite ? XP_PER_ELITE : XP_PER_MOB);
+      if (killer && killer.alive) {
+        const base = mob.elite ? XP_PER_ELITE : XP_PER_MOB;
+        this.awardXp(killer, Math.round(base * mobLevelMult(mob.level, MOB_LEVEL_XP_BONUS)));
+      }
     }
   }
 
@@ -1845,6 +1869,7 @@ export class GameSim {
       mobs: [...this.mobs.values()].map((m) => ({
         id: m.id,
         elite: m.elite,
+        level: m.level,
         x: m.x,
         z: m.z,
         facing: m.facing,

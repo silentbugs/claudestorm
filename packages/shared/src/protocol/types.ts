@@ -122,6 +122,7 @@ export interface PlayerSnapshot {
 export interface MobSnapshot {
   id: number;
   elite: boolean;
+  level: number;
   x: number;
   z: number;
   facing: number;

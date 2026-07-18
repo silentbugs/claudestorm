@@ -4,9 +4,11 @@ import {
   ELITE_HP,
   PLAYER_BASE_HP,
   LEVEL_HP_BONUS,
+  MOB_LEVEL_HP_BONUS,
   TICK_RATE,
   XP_PER_CHEST,
   XP_PER_ELITE,
+  mobLevelMult,
 } from '../src/constants.js';
 import { ARENA } from '../src/maps/arena.js';
 import { buttons, cmd, loadout, makeSim, player, FLAT_MAP } from './helpers.js';
@@ -154,7 +156,7 @@ describe('mobs and leveling', () => {
     const sim = makeSim([player(1, 0, 0, { loadout: full })], { map });
     const elite = [...sim.mobs.values()][0]!;
     expect(elite.elite).toBe(true);
-    expect(elite.maxHp).toBe(ELITE_HP);
+    expect(elite.maxHp).toBe(ELITE_HP * mobLevelMult(elite.level, MOB_LEVEL_HP_BONUS));
     elite.hp = 1; // skip the grind; the drop is what's under test
     sim.applyInput(1, cmd({ yaw: Math.PI / 2, buttons: HOLD_MELEE }));
     let snap = sim.step();

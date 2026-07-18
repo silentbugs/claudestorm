@@ -107,6 +107,20 @@ export const ELITE_BITE_DAMAGE = 11;
 export const ELITE_RADIUS = 0.9;
 export const XP_PER_ELITE = 80;
 
+/**
+ * Mob levels (1-3): tougher the closer they spawn to the match's pre-rolled
+ * final storm center, so the endgame zone is meaningfully more dangerous
+ * than the periphery — not a fixed per-mob difficulty.
+ */
+export const MOB_MAX_LEVEL = 3;
+export const MOB_LEVEL_HP_BONUS = 0.35; // +35% HP per level above 1
+export const MOB_LEVEL_DAMAGE_BONUS = 0.25; // +25% bite damage per level above 1
+export const MOB_LEVEL_XP_BONUS = 0.4; // +40% XP reward per level above 1
+
 export function levelDamageMult(level: number): number {
   return 1 + LEVEL_DAMAGE_BONUS * (level - 1);
+}
+
+export function mobLevelMult(level: number, perLevelBonus: number): number {
+  return 1 + perLevelBonus * (level - 1);
 }
