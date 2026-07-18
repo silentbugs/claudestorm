@@ -59,24 +59,71 @@ function glyphTexture(glyph: string): THREE.Texture {
   return tex;
 }
 
+/**
+ * Every spell reads by its element: electrical bolts are yellow/blue, earth
+ * is brown, fire is orange, frost is icy blue, and so on. `core` is the
+ * saturated body color (projectile cores, bursts), `glow` the paler
+ * accent/flash tone, and `deep` an optional darker fill for zone interiors.
+ */
+type Element = 'fire' | 'frost' | 'electric' | 'earth' | 'nature' | 'holy' | 'arcane' | 'shadow' | 'wind' | 'physical';
+const ELEMENT_PALETTE: Record<Element, { core: number; glow: number; deep?: number }> = {
+  fire: { core: 0xff6a2e, glow: 0xffab6a, deep: 0xd45a2e },
+  frost: { core: 0x4d9be6, glow: 0x9fd8ff },
+  electric: { core: 0x4da6ff, glow: 0xfff066 },
+  earth: { core: 0xa8703a, glow: 0xd9a86a },
+  nature: { core: 0x5da83a, glow: 0x9fe07a },
+  holy: { core: 0xffcf5c, glow: 0xffe9a8 },
+  arcane: { core: 0x8a5aff, glow: 0xc9a8ff },
+  shadow: { core: 0x3a2f55, glow: 0x6a4a9c },
+  wind: { core: 0x9fe0c8, glow: 0xcfe8dd },
+  physical: { core: 0xb8bcc8, glow: 0xd8d8e8 },
+};
+/** Which element each spell reads as, for coloring projectiles/zones/VFX. */
+const ABILITY_ELEMENT: Partial<Record<AbilityId, Element>> = {
+  rimeArrow: 'frost',
+  fireWhirl: 'fire',
+  earthbreaker: 'earth',
+  holyShield: 'holy',
+  stormArchon: 'electric',
+  manaSphere: 'arcane',
+  searingAxe: 'fire',
+  slicingWinds: 'wind',
+  starBomb: 'arcane',
+  celestialBarrage: 'arcane',
+  toxicSmackerel: 'nature',
+  quakingLeap: 'earth',
+  huntersChains: 'physical',
+  steelTraps: 'physical',
+  windstorm: 'wind',
+  explosiveCaltrops: 'fire',
+  snowdrift: 'frost',
+  lightningBulwark: 'electric',
+  fadeToShadow: 'shadow',
+  repel: 'arcane',
+  faeform: 'nature',
+};
+function elementOf(abilityId: AbilityId): { core: number; glow: number; deep?: number } {
+  return ELEMENT_PALETTE[ABILITY_ELEMENT[abilityId] ?? 'holy'];
+}
+
 const PROJECTILE_COLORS: Partial<Record<AbilityId, number>> = {
-  rimeArrow: 0x7fd4ff,
-  holyShield: 0xffe9a8,
-  stormArchon: 0x8fd0ff,
-  manaSphere: 0x7a8cff,
-  huntersChains: 0xd8d8e8,
-  windstorm: 0xcfe8dd,
-  celestialBarrage: 0xd8c8ff,
+  rimeArrow: ELEMENT_PALETTE.frost.glow,
+  holyShield: ELEMENT_PALETTE.holy.glow,
+  stormArchon: ELEMENT_PALETTE.electric.core,
+  manaSphere: ELEMENT_PALETTE.arcane.core,
+  huntersChains: ELEMENT_PALETTE.physical.glow,
+  windstorm: ELEMENT_PALETTE.wind.glow,
+  celestialBarrage: ELEMENT_PALETTE.arcane.glow,
 };
 
 /** Ground circles tinted per spell [outline, fill]; unlisted fall back by kind. */
 const ZONE_COLORS: Partial<Record<AbilityId, [number, number]>> = {
-  snowdrift: [0x9fd8ff, 0x4d9be6],
-  rimeArrow: [0x9fd8ff, 0x4d9be6],
-  starBomb: [0xc9a8ff, 0x8a5aff],
-  earthbreaker: [0xd9a86a, 0xa8703a],
-  toxicSmackerel: [0x9fe07a, 0x5da83a],
-  explosiveCaltrops: [0xffab6a, 0xd45a2e],
+  snowdrift: [ELEMENT_PALETTE.frost.glow, ELEMENT_PALETTE.frost.core],
+  rimeArrow: [ELEMENT_PALETTE.frost.glow, ELEMENT_PALETTE.frost.core],
+  starBomb: [ELEMENT_PALETTE.arcane.glow, ELEMENT_PALETTE.arcane.core],
+  earthbreaker: [ELEMENT_PALETTE.earth.glow, ELEMENT_PALETTE.earth.core],
+  toxicSmackerel: [ELEMENT_PALETTE.nature.glow, ELEMENT_PALETTE.nature.core],
+  explosiveCaltrops: [ELEMENT_PALETTE.fire.glow, ELEMENT_PALETTE.fire.deep!],
 };
 
 /*
@@ -638,7 +685,8 @@ class PlayerView {
     this.group.rotation.y = p.facing;
     this.shield.visible = p.shielded || p.immune;
     (this.shield.material as THREE.MeshBasicMaterial).color.setHex(
-      p.immune ? 0xcfe0ff : 0x9fc4e8,
+      // Repel's arcane ward vs. Lightning Bulwark's electric charge.
+      p.immune ? ELEMENT_PALETTE.arcane.glow : ELEMENT_PALETTE.electric.core,
     );
     this.aura.visible = p.auraActive;
     if (p.auraActive) {
@@ -946,6 +994,14 @@ const TAIL_GEO = new THREE.ConeGeometry(0.22, 1.3, 8, 1, true);
 TAIL_GEO.rotateX(-Math.PI / 2); // apex points backward (−z)
 TAIL_GEO.translate(0, 0, -0.55);
 
+/** Storm Archon's sparks snap yellow off its blue core — the electric two-tone. */
+const ELECTRIC_SPARK_MAT = new THREE.MeshBasicMaterial({
+  color: ELEMENT_PALETTE.electric.glow,
+  transparent: true,
+  opacity: 0.95,
+  depthWrite: false,
+});
+
 /** Cached materials per ability: lit core, additive tail, unlit glow bits. */
 const projMats = new Map<
   AbilityId,
@@ -1033,7 +1089,7 @@ function makeProjectileView(abilityId: AbilityId): ProjView {
       const orb = new THREE.Mesh(ARCHON_GEO, core);
       group.add(orb);
       const bolts = [0, 1].map((i) => {
-        const b = new THREE.Mesh(BOLT_SEG_GEO, glow);
+        const b = new THREE.Mesh(BOLT_SEG_GEO, ELECTRIC_SPARK_MAT);
         b.scale.setScalar(1.4 - i * 0.4);
         group.add(b);
         return b;
@@ -1503,46 +1559,54 @@ export class EntityViews {
           this.players.get(ev.casterId)?.triggerCast();
           switch (ev.abilityId) {
             case 'quakingLeap':
-            case 'slicingWinds':
             case 'explosiveCaltrops':
-              this.spawnBurst(ev.x, ev.z, 1.6, 0xd8cfb8, 0.35); // dust kick at takeoff
+              this.spawnBurst(ev.x, ev.z, 1.6, elementOf(ev.abilityId).glow, 0.35); // dust kick at takeoff
+              break;
+            case 'slicingWinds':
+              this.spawnBurst(ev.x, ev.z, 1.6, ELEMENT_PALETTE.wind.glow, 0.35); // gust kicked up at the lunge
               break;
             case 'rimeArrow':
             case 'snowdrift':
-              this.spawnFlash(ev.x, ev.z, 0.9, 0x9fd8ff, 0.16);
+              this.spawnFlash(ev.x, ev.z, 0.9, ELEMENT_PALETTE.frost.glow, 0.16);
               break;
             case 'earthbreaker':
-              this.spawnBurst(ev.x, ev.z, 1.4, 0xa8845a, 0.3);
+              this.spawnBurst(ev.x, ev.z, 1.4, ELEMENT_PALETTE.earth.core, 0.3);
               break;
             case 'fireWhirl':
-              this.spawnBurst(ev.x, ev.z, 1.2, 0xff7b2e, 0.3);
+              this.spawnBurst(ev.x, ev.z, 1.2, ELEMENT_PALETTE.fire.core, 0.3);
               break;
             case 'searingAxe': {
               // The lava spews forward: a molten arc wave along the facing.
-              this.spawnBurst(ev.x, ev.z, 1.2, 0xff7b2e, 0.3);
+              this.spawnBurst(ev.x, ev.z, 1.2, ELEMENT_PALETTE.fire.core, 0.3);
               const caster = playerById.get(ev.casterId);
-              if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, 0xff8c3a);
+              if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, ELEMENT_PALETTE.fire.glow);
               break;
             }
             case 'toxicSmackerel': {
               const caster = playerById.get(ev.casterId);
-              if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, 0x9fe07a);
+              if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, ELEMENT_PALETTE.nature.glow);
               break;
             }
             case 'fadeToShadow':
-              this.spawnBurst(ev.x, ev.z, 1.4, 0x3a2f55, 0.45, 0.8); // shadow puff at origin
+              this.spawnBurst(ev.x, ev.z, 1.4, ELEMENT_PALETTE.shadow.core, 0.45, 0.8); // shadow puff at origin
               break;
             case 'repel':
-              this.spawnFlash(ev.x, ev.z, 1.5, 0x9fb8ff, 0.3);
+              this.spawnFlash(ev.x, ev.z, 1.5, ELEMENT_PALETTE.arcane.glow, 0.3); // arcane ward shimmers up
               break;
             case 'faeform':
-              this.spawnBurst(ev.x, ev.z, 1.4, 0xe98fd8, 0.4, 1.0);
+              this.spawnBurst(ev.x, ev.z, 1.4, 0xe98fd8, 0.4, 1.0); // fae's own pink, not plain nature-green
               break;
             case 'celestialBarrage':
-              this.spawnFlash(ev.x, ev.z, 1.4, 0xd8c8ff, 0.3); // starlight gathers
+              this.spawnFlash(ev.x, ev.z, 1.4, ELEMENT_PALETTE.arcane.glow, 0.3); // starlight gathers
+              break;
+            case 'stormArchon':
+              // Yellow spark snapping off the blue charge — the electric two-tone.
+              this.spawnFlash(ev.x, ev.z, 1.1, ELEMENT_PALETTE.electric.core, 0.16);
+              this.spawnFlash(ev.x, ev.z, 0.6, ELEMENT_PALETTE.electric.glow, 0.12);
               break;
             case 'lightningBulwark':
-              this.spawnFlash(ev.x, ev.z, 1.3, 0xc9e2ff, 0.3);
+              this.spawnFlash(ev.x, ev.z, 1.3, ELEMENT_PALETTE.electric.core, 0.3);
+              this.spawnFlash(ev.x, ev.z, 0.7, ELEMENT_PALETTE.electric.glow, 0.15);
               break;
             default:
               this.spawnFlash(ev.x, ev.z, 1.1, 0xcfe8ff, 0.16);
@@ -1550,8 +1614,8 @@ export class EntityViews {
           sfx.cast(ev.abilityId, ev);
           break;
         case 'chargeRelease': {
-          // Bigger flash the longer the charge was held.
-          const color = ev.abilityId === 'celestialBarrage' ? 0xd8c8ff : 0xcfe8dd;
+          // Bigger flash the longer the charge was held, tinted by element.
+          const color = elementOf(ev.abilityId).glow;
           this.spawnBurst(ev.x, ev.z, 1.2 + ev.fraction * 1.6, color, 0.3);
           this.spawnFlash(ev.x, ev.z, 1.0 + ev.fraction, color, 0.2);
           sfx.cast(ev.abilityId, ev);
@@ -1566,17 +1630,17 @@ export class EntityViews {
         case 'detonate':
           if (ev.abilityId === 'starBomb') {
             // Cosmic blast: a bright column stabbing down from the sky.
-            this.spawnColumn(ev.x, ev.z, 0.5, 16, 0xd8c8ff, 0.25);
-            this.spawnBurst(ev.x, ev.z, ev.radius, 0xb89aff, 0.35);
+            this.spawnColumn(ev.x, ev.z, 0.5, 16, ELEMENT_PALETTE.arcane.glow, 0.25);
+            this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.arcane.core, 0.35);
           } else if (ev.abilityId === 'snowdrift') {
-            this.spawnBurst(ev.x, ev.z, ev.radius, 0x9fd8ff, 0.4);
+            this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.frost.glow, 0.4);
           } else if (ev.abilityId === 'earthbreaker') {
-            this.spawnBurst(ev.x, ev.z, ev.radius, 0xa8845a, 0.4);
-            this.spawnFlash(ev.x, ev.z, ev.radius * 0.5, 0xd9c9a8, 0.25);
+            this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.earth.core, 0.4);
+            this.spawnFlash(ev.x, ev.z, ev.radius * 0.5, ELEMENT_PALETTE.earth.glow, 0.25);
           } else if (ev.abilityId === 'quakingLeap') {
-            this.spawnBurst(ev.x, ev.z, ev.radius, 0xd8cfb8, 0.35);
+            this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.earth.glow, 0.35);
           } else if (ev.abilityId === 'steelTraps') {
-            this.spawnFlash(ev.x, ev.z, 1.0, 0xd8d8e8, 0.2);
+            this.spawnFlash(ev.x, ev.z, 1.0, ELEMENT_PALETTE.physical.glow, 0.2);
           } else {
             this.spawnBurst(ev.x, ev.z, ev.radius, 0xffe38a, 0.35);
             this.spawnFlash(ev.x, ev.z, ev.radius * 0.6, 0xfff6d9, 0.25);
@@ -1591,6 +1655,9 @@ export class EntityViews {
           // Spend the projectile in its own color, sized to the spell.
           const color = PROJECTILE_COLORS[ev.abilityId] ?? 0xffe38a;
           this.spawnFlash(ev.x, ev.z, 0.7, color, 0.16);
+          if (ev.abilityId === 'stormArchon') {
+            this.spawnFlash(ev.x, ev.z, 0.4, ELEMENT_PALETTE.electric.glow, 0.1); // yellow spark on impact
+          }
           if (ev.abilityId === 'manaSphere' || ev.abilityId === 'windstorm') {
             this.spawnBurst(ev.x, ev.z, 1.3, color, 0.25);
           }
