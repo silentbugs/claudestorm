@@ -313,6 +313,56 @@ button {
   text-shadow: 0 2px 8px #000;
 }
 
+#milestone-banner {
+  position: absolute;
+  top: 16%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 26px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  color: #ffd75e;
+  text-shadow: 0 2px 8px #000;
+  transition: opacity 0.4s;
+}
+
+#milestone-banner.hidden {
+  opacity: 0;
+}
+
+#killfeed {
+  position: absolute;
+  top: 76px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-size: 13px;
+  text-shadow: 0 1px 3px #000;
+}
+
+.killfeed-row {
+  background: rgba(20, 22, 34, 0.55);
+  border-radius: 4px;
+  padding: 3px 8px;
+  opacity: 1;
+  transition: opacity 0.6s;
+}
+
+.killfeed-row.fade {
+  opacity: 0;
+}
+
+.killfeed-row .kf-killer {
+  color: #7fd4ff;
+}
+
+.killfeed-row .kf-victim {
+  color: #ff8f7a;
+}
+
 #interact-prompt {
   position: absolute;
   bottom: 210px;

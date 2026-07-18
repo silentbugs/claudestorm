@@ -53,6 +53,10 @@ export class Hud {
   private readonly spectateBtn = document.getElementById('spectate-btn')!;
   private readonly spectateBanner = document.getElementById('spectate-banner')!;
   private readonly vignette = document.getElementById('vignette')!;
+  private readonly killfeed = document.getElementById('killfeed')!;
+  private readonly killfeedRows: { el: HTMLElement; ttl: number }[] = [];
+  private readonly milestoneBanner = document.getElementById('milestone-banner')!;
+  private milestoneTimer = 0;
   private readonly slotEls = new Map<string, SlotEls>();
   private vignetteStrength = 0;
 
@@ -324,6 +328,19 @@ export class Hud {
       this.castNameTimer -= dt;
       if (this.castNameTimer <= 0) this.castName.classList.add('hidden');
     }
+    for (let i = this.killfeedRows.length - 1; i >= 0; i--) {
+      const row = this.killfeedRows[i]!;
+      row.ttl -= dt;
+      if (row.ttl <= 0.6) row.el.classList.add('fade');
+      if (row.ttl <= 0) {
+        row.el.remove();
+        this.killfeedRows.splice(i, 1);
+      }
+    }
+    if (this.milestoneTimer > 0) {
+      this.milestoneTimer -= dt;
+      if (this.milestoneTimer <= 0) this.milestoneBanner.classList.add('hidden');
+    }
   }
 
   showEnd(victory: boolean, placement: number, canSpectate = false, statsLine = ''): void {
@@ -350,5 +367,34 @@ export class Hud {
     } else {
       this.spectateBanner.classList.add('hidden');
     }
+  }
+
+  /** One line in the top-right feed: `killerName ⚔ victimName`, or just the victim if the source wasn't a player. */
+  pushKillfeed(killerName: string | null, victimName: string): void {
+    const row = document.createElement('div');
+    row.className = 'killfeed-row';
+    row.innerHTML = killerName
+      ? `<span class="kf-killer">${killerName}</span> ⚔ <span class="kf-victim">${victimName}</span>`
+      : `<span class="kf-victim">${victimName}</span> fell`;
+    this.killfeed.appendChild(row);
+    this.killfeedRows.push({ el: row, ttl: 4.5 });
+    while (this.killfeedRows.length > 5) {
+      this.killfeedRows.shift()!.el.remove();
+    }
+  }
+
+  /** Big transient center callout for alive-count milestones ("10 Plunderers remain"). */
+  announceMilestone(text: string): void {
+    this.setText(this.milestoneBanner, text);
+    this.milestoneBanner.classList.remove('hidden');
+    this.milestoneTimer = 3;
+  }
+
+  /** Clear transient per-match UI (killfeed, milestone banner) for a fresh match. */
+  resetMatchUi(): void {
+    for (const row of this.killfeedRows) row.el.remove();
+    this.killfeedRows.length = 0;
+    this.milestoneTimer = 0;
+    this.milestoneBanner.classList.add('hidden');
   }
 }

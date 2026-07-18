@@ -81,6 +81,8 @@ export class GameApp {
   private lastMatch: MatchStats | null = null;
   private inMatch = false;
   private menuTime = 0;
+  private milestoneThresholds: number[] = [];
+  private readonly announcedMilestones = new Set<number>();
   private wasLooking = false;
   private fpsAccum = 0;
   private fpsFrames = 0;
@@ -310,6 +312,7 @@ export class GameApp {
     this.views.clear();
     this.hud.hideEnd();
     this.hud.showSpectate(null);
+    this.hud.resetMatchUi();
     this.endShown = false;
     this.deadShown = false;
     this.deathPlacement = 0;
@@ -318,6 +321,9 @@ export class GameApp {
     const botCount = Number(
       (document.getElementById('bot-count') as HTMLInputElement | null)?.value ?? 11,
     );
+    this.announcedMilestones.clear();
+    // Candidate callouts, filtered to ones that actually happen this match.
+    this.milestoneThresholds = [20, 10, 5, 3, 2].filter((n) => n < botCount + 1);
     this.views.setSelfColor(Number(choiceValue('color-swatches')) || HERO_COLORS[0]!);
     this.views.setSelfModel((choiceValue('model-choice') || 'cloud') as HeroModel);
     this.sceneMgr.setEnvironment((choiceValue('time-choice') || 'day') as EnvironmentId);
@@ -387,6 +393,27 @@ export class GameApp {
           document.exitPointerLock();
           this.hud.showEnd(false, this.deathPlacement, true, this.matchSummary());
         }
+      }
+      if (ev.type === 'death') {
+        const victim = snap.players.find((p) => p.id === ev.id);
+        if (victim) {
+          let killerName: string | null = null;
+          if (ev.killerId !== null) {
+            const killer = snap.players.find((p) => p.id === ev.killerId);
+            if (killer) killerName = killer.name;
+            else {
+              const mob = snap.mobs.find((m) => m.id === ev.killerId);
+              if (mob) killerName = mob.elite ? 'an elite guardian' : 'a mob';
+            }
+          }
+          this.hud.pushKillfeed(killerName, victim.name);
+        }
+      }
+    }
+    for (const threshold of this.milestoneThresholds) {
+      if (snap.aliveCount <= threshold && !this.announcedMilestones.has(threshold)) {
+        this.announcedMilestones.add(threshold);
+        this.hud.announceMilestone(`${threshold} Plunderers remain`);
       }
     }
     if (snap.phase === 'ended' && !this.endShown) {
