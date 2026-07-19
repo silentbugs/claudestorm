@@ -1,4 +1,37 @@
 import { GLIDE_FALL_SPEED, GLIDE_MOVE_SPEED, type AbilityId } from '@claudestorm/shared';
+import { elementKeyOf, type Element } from './elements.js';
+
+/**
+ * Per-element sound signature, the audio counterpart to ELEMENT_PALETTE:
+ * a waveform + frequency sweep for the cast moment and another for the
+ * impact/detonation moment, so every fire spell's impact shares a family
+ * resemblance with every other fire spell's, distinct from frost's chime
+ * or earth's rumble — the same idea as spawnElementBurst for VFX.
+ */
+const ELEMENT_SFX: Record<
+  Element,
+  {
+    castType: OscillatorType;
+    castFreq: number;
+    castEnd: number;
+    castDur: number;
+    impactType: OscillatorType;
+    impactFreq: number;
+    impactEnd: number;
+    impactDur: number;
+  }
+> = {
+  fire: { castType: 'sawtooth', castFreq: 190, castEnd: 340, castDur: 0.26, impactType: 'sawtooth', impactFreq: 160, impactEnd: 40, impactDur: 0.3 },
+  frost: { castType: 'triangle', castFreq: 860, castEnd: 1300, castDur: 0.15, impactType: 'triangle', impactFreq: 1050, impactEnd: 480, impactDur: 0.18 },
+  electric: { castType: 'square', castFreq: 520, castEnd: 1050, castDur: 0.1, impactType: 'square', impactFreq: 700, impactEnd: 150, impactDur: 0.08 },
+  earth: { castType: 'sawtooth', castFreq: 130, castEnd: 55, castDur: 0.3, impactType: 'sawtooth', impactFreq: 95, impactEnd: 30, impactDur: 0.35 },
+  nature: { castType: 'sine', castFreq: 420, castEnd: 260, castDur: 0.2, impactType: 'sine', impactFreq: 320, impactEnd: 180, impactDur: 0.2 },
+  holy: { castType: 'sine', castFreq: 600, castEnd: 980, castDur: 0.22, impactType: 'triangle', impactFreq: 700, impactEnd: 1000, impactDur: 0.25 },
+  arcane: { castType: 'sine', castFreq: 340, castEnd: 600, castDur: 0.22, impactType: 'sine', impactFreq: 460, impactEnd: 260, impactDur: 0.22 },
+  shadow: { castType: 'sine', castFreq: 300, castEnd: 90, castDur: 0.28, impactType: 'sine', impactFreq: 220, impactEnd: 70, impactDur: 0.3 },
+  wind: { castType: 'sine', castFreq: 280, castEnd: 760, castDur: 0.22, impactType: 'triangle', impactFreq: 500, impactEnd: 900, impactDur: 0.15 },
+  physical: { castType: 'square', castFreq: 500, castEnd: 250, castDur: 0.1, impactType: 'square', impactFreq: 350, impactEnd: 150, impactDur: 0.1 },
+};
 
 /** Cruise speed used to normalize glide-wind intensity (drop dive + full lateral push). */
 const GLIDE_CRUISE_SPEED = GLIDE_MOVE_SPEED + GLIDE_FALL_SPEED;
@@ -310,6 +343,9 @@ class Sfx {
       case 'starBomb':
         t(300, 0.18, 'sawtooth', 0.07, 180);
         break;
+      case 'celestialBarrage':
+        t(360, 0.16, 'sine', 0.1, 640);
+        break;
       case 'toxicSmackerel':
         t(420, 0.15, 'triangle', 0.1, 240);
         break;
@@ -356,8 +392,15 @@ class Sfx {
     this.tone(220, 0.1, 'square', 0.09, 120, at);
   }
 
-  detonate(at?: SoundAt): void {
-    this.tone(140, 0.35, 'sawtooth', 0.15, 40, at);
+  /**
+   * The spell landing — an AoE detonating or a projectile expiring — layered
+   * from the element's impact signature (ELEMENT_SFX) under a shared low
+   * thump so every hit still has weight regardless of element.
+   */
+  impact(ability: AbilityId, at?: SoundAt): void {
+    const e = ELEMENT_SFX[elementKeyOf(ability)];
+    this.tone(140, 0.3, 'sawtooth', 0.09, 40, at);
+    this.tone(e.impactFreq, e.impactDur, e.impactType, 0.11, e.impactEnd, at);
   }
 
   death(isSelf: boolean, at?: SoundAt): void {

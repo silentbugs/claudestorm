@@ -13,6 +13,7 @@ import {
   type Rarity,
   type Snapshot,
 } from '@claudestorm/shared';
+import { ABILITY_ELEMENT, ELEMENT_PALETTE, elementKeyOf, elementOf, type Element } from '../elements.js';
 import { sfx } from '../sfx.js';
 import type { AssetLibrary } from './assets.js';
 
@@ -59,56 +60,6 @@ function glyphTexture(glyph: string): THREE.Texture {
     glyphTextures.set(glyph, tex);
   }
   return tex;
-}
-
-/**
- * Every spell reads by its element: electrical bolts are yellow/blue, earth
- * is brown, fire is orange, frost is icy blue, and so on. `core` is the
- * saturated body color (projectile cores, bursts), `glow` the paler
- * accent/flash tone, and `deep` an optional darker fill for zone interiors.
- */
-type Element = 'fire' | 'frost' | 'electric' | 'earth' | 'nature' | 'holy' | 'arcane' | 'shadow' | 'wind' | 'physical';
-const ELEMENT_PALETTE: Record<Element, { core: number; glow: number; deep?: number }> = {
-  fire: { core: 0xff6a2e, glow: 0xffab6a, deep: 0xd45a2e },
-  frost: { core: 0x4d9be6, glow: 0x9fd8ff },
-  electric: { core: 0x4da6ff, glow: 0xfff066 },
-  earth: { core: 0xa8703a, glow: 0xd9a86a },
-  nature: { core: 0x5da83a, glow: 0x9fe07a },
-  holy: { core: 0xffcf5c, glow: 0xffe9a8 },
-  arcane: { core: 0x8a5aff, glow: 0xc9a8ff },
-  shadow: { core: 0x3a2f55, glow: 0x6a4a9c },
-  wind: { core: 0x9fe0c8, glow: 0xcfe8dd },
-  physical: { core: 0xb8bcc8, glow: 0xd8d8e8 },
-};
-/** Which element each spell reads as, for coloring projectiles/zones/VFX. */
-const ABILITY_ELEMENT: Partial<Record<AbilityId, Element>> = {
-  rimeArrow: 'frost',
-  fireWhirl: 'fire',
-  earthbreaker: 'earth',
-  holyShield: 'holy',
-  stormArchon: 'electric',
-  manaSphere: 'arcane',
-  searingAxe: 'fire',
-  slicingWinds: 'wind',
-  starBomb: 'arcane',
-  celestialBarrage: 'arcane',
-  toxicSmackerel: 'nature',
-  quakingLeap: 'earth',
-  huntersChains: 'physical',
-  steelTraps: 'physical',
-  windstorm: 'wind',
-  explosiveCaltrops: 'fire',
-  snowdrift: 'frost',
-  lightningBulwark: 'electric',
-  fadeToShadow: 'shadow',
-  repel: 'arcane',
-  faeform: 'nature',
-};
-function elementOf(abilityId: AbilityId): { core: number; glow: number; deep?: number } {
-  return ELEMENT_PALETTE[ABILITY_ELEMENT[abilityId] ?? 'holy'];
-}
-function elementKeyOf(abilityId: AbilityId): Element {
-  return ABILITY_ELEMENT[abilityId] ?? 'holy';
 }
 
 /** Small per-element particle shapes for spawnElementBurst — one geometry per motif, scattered per-instance. */
@@ -1735,7 +1686,7 @@ export class EntityViews {
             this.spawnElementBurst(ev.x, ev.z, elementKeyOf(ev.abilityId), ev.radius * 0.5);
             this.spawnFlash(ev.x, ev.z, ev.radius * 0.6, elementOf(ev.abilityId).glow, 0.25);
           }
-          sfx.detonate(ev);
+          sfx.impact(ev.abilityId, ev);
           break;
         case 'hit':
           if (ev.sourceId !== null) this.spawnFlash(ev.x, ev.z, 0.8, 0xff5b4d, 0.18);
@@ -1748,6 +1699,7 @@ export class EntityViews {
           const color = PROJECTILE_COLORS[ev.abilityId] ?? ELEMENT_PALETTE[element].core;
           this.spawnFlash(ev.x, ev.z, 0.7, color, 0.16);
           this.spawnElementBurst(ev.x, ev.z, element, 0.6);
+          sfx.impact(ev.abilityId, ev);
           if (ev.abilityId === 'stormArchon') {
             this.spawnFlash(ev.x, ev.z, 0.4, ELEMENT_PALETTE.electric.glow, 0.1); // yellow spark on impact
           }
