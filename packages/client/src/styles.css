@@ -183,14 +183,29 @@ button {
 }
 
 .touch-mode #start-screen {
-  overflow-y: auto;
   pointer-events: auto;
 }
 
+/*
+ * #start-screen centers this panel with flexbox. When the panel is taller
+ * than the viewport, centered flex overflow spills equally above and below
+ * — but most mobile browsers only let you scroll to the *bottom* overflow,
+ * never the top, so the top of the settings list becomes permanently
+ * unreachable. Fix: cap the panel's own height and let it scroll its own
+ * content instead (same pattern the Skills/Stats panels already use), so
+ * it never actually overflows the centering container in the first place.
+ */
 .touch-mode #start-panel {
   gap: 8px;
   padding: 12px 10px 24px;
   max-width: 96vw;
+  max-height: 94vh;
+  max-height: 94dvh;
+  overflow-y: auto;
+  /* Scroll stays live; double-tap-to-zoom does not (belt-and-suspenders
+     with the JS suppressor in GameApp — touch-action support for the
+     double-tap gesture specifically has been inconsistent across browsers). */
+  touch-action: manipulation;
 }
 
 .touch-mode #start-settings {
@@ -901,6 +916,7 @@ button {
   width: min(720px, 92vw);
   max-height: 82vh;
   overflow-y: auto;
+  touch-action: manipulation;
   background: #141928;
   border: 2px solid #444a63;
   border-radius: 12px;
@@ -1035,6 +1051,7 @@ button {
   width: min(760px, 94vw);
   max-height: 82vh;
   overflow-y: auto;
+  touch-action: manipulation;
   background: #141928;
   border: 2px solid #444a63;
   border-radius: 12px;

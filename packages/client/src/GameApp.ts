@@ -109,6 +109,22 @@ export class GameApp {
       checkOrientation();
       window.addEventListener('resize', checkOrientation);
       window.addEventListener('orientationchange', checkOrientation);
+
+      // Kill double-tap-to-zoom globally. touch-action CSS handles most of
+      // this, but the double-tap gesture specifically predates that spec in
+      // some mobile browsers and ignores it — this is the standard
+      // cross-browser fallback: a second tap within 350ms gets eaten instead
+      // of reaching the browser's zoom handling.
+      let lastTouchEnd = 0;
+      document.addEventListener(
+        'touchend',
+        (e) => {
+          const now = Date.now();
+          if (now - lastTouchEnd < 350) e.preventDefault();
+          lastTouchEnd = now;
+        },
+        { passive: false },
+      );
     }
     // Re-engage the lock after a stray unlock (click lands on the canvas).
     window.addEventListener('mousedown', (e) => {
@@ -272,6 +288,7 @@ export class GameApp {
     startBtn.disabled = true;
     startBtn.textContent = 'Loading…';
     startBtn.addEventListener('click', () => {
+      this.requestFullscreenIfMobile();
       document.getElementById('start-screen')!.classList.add('hidden');
       hudRoot.classList.remove('in-menu');
       this.inMatch = true;
@@ -374,8 +391,21 @@ export class GameApp {
   }
 
   private restart(): void {
+    this.requestFullscreenIfMobile();
     this.transport?.dispose();
     this.startMatch();
+  }
+
+  /**
+   * Mobile browser chrome (address bar, nav buttons) eats real screen space
+   * a phone can't spare. Fullscreen needs a user gesture, so this only ever
+   * fires from click handlers; it's best-effort — some mobile browsers
+   * (notably iOS Safari outside of a home-screen PWA) don't support it at
+   * all, so a rejection here is expected and not an error worth surfacing.
+   */
+  private requestFullscreenIfMobile(): void {
+    if (!this.touchMode || document.fullscreenElement) return;
+    void document.documentElement.requestFullscreen?.().catch(() => {});
   }
 
   private onSnapshot(snap: Snapshot): void {
