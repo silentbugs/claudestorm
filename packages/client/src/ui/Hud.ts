@@ -191,25 +191,29 @@ export class Hud {
 
   update(snap: Snapshot, selfId: number): void {
     this.setText(this.alive, `${snap.aliveCount} alive`);
+    const self = snap.players.find((p) => p.id === selfId);
+
+    // Keyed to this player's own glide state, not the global phase: you can
+    // act the instant you land even if stragglers keep the match in 'drop',
+    // so the hint should clear the instant you land too.
+    this.setText(
+      this.centerMsg,
+      self?.gliding ? 'Steer with WASD — pick a landing spot! Hold Space to dive.' : '',
+    );
 
     if (snap.phase === 'drop') {
       this.setText(this.stormStatus, '');
-      this.setText(this.centerMsg, 'Steer with WASD — pick a landing spot! Hold Space to dive.');
+    } else if (snap.storm.shrinking) {
+      this.setText(this.stormStatus, 'Storm is shrinking!');
+      this.stormStatus.classList.add('warning');
+    } else if (snap.storm.nextShrinkIn > 0) {
+      this.setText(this.stormStatus, `Storm shrinks in ${Math.ceil(snap.storm.nextShrinkIn)}s`);
+      this.stormStatus.classList.remove('warning');
     } else {
-      this.setText(this.centerMsg, '');
-      if (snap.storm.shrinking) {
-        this.setText(this.stormStatus, 'Storm is shrinking!');
-        this.stormStatus.classList.add('warning');
-      } else if (snap.storm.nextShrinkIn > 0) {
-        this.setText(this.stormStatus, `Storm shrinks in ${Math.ceil(snap.storm.nextShrinkIn)}s`);
-        this.stormStatus.classList.remove('warning');
-      } else {
-        this.setText(this.stormStatus, 'Final circle');
-        this.stormStatus.classList.add('warning');
-      }
+      this.setText(this.stormStatus, 'Final circle');
+      this.stormStatus.classList.add('warning');
     }
 
-    const self = snap.players.find((p) => p.id === selfId);
     if (!self) return;
 
     this.setText(this.plunder, `⛃ ${self.plunder}`);

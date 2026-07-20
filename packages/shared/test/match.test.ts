@@ -9,7 +9,7 @@ import {
   TICK_RATE,
 } from '../src/constants.js';
 import { buildStormPhases } from '../src/sim/storm.js';
-import { buttons, cmd, loadout, makeSim, player, CALM_STORM, FLAT_MAP } from './helpers.js';
+import { buttons, castCmd, cmd, loadout, makeSim, player, CALM_STORM, FLAT_MAP } from './helpers.js';
 
 describe('drop phase', () => {
   it('players glide down, steer, and the match goes live once everyone lands', () => {
@@ -61,6 +61,28 @@ describe('drop phase', () => {
     sim.applyInput(1, cmd({ buttons: buttons({ melee: true }) }));
     for (let i = 0; i < 20; i++) sim.step();
     expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+  });
+
+  it('a player who lands early can cast immediately, even while others are still gliding', () => {
+    const full = loadout(['rimeArrow', 'starBomb'], ['quakingLeap']);
+    const sim = makeSim(
+      [
+        { id: 1, name: 'A', isBot: false, loadout: full },
+        { id: 2, name: 'B', isBot: false }, // still up there, keeping phase at 'drop'
+      ],
+      { skipDrop: false },
+    );
+    const p1 = sim.players.get(1)!;
+    const p2 = sim.players.get(2)!;
+    p1.y = 0.05; // about to touch down (e.g. dove in fast)
+    let snap = sim.step();
+    expect(p1.gliding).toBe(false); // landed this tick
+    expect(p2.gliding).toBe(true); // straggler still airborne
+    expect(snap.phase).toBe('drop'); // global phase hasn't flipped yet
+    sim.applyInput(1, castCmd(0, 10, 0));
+    snap = sim.step();
+    expect(snap.events.some((e) => e.type === 'cast' && e.abilityId === 'rimeArrow')).toBe(true);
+    expect(p1.slotCds[0]).toBeGreaterThan(0);
   });
 });
 

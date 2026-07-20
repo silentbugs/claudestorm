@@ -557,7 +557,10 @@ export class GameSim {
     // Buttons. Stun blocks everything; faeform blocks attacks but not movement tools.
     const stunned = p.stunTicks > 0;
     const charging = p.chargeSlot !== null;
-    const canAct = !p.gliding && this.phase === 'live' && !stunned && !charging;
+    // A player who has already landed can act immediately — they shouldn't
+    // sit locked out of their kit just because some other player (or a bot)
+    // is still up in the air. Only 'ended' should block action.
+    const canAct = !p.gliding && this.phase !== 'ended' && !stunned && !charging;
     const canAttack = canAct && p.faeTicks === 0;
     if (p.pendingButtons.has('jump') && p.y === 0 && !p.gliding && p.leapTicks === 0 && !stunned && !charging) {
       p.vy = JUMP_VELOCITY;
@@ -593,7 +596,7 @@ export class GameSim {
     if (canAttack && p.meleeHeld && p.meleeCdTicks === 0 && p.leapTicks === 0) this.meleeSwing(p);
     if (canAttack) {
       for (const slot of p.pendingSlotCasts) this.tryCastSlot(p, slot);
-    } else if (p.chargeSlot !== null && !stunned && this.phase === 'live') {
+    } else if (p.chargeSlot !== null && !stunned && this.phase !== 'ended') {
       // Re-pressing the charging slot releases the cast early.
       if (p.pendingSlotCasts.has(p.chargeSlot)) this.releaseCharge(p);
     }
@@ -1514,7 +1517,7 @@ export class GameSim {
           const dir = norm(target.x - mob.x, target.z - mob.z);
           vx = dir.x * mob.speed;
           vz = dir.z * mob.speed;
-        } else if (mob.biteCdTicks === 0 && this.phase === 'live') {
+        } else if (mob.biteCdTicks === 0 && this.phase !== 'ended') {
           mob.biteCdTicks = Math.round(MOB_BITE_INTERVAL * TICK_RATE);
           this.damagePlayer(target, mob.biteDamage, mob.id);
         }
@@ -1695,7 +1698,10 @@ export class GameSim {
   }
 
   private damagePlayer(target: PlayerEntity, amount: number, sourceId: number | null): void {
-    if (this.phase !== 'live' || !target.alive) return;
+    // 'drop' included: a player who has already landed can fight immediately
+    // (canAct no longer waits on the global phase either) — only 'ended' cuts
+    // combat off, matching damageMob's same relaxation for dive impacts.
+    if (this.phase === 'ended' || !target.alive) return;
     if (target.immuneTicks > 0) return; // Repel: the barrier turns everything away
     if (target.faeTicks > 0) amount *= 0.4; // Faeform damage reduction
     target.stealthTicks = 0; // taking damage reveals you
