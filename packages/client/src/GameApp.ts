@@ -99,7 +99,17 @@ export class GameApp {
       () => this.restart(),
       () => this.startSpectate(),
       () => this.returnToMenu(),
+      this.touchMode,
     );
+    if (this.touchMode) {
+      const rotateHint = document.getElementById('rotate-hint')!;
+      const checkOrientation = () => {
+        rotateHint.classList.toggle('hidden', window.innerWidth >= window.innerHeight);
+      };
+      checkOrientation();
+      window.addEventListener('resize', checkOrientation);
+      window.addEventListener('orientationchange', checkOrientation);
+    }
     // Re-engage the lock after a stray unlock (click lands on the canvas).
     window.addEventListener('mousedown', (e) => {
       if (
@@ -152,6 +162,12 @@ export class GameApp {
       }
     });
     document.getElementById('pause-resume-btn')!.addEventListener('click', () => this.closePause(true));
+    // The only way to reach the compendium mid-match on touch — there's no
+    // physical T key to press there.
+    document.getElementById('pause-skills-btn')!.addEventListener('click', () => {
+      this.closePause(false);
+      this.hud.toggleSkills();
+    });
     document.getElementById('pause-menu-btn')!.addEventListener('click', () => {
       this.closePause(false);
       this.returnToMenu();
@@ -294,7 +310,7 @@ export class GameApp {
 
     // Scene and renderer come up once the art is in; only then can you start.
     void AssetLibrary.load().then((assets) => {
-      this.sceneMgr = new SceneManager(this.container, assets);
+      this.sceneMgr = new SceneManager(this.container, assets, this.touchMode);
       this.views = new EntityViews(this.sceneMgr.scene, assets);
       if (this.touchMode) {
         new TouchControls(this.input, this.sceneMgr.renderer.domElement, this.map, () =>

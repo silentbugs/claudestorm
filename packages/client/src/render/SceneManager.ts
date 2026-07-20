@@ -100,12 +100,22 @@ export class SceneManager {
   /** Staging area for static scenery; merged into per-material meshes at the end. */
   private readonly staticStage = new THREE.Group();
 
-  constructor(container: HTMLElement, private readonly assets: AssetLibrary) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  /**
+   * `lowPower` (touch/mobile): antialiasing and soft PCF shadow filtering are
+   * two of the priciest per-pixel costs on a phone GPU, and a high-DPI phone
+   * panel (3x devicePixelRatio) makes every other cost worse on top — so
+   * mobile trims all three instead of rendering at desktop settings and
+   * hoping the hardware keeps up.
+   */
+  constructor(container: HTMLElement, private readonly assets: AssetLibrary, lowPower = false) {
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: !lowPower,
+      powerPreference: 'high-performance',
+    });
+    this.renderer.setPixelRatio(Math.min(lowPower ? 1.5 : 2, window.devicePixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = lowPower ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);

@@ -84,7 +84,12 @@ export class Hud {
     el.style.setProperty(prop, value);
   }
 
-  constructor(onRestart: () => void, onSpectate: () => void, onMenu: () => void) {
+  constructor(
+    onRestart: () => void,
+    onSpectate: () => void,
+    onMenu: () => void,
+    private readonly touchMode: boolean,
+  ) {
     document.getElementById('restart-btn')!.addEventListener('click', onRestart);
     this.spectateBtn.addEventListener('click', onSpectate);
     document.getElementById('menu-btn')!.addEventListener('click', onMenu);
@@ -98,6 +103,10 @@ export class Hud {
       });
     }
     this.buildSkillsList();
+    // A tappable close button, not just the T/Esc hints — touch has no keyboard.
+    document
+      .getElementById('skills-close-btn')!
+      .addEventListener('click', () => this.skillsOverlay.classList.add('hidden'));
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyT') this.skillsOverlay.classList.toggle('hidden');
       else if (e.code === 'Escape') this.skillsOverlay.classList.add('hidden');
@@ -198,7 +207,11 @@ export class Hud {
     // so the hint should clear the instant you land too.
     this.setText(
       this.centerMsg,
-      self?.gliding ? 'Steer with WASD — pick a landing spot! Hold Space to dive.' : '',
+      self?.gliding
+        ? this.touchMode
+          ? 'Steer with the stick — pick a landing spot! Hold JUMP to dive.'
+          : 'Steer with WASD — pick a landing spot! Hold Space to dive.'
+        : '',
     );
 
     if (snap.phase === 'drop') {

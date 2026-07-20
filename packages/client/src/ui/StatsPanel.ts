@@ -12,6 +12,10 @@ export class StatsPanel {
 
   constructor() {
     document.getElementById('stats-btn')!.addEventListener('click', () => void this.toggle());
+    // A tappable close button, not just the Esc hint — touch has no keyboard.
+    document
+      .getElementById('stats-close-btn')!
+      .addEventListener('click', () => this.overlay.classList.add('hidden'));
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') this.overlay.classList.add('hidden');
     });

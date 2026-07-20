@@ -12,6 +12,7 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="rotate-hint" class="hidden">🔄 Rotate your device to landscape to play</div>
     <div id="hud">
       <div id="underwater" class="hidden"></div>
       <div id="fps"></div>
@@ -38,6 +39,7 @@
       <div id="channel-bar" class="hidden"><div id="channel-fill"></div></div>
       <div id="skills-overlay" class="hidden">
         <div id="skills-panel">
+          <button id="skills-close-btn" class="panel-close">✕</button>
           <h1>Skills Compendium</h1>
           <div id="skills-list"></div>
           <div id="skills-close-hint">Press <span class="kb">T</span> to close</div>
@@ -125,6 +127,7 @@
       </div>
       <div id="stats-overlay" class="hidden">
         <div id="stats-panel">
+          <button id="stats-close-btn" class="panel-close">✕</button>
           <h1>Match History</h1>
           <div id="stats-summary"></div>
           <div id="stats-list"></div>
@@ -145,6 +148,7 @@
           <h1>Paused</h1>
           <div id="pause-sub">The match keeps running — the storm waits for no one.</div>
           <button id="pause-resume-btn">Resume</button>
+          <button id="pause-skills-btn" class="menu-secondary">Skills Compendium</button>
           <button id="pause-menu-btn" class="menu-secondary">Quit to Main Menu</button>
         </div>
       </div>
