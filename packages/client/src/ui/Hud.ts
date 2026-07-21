@@ -52,6 +52,8 @@ export class Hud {
   private readonly endStats = document.getElementById('end-stats')!;
   private readonly spectateBtn = document.getElementById('spectate-btn')!;
   private readonly spectateBanner = document.getElementById('spectate-banner')!;
+  private readonly spectatePrev = document.getElementById('spectate-prev')!;
+  private readonly spectateNext = document.getElementById('spectate-next')!;
   private readonly vignette = document.getElementById('vignette')!;
   private readonly killfeed = document.getElementById('killfeed')!;
   private readonly killfeedRows: { el: HTMLElement; ttl: number }[] = [];
@@ -378,13 +380,22 @@ export class Hud {
     this.endScreen.classList.add('hidden');
   }
 
-  /** Banner while following someone else after death; null hides it. */
+  /**
+   * Banner while following someone else after death; null hides it. The
+   * prev/next buttons ride along — desktop cycles with arrow keys instead
+   * (there's no keyboard on touch, so the buttons are the only way there;
+   * touch-mode CSS is what actually keeps them off desktop).
+   */
   showSpectate(text: string | null): void {
     if (text) {
       this.spectateBanner.textContent = text;
       this.spectateBanner.classList.remove('hidden');
+      this.spectatePrev.classList.remove('hidden');
+      this.spectateNext.classList.remove('hidden');
     } else {
       this.spectateBanner.classList.add('hidden');
+      this.spectatePrev.classList.add('hidden');
+      this.spectateNext.classList.add('hidden');
     }
   }
 

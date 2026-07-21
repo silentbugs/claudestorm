@@ -5,7 +5,8 @@ import type { MapView } from '../ui/MapView.js';
  * Touch layer for phones/tablets (created only on coarse-pointer devices):
  * - touch the left half of the screen for a floating move stick;
  * - drag anywhere on the right half to steer character + camera;
- * - the hotbar becomes tappable (hold the slap slot to keep swinging),
+ * - the hotbar becomes tappable (hold the slap slot to keep swinging, long-
+ *   press a spell slot to swap its pair — 1↔2 offense, 3↔4 utility),
  *   the interact prompt is a button, tapping the minimap opens the map;
  * - dedicated JUMP button (doubles as hold-to-dive while gliding) and a
  *   menu (⚙) button.
@@ -65,23 +66,41 @@ export class TouchControls {
       openMenu();
     });
 
-    // The hotbar is the spell pad: hold the slap slot, tap the rest.
+    // The hotbar is the spell pad: hold the slap slot, tap the rest. Spell
+    // slots also long-press to swap the pair (1↔2 offense, 3↔4 utility) —
+    // desktop has Z/X for this; touch has no spare keys, so the gesture
+    // does double duty on the same buttons instead of needing new ones.
+    const SWAP_HOLD_MS = 450;
     for (const el of document.querySelectorAll<HTMLElement>('.slot')) {
       const key = el.dataset.slot!;
+      const isSpellSlot = key === '0' || key === '1' || key === '2' || key === '3';
+      let swapTimer = 0;
+      let swapped = false;
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         if (key === 'melee') this.input.touchMelee = true;
         else if (key === 'heal') this.input.pressEdge('heal');
         else if (key === 'item') this.input.pressEdge('useItem');
         else if (key === 'roll') this.input.pressEdge('roll');
-        else this.input.pressSlot(Number(key));
+        else if (isSpellSlot) {
+          swapped = false;
+          swapTimer = window.setTimeout(() => {
+            swapped = true;
+            this.input.pressEdge(key === '0' || key === '1' ? 'swapOffense' : 'swapUtility');
+          }, SWAP_HOLD_MS);
+        }
       });
-      const stop = () => {
+      const cancel = () => {
         if (key === 'melee') this.input.touchMelee = false;
+        if (isSpellSlot) window.clearTimeout(swapTimer);
       };
-      el.addEventListener('pointerup', stop);
-      el.addEventListener('pointercancel', stop);
-      el.addEventListener('pointerleave', stop);
+      el.addEventListener('pointerup', () => {
+        cancel();
+        // A short tap casts; a long-press already swapped instead.
+        if (isSpellSlot && !swapped) this.input.pressSlot(Number(key));
+      });
+      el.addEventListener('pointercancel', cancel);
+      el.addEventListener('pointerleave', cancel);
     }
     document
       .getElementById('interact-prompt')!

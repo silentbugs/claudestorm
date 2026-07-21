@@ -9,6 +9,19 @@
     <title>Claudestorm</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/styles.css" />
+    <!--
+      "Add to Home Screen" is the only way to get a chrome-less, landscape-
+      locked launch on iOS Safari — Apple doesn't expose the Fullscreen or
+      Orientation Lock APIs to a regular Safari tab at all, so JS can't force
+      either one there. This is the workaround; the JS calls in GameApp cover
+      Android and desktop, where those APIs actually work in-tab.
+    -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Claudestorm" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#0b0e1a" />
   </head>
   <body>
     <div id="app"></div>
@@ -143,6 +156,8 @@
         <button id="menu-btn" class="menu-secondary">Main Menu</button>
       </div>
       <div id="spectate-banner" class="hidden"></div>
+      <button id="spectate-prev" class="hidden">‹</button>
+      <button id="spectate-next" class="hidden">›</button>
       <div id="pause-menu" class="hidden">
         <div id="pause-panel">
           <h1>Paused</h1>

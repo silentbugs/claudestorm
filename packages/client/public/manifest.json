@@ -1,0 +1,9 @@
+{
+  "name": "Claudestorm",
+  "short_name": "Claudestorm",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0b0e1a",
+  "theme_color": "#0b0e1a"
+}

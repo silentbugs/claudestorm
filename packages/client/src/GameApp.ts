@@ -188,6 +188,11 @@ export class GameApp {
       this.closePause(false);
       this.returnToMenu();
     });
+    // Arrow keys cycle spectate targets on desktop; touch has no keyboard,
+    // so these buttons are the only way there (touch-mode CSS keeps them
+    // off desktop, where the buttons would just be redundant clutter).
+    document.getElementById('spectate-prev')!.addEventListener('click', () => this.cycleSpectate(-1));
+    document.getElementById('spectate-next')!.addEventListener('click', () => this.cycleSpectate(1));
   }
 
   private togglePause(): void {
@@ -399,13 +404,31 @@ export class GameApp {
   /**
    * Mobile browser chrome (address bar, nav buttons) eats real screen space
    * a phone can't spare. Fullscreen needs a user gesture, so this only ever
-   * fires from click handlers; it's best-effort — some mobile browsers
-   * (notably iOS Safari outside of a home-screen PWA) don't support it at
-   * all, so a rejection here is expected and not an error worth surfacing.
+   * fires from click handlers; it's best-effort — iOS Safari in a regular
+   * tab doesn't support the Fullscreen API at all (Apple restriction, not a
+   * bug here — `document.fullscreenEnabled` is simply false), so a
+   * rejection there is expected. "Add to Home Screen" is the actual
+   * workaround on iOS (see the manifest + apple-mobile-web-app meta tags in
+   * index.html), since a standalone-launched PWA has no browser chrome to
+   * begin with. Once fullscreen succeeds (Android/desktop), also try to
+   * lock the orientation to landscape — this can override the OS-level
+   * rotation lock switch, but only Chromium-based mobile browsers support
+   * the Orientation Lock API at all; iOS Safari has never implemented it.
    */
   private requestFullscreenIfMobile(): void {
     if (!this.touchMode || document.fullscreenElement) return;
-    void document.documentElement.requestFullscreen?.().catch(() => {});
+    const el = document.documentElement as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+    };
+    const request = el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el);
+    void Promise.resolve(request?.())
+      .then(() => {
+        const orientation = screen.orientation as ScreenOrientation & {
+          lock?: (o: string) => Promise<void>;
+        };
+        return orientation.lock?.('landscape');
+      })
+      .catch(() => {});
   }
 
   private onSnapshot(snap: Snapshot): void {
