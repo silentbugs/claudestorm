@@ -282,7 +282,10 @@ export class MapView {
     ctx.stroke();
     ctx.restore();
 
-    // Your Duos ally: a small dot in the same friendly teal as their in-world tint.
+    // Your Duos ally: a small dot in the same friendly teal as their in-world
+    // tint, or — while downed — a hollow ring at their corpse (the snapshot
+    // still carries their last position; no separate death-marker plumbing
+    // needed) so you always know where to go revive them.
     if (ally?.alive) {
       ctx.beginPath();
       ctx.arc(cx(ally.x), cy(ally.z), size / 90, 0, Math.PI * 2);
@@ -290,6 +293,12 @@ export class MapView {
       ctx.strokeStyle = '#10131f';
       ctx.lineWidth = Math.max(1, size / 320);
       ctx.fill();
+      ctx.stroke();
+    } else if (ally) {
+      ctx.beginPath();
+      ctx.arc(cx(ally.x), cy(ally.z), size / 90, 0, Math.PI * 2);
+      ctx.strokeStyle = '#3ec9a7';
+      ctx.lineWidth = Math.max(1.5, size / 220);
       ctx.stroke();
     }
   }

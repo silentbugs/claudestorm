@@ -293,7 +293,10 @@ export class Hud {
     // charges are named by showCast() (event-driven) and simply time out.
     if (self.channeling >= 0 && self.channelKind) {
       this.castNameTimer = 0;
-      this.setText(this.castName, self.channelKind === 'heal' ? 'Heal' : 'Opening chest');
+      this.setText(
+        this.castName,
+        self.channelKind === 'heal' ? 'Heal' : self.channelKind === 'revive' ? 'Reviving…' : 'Opening chest',
+      );
       this.castName.classList.remove('hidden');
     } else if (this.castNameTimer <= 0) {
       this.castName.classList.add('hidden');

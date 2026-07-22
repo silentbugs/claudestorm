@@ -419,6 +419,11 @@ class Sfx {
     setTimeout(() => this.tone(587, 0.2, 'sine', 0.1, 784, at), 110);
   }
 
+  revive(at?: SoundAt): void {
+    this.tone(440, 0.16, 'sine', 0.13, 660, at);
+    setTimeout(() => this.tone(660, 0.28, 'sine', 0.13, 990, at), 130);
+  }
+
   levelUp(): void {
     this.tone(523, 0.12, 'triangle', 0.12);
     setTimeout(() => this.tone(784, 0.2, 'triangle', 0.12), 120);

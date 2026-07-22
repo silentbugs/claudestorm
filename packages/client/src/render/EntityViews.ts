@@ -318,6 +318,7 @@ class PlayerView {
   private readonly chute = new THREE.Group();
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
+  private readonly reviveBeacon: THREE.Mesh;
   private readonly hpGroup: THREE.Group;
   private readonly hpFill: THREE.Mesh;
   private deadFor = 0;
@@ -421,6 +422,23 @@ class PlayerView {
     this.aura.position.y = 0.9;
     this.aura.visible = false;
     this.group.add(this.aura);
+
+    // Duos: marks a downed teammate's corpse as revivable — pulses so it
+    // reads at a glance from across the arena, unlike the shrinking body.
+    this.reviveBeacon = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1.15, 24),
+      new THREE.MeshBasicMaterial({
+        color: ALLY_COLOR,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.reviveBeacon.rotation.x = -Math.PI / 2;
+    this.reviveBeacon.position.y = 0.05;
+    this.reviveBeacon.visible = false;
+    this.group.add(this.reviveBeacon);
 
     const bar = makeBar(1.3);
     this.hpGroup = bar.group;
@@ -658,6 +676,7 @@ class PlayerView {
     isBot: boolean,
     dt: number,
     camera: THREE.Camera,
+    isRevivableAlly = false,
   ): void {
     this.group.position.set(p.x, p.y, p.z);
     if (!p.alive) {
@@ -679,9 +698,20 @@ class PlayerView {
       this.shield.visible = false;
       this.aura.visible = false;
       this.chute.visible = false;
-      if (this.deadFor > 2.5) this.group.visible = false;
+      this.reviveBeacon.visible = isRevivableAlly;
+      if (isRevivableAlly) {
+        const pulse = 0.5 + Math.sin(this.deadFor * 3) * 0.3;
+        (this.reviveBeacon.material as THREE.MeshBasicMaterial).opacity = pulse;
+        this.reviveBeacon.scale.setScalar(1 + Math.sin(this.deadFor * 3) * 0.08);
+      }
+      // A revivable corpse has no expiry — it has to stay visible indefinitely,
+      // unlike a normal death fade-out which would otherwise hide it here too.
+      if (this.deadFor > 2.5 && !isRevivableAlly) this.group.visible = false;
       return;
     }
+    this.deadFor = 0;
+    this.group.visible = true;
+    this.reviveBeacon.visible = false;
     this.bodyPivot.scale.setScalar(this.baseScale);
 
     this.group.rotation.y = p.facing;
@@ -1370,6 +1400,7 @@ export class EntityViews {
         p.isBot,
         dt,
         camera,
+        !p.alive && p.teamId === selfTeamId && p.id !== selfId,
       );
     }
 
@@ -1716,6 +1747,10 @@ export class EntityViews {
         case 'death':
           this.spawnBurst(ev.x, ev.z, 2.2, 0x3a3a4a, 0.6);
           sfx.death(ev.id === selfId, ev);
+          break;
+        case 'revived':
+          this.spawnBurst(ev.x, ev.z, 2.0, ALLY_COLOR, 0.5);
+          sfx.revive(ev);
           break;
         case 'mobDeath':
           this.spawnBurst(ev.x, ev.z, ev.elite ? 2.6 : 1.4, ev.elite ? 0xd4af37 : 0x8a6b3d, ev.elite ? 0.6 : 0.4);
