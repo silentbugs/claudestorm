@@ -87,6 +87,11 @@ export class GameApp {
   private fpsAccum = 0;
   private fpsFrames = 0;
   private fpsWorst = 0;
+  /** Sim ticks received from the worker and render-side interpolation
+   * stalls this window — see SnapshotBuffer.stalled for what a stall means.
+   * The rAF-based FPS number can't see either of these on its own. */
+  private ticksReceived = 0;
+  private renderStalls = 0;
   private readonly underwaterEl = document.getElementById('underwater')!;
   private isUnder = false;
   private readonly pauseEl = document.getElementById('pause-menu')!;
@@ -404,6 +409,7 @@ export class GameApp {
     );
     this.transport.start((snap) => {
       this.buffer.push(snap);
+      this.ticksReceived++;
       this.onSnapshot(snap);
     });
     this.lockPointer();
@@ -539,12 +545,23 @@ export class GameApp {
     this.fpsWorst = Math.max(this.fpsWorst, rawDt);
     if (this.fpsAccum >= 0.5) {
       const worstMs = Math.round(this.fpsWorst * 1000);
+      // tick/s and stalls surface what the FPS number can't: tick/s is how
+      // reliably the worker is actually delivering sim state (should sit
+      // right at TICK_RATE, 20.0); stalls count render frames where the
+      // interpolation buffer had no fresh snapshot to show yet, so it held
+      // the last position — a real visual stutter the rAF timing above
+      // never sees, since the frame still drew right on schedule.
+      const tickRate = (this.ticksReceived / this.fpsAccum).toFixed(1);
       const el = document.getElementById('fps')!;
-      el.textContent = `${Math.round(this.fpsFrames / this.fpsAccum)} FPS · worst ${worstMs} ms`;
-      el.classList.toggle('spiking', worstMs > 40);
+      el.textContent =
+        `${Math.round(this.fpsFrames / this.fpsAccum)} FPS · worst ${worstMs} ms · ` +
+        `${tickRate} tick/s · ${this.renderStalls} stall${this.renderStalls === 1 ? '' : 's'}`;
+      el.classList.toggle('spiking', worstMs > 40 || this.renderStalls > 2);
       this.fpsAccum = 0;
       this.fpsFrames = 0;
       this.fpsWorst = 0;
+      this.ticksReceived = 0;
+      this.renderStalls = 0;
     }
 
     if (!this.inMatch) {
@@ -578,6 +595,7 @@ export class GameApp {
 
     this.buffer.advance(dt);
     const sampled = this.buffer.sample();
+    if (this.buffer.stalled) this.renderStalls++;
     if (sampled) {
       const { prev, next, t } = sampled;
       this.views.sync(prev, next, t, SELF_ID, this.sceneMgr.camera, dt);

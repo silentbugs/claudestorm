@@ -10,6 +10,14 @@ export interface SampledState {
 export class SnapshotBuffer {
   private snaps: Snapshot[] = [];
   private renderTime = -1;
+  /**
+   * Set by the last sample() call when the render clock caught up to the
+   * newest buffered snapshot — there's nothing fresher to interpolate
+   * toward, so that frame renders the same position as the one before it.
+   * The render loop still runs on schedule (rAF-measured FPS looks fine);
+   * this is the stall an FPS counter can't see on its own.
+   */
+  stalled = false;
 
   get latest(): Snapshot | null {
     return this.snaps.length > 0 ? this.snaps[this.snaps.length - 1]! : null;
@@ -37,10 +45,12 @@ export class SnapshotBuffer {
     if (this.snaps.length === 0) return null;
     let prev = this.snaps[0]!;
     let next = this.snaps[this.snaps.length - 1]!;
+    this.stalled = false;
     if (this.renderTime <= prev.time) {
       next = prev;
     } else if (this.renderTime >= next.time) {
       prev = next;
+      this.stalled = true;
     } else {
       for (let i = this.snaps.length - 1; i > 0; i--) {
         if (this.snaps[i - 1]!.time <= this.renderTime) {
