@@ -522,6 +522,24 @@ export class GameApp {
           }
         }
       }
+      if (ev.type === 'revived') {
+        if (ev.id === SELF_ID) {
+          // The only way back from the death screen: it's otherwise a
+          // one-way trip (deadShown, the end overlay, spectateId, and
+          // pointer lock all only ever move forward toward "you're done").
+          this.deadShown = false;
+          this.hud.hideEnd();
+          if (this.spectateId !== null) {
+            this.spectateId = null;
+            this.hud.showSpectate(null);
+          }
+          this.lockPointer();
+        }
+        const revived = snap.players.find((p) => p.id === ev.id);
+        if (revived && this.duosMode && revived.teamId === this.selfTeamId && revived.id !== SELF_ID) {
+          this.hud.announceMilestone('Your ally was revived!');
+        }
+      }
     }
     for (const threshold of this.milestoneThresholds) {
       if (snap.aliveTeamCount <= threshold && !this.announcedMilestones.has(threshold)) {
@@ -748,11 +766,21 @@ export class GameApp {
     }
     let best: string | null = null;
     let bestDist = INTERACT_RADIUS;
-    for (const s of snap.scrolls) {
-      const d = dist(x, z, s.x, s.z);
+    for (const p of snap.players) {
+      if (p.alive || p.id === SELF_ID || p.teamId !== this.selfTeamId) continue;
+      const d = dist(x, z, p.x, p.z);
       if (d < bestDist) {
         bestDist = d;
-        best = `Take ${ABILITIES[s.abilityId].name} (${s.rarity})`;
+        best = `Revive ${p.name}`;
+      }
+    }
+    if (!best) {
+      for (const s of snap.scrolls) {
+        const d = dist(x, z, s.x, s.z);
+        if (d < bestDist) {
+          bestDist = d;
+          best = `Take ${ABILITIES[s.abilityId].name} (${s.rarity})`;
+        }
       }
     }
     if (!best) {

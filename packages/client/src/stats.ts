@@ -50,6 +50,9 @@ export class StatsTracker {
   private spellsCast = 0;
   private slaps = 0;
   private done = false;
+  /** Currently dead, not just "died at some point" — a revive clears this. */
+  private selfDown = false;
+  private killedByName: string | null = null;
 
   constructor(
     private readonly selfId: number,
@@ -66,8 +69,6 @@ export class StatsTracker {
       }
     }
 
-    let selfDied = false;
-    let killedBy: string | null = null;
     for (const ev of snap.events) {
       switch (ev.type) {
         case 'hit':
@@ -78,10 +79,16 @@ export class StatsTracker {
           break;
         case 'death':
           if (ev.id === this.selfId) {
-            selfDied = true;
-            killedBy = ev.killerId !== null ? (this.names.get(ev.killerId) ?? 'a rival') : 'the storm';
+            this.selfDown = true;
+            this.killedByName = ev.killerId !== null ? (this.names.get(ev.killerId) ?? 'a rival') : 'the storm';
           } else if (ev.killerId === this.selfId) {
             this.kills++;
+          }
+          break;
+        case 'revived':
+          if (ev.id === this.selfId) {
+            this.selfDown = false;
+            this.killedByName = null;
           }
           break;
         case 'mobDeath':
@@ -103,7 +110,13 @@ export class StatsTracker {
     }
 
     const ended = snap.phase === 'ended';
-    if (!selfDied && !ended) return null;
+    // Duos: a downed self doesn't finish the record while a teammate could
+    // still revive them — only when the whole team is down, or the match
+    // itself ends, is the outcome actually final.
+    const teammateAlive = snap.players.some(
+      (p) => p.id !== this.selfId && p.teamId === this.selfTeamId && p.alive,
+    );
+    if (!ended && (!this.selfDown || teammateAlive)) return null;
     this.done = true;
     const self = snap.players.find((p) => p.id === this.selfId);
     const victory = ended && snap.winnerTeamId === this.selfTeamId;
@@ -122,7 +135,7 @@ export class StatsTracker {
       chestsOpened: this.chestsOpened,
       spellsCast: this.spellsCast,
       slaps: this.slaps,
-      killedBy: victory ? null : killedBy,
+      killedBy: victory ? null : this.killedByName,
       ...this.setup,
     };
   }
