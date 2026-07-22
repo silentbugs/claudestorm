@@ -42,6 +42,11 @@ function noButtons() {
  */
 export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputCommand {
   const { tick, rng, storm } = ctx;
+  // ctx.players is often a live Map iterator (GameSim passes this.players.values()),
+  // which is single-use — a second `for...of` over the same reference silently sees
+  // nothing. This function scans it repeatedly (target, teammate, downed teammate,
+  // ...), so it has to be snapshotted into a real array exactly once, up front.
+  const players = [...ctx.players];
   const diff = DIFFICULTY[ctx.difficulty];
   const st = bot.bot!;
   const buttons = noButtons();
@@ -61,7 +66,7 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
     if (bot.y > 60 && tick >= st.nextLandCheckTick) {
       st.nextLandCheckTick = tick + rng.int(60, 100);
       let crowding = 0;
-      for (const p of ctx.players) {
+      for (const p of players) {
         if (p.id === bot.id || !p.alive || !p.gliding || p.teamId === bot.teamId) continue;
         if (dist(p.x, p.z, st.landTargetX, st.landTargetZ) < 25) crowding++;
       }
@@ -100,14 +105,56 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   // Snack on the chicken when hurt; save mobility items for the storm (below).
   if (bot.item === 'chickenCoup' && bot.hp < bot.maxHp * 0.55) buttons.useItem = true;
 
+  // A living teammate — used for combat coordination below and to regroup
+  // when idle (see the roam branch further down).
+  let mate: PlayerEntity | null = null;
+  for (const p of players) {
+    if (p.id !== bot.id && p.alive && p.teamId === bot.teamId) {
+      mate = p;
+      break;
+    }
+  }
+
   let target: PlayerEntity | null = null;
   let targetDist = Infinity;
-  for (const p of ctx.players) {
+  for (const p of players) {
     if (p.id === bot.id || !p.alive || p.stealthTicks > 0 || p.teamId === bot.teamId) continue;
     const d = dist(bot.x, bot.z, p.x, p.z);
     if (d < targetDist) {
       targetDist = d;
       target = p;
+    }
+  }
+
+  // Focus fire: if my teammate is fighting someone else, and joining them
+  // costs the team less total distance than each of us fighting separately,
+  // pile onto their target instead — a 2v1 ends faster and safer than two
+  // simultaneous 1v1s. Skipped when something's already right on top of me
+  // (a real close-range threat always wins over reorganizing for the team),
+  // and skipped when we already agree (nothing to reconsider).
+  if (mate && target && targetDist > 6) {
+    let mateTarget: PlayerEntity | null = null;
+    let mateTargetDist = Infinity;
+    for (const p of players) {
+      if (p.id === mate.id || !p.alive || p.stealthTicks > 0 || p.teamId === mate.teamId) continue;
+      const d = dist(mate.x, mate.z, p.x, p.z);
+      if (d < mateTargetDist) {
+        mateTargetDist = d;
+        mateTarget = p;
+      }
+    }
+    if (mateTarget && mateTarget.id !== target.id) {
+      const myDistToMateTarget = dist(bot.x, bot.z, mateTarget.x, mateTarget.z);
+      // Both scores are the total distance the TEAM would have to cover for
+      // that choice — computed the same way regardless of which of us is
+      // "me" vs "mate" here, so both bots land on the same answer instead of
+      // each independently switching to chase the other's target and swapping.
+      const stayScore = targetDist + dist(mate.x, mate.z, target.x, target.z);
+      const joinScore = myDistToMateTarget + mateTargetDist;
+      if (myDistToMateTarget < diff.engage && joinScore < stayScore) {
+        target = mateTarget;
+        targetDist = myDistToMateTarget;
+      }
     }
   }
 
@@ -149,7 +196,7 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   // A downed teammate to revive — gated on it being safe to reach so a bot
   // doesn't walk into a closing storm just to stand next to a corpse.
   let downedMate: PlayerEntity | null = null;
-  for (const p of ctx.players) {
+  for (const p of players) {
     if (p.id !== bot.id && !p.alive && p.teamId === bot.teamId) {
       downedMate = p;
       break;
@@ -287,13 +334,6 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
     // Applies to any duo (not just the human's ally), so rival teams look
     // cohesive too. Only kicks in beyond ~12m so a nearby pair doesn't
     // beeline onto each other's exact position.
-    let mate: PlayerEntity | null = null;
-    for (const p of ctx.players) {
-      if (p.id !== bot.id && p.alive && p.teamId === bot.teamId) {
-        mate = p;
-        break;
-      }
-    }
     if (mate && dist(bot.x, bot.z, mate.x, mate.z) > 12) {
       const dir = norm(mate.x - bot.x, mate.z - bot.z);
       moveX = dir.x;

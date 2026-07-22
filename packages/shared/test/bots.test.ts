@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeBotInput } from '../src/sim/bots.js';
 import { Rng } from '../src/math/rng.js';
+import { TICK_RATE } from '../src/constants.js';
 import { makeSim, player } from './helpers.js';
 
 describe('bot heal decisions', () => {
@@ -163,6 +164,58 @@ describe('duos target acquisition', () => {
   });
 });
 
+describe('duos focus fire', () => {
+  it('joins the teammate\'s fight instead of chasing a separate, farther-off target', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 10, 0, { isBot: true, teamId: 1 }), // teammate
+      player(3, 0, 8, { teamId: 2 }), // this bot's own nearest, but far from the teammate
+      player(4, 10, 1, { teamId: 3 }), // teammate's nearest — close to the teammate, reachable by this bot too
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+    const enemyA = sim.players.get(3)!;
+    const enemyB = sim.players.get(4)!;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate, enemyA, enemyB],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    // Aim scatter is at most a few meters; enemyA sits at x=0, enemyB at
+    // x=10 — no overlap, so this robustly shows enemyB (the teammate's
+    // fight) was picked over enemyA (this bot's own, lonelier, nearest).
+    expect(cmd.aimX).toBeGreaterThan(5);
+  });
+
+  it('keeps fighting whatever is already right on top of it instead of redirecting to help a teammate', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 10, 0, { isBot: true, teamId: 1 }), // teammate
+      player(3, 2, 0, { teamId: 2 }), // right on this bot — a real close threat
+      player(4, 10, 1, { teamId: 3 }), // teammate's much closer fight
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+    const enemyA = sim.players.get(3)!;
+    const enemyB = sim.players.get(4)!;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate, enemyA, enemyB],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    // enemyA at x=2 vs. enemyB at x=10 — aim scatter can't blur that gap.
+    expect(cmd.aimX).toBeLessThan(5);
+  });
+});
+
 describe('duos revive behavior', () => {
   it('holds still and presses interact next to a downed teammate', () => {
     const sim = makeSim([
@@ -248,6 +301,22 @@ describe('duos revive behavior', () => {
     });
 
     expect(cmd.buttons.interact).toBe(false);
+  });
+
+  it('finds and revives a downed teammate when driven through the real sim', () => {
+    // Regression: GameSim passes ctx.players as a Map iterator (single-use),
+    // unlike the array literals every other test in this file hands
+    // computeBotInput directly. A bug where an earlier loop over ctx.players
+    // silently exhausted it before this scan ran was invisible to those
+    // array-based tests and only showed up here, through sim.step().
+    const sim = makeSim([
+      { id: 1, name: 'B1', isBot: true, spawn: { x: 0, z: 0 }, teamId: 1 },
+      { id: 2, name: 'B2', isBot: true, spawn: { x: 20, z: 0 }, teamId: 1 },
+    ]);
+    sim.players.get(2)!.alive = false;
+    let snap = sim.step();
+    for (let i = 0; i < TICK_RATE * 10; i++) snap = sim.step();
+    expect(snap.players.find((p) => p.id === 1)!.channelKind).toBe('revive');
   });
 });
 
