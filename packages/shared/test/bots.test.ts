@@ -163,6 +163,94 @@ describe('duos target acquisition', () => {
   });
 });
 
+describe('duos revive behavior', () => {
+  it('holds still and presses interact next to a downed teammate', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 1, 0, { teamId: 1 }), // downed teammate, within INTERACT_RADIUS
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+    mate.alive = false;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    expect(cmd.buttons.interact).toBe(true);
+    expect(cmd.moveX).toBe(0);
+    expect(cmd.moveZ).toBe(0);
+  });
+
+  it('steers toward a distant downed teammate', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 20, 0, { teamId: 1 }), // downed teammate, out of interact range
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+    mate.alive = false;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    expect(cmd.buttons.interact).toBe(false);
+    expect(cmd.moveX).toBeCloseTo(1, 1);
+    expect(cmd.moveZ).toBeCloseTo(0, 1);
+  });
+
+  it('does not divert to a downed teammate while already in combat', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 1, 0, { teamId: 1 }), // downed teammate, within interact range
+      player(3, 5, 0, { teamId: 2 }), // living rival, close enough to be "in combat"
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+    const rival = sim.players.get(3)!;
+    mate.alive = false;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate, rival],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    expect(cmd.buttons.interact).toBe(false);
+  });
+
+  it('does not path toward a downed teammate stranded outside the safe storm radius', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 97, 0, { teamId: 1 }), // downed teammate, beyond storm.radius - margin (95)
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+    mate.alive = false;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate],
+      storm: { x: 0, z: 0, radius: 100 },
+      difficulty: 'normal',
+    });
+
+    expect(cmd.buttons.interact).toBe(false);
+  });
+});
+
 describe('duos regroup behavior', () => {
   it('roams toward a distant living teammate instead of a random waypoint', () => {
     const sim = makeSim([

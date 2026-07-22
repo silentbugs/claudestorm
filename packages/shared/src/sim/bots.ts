@@ -2,6 +2,7 @@ import type { InputCommand } from '../protocol/types.js';
 import type { PlayerEntity } from './entities.js';
 import type { Rng } from '../math/rng.js';
 import { ABILITIES } from './abilities.js';
+import { INTERACT_RADIUS } from '../constants.js';
 import { dist, norm, yawToward } from '../math/vec.js';
 
 export type BotDifficulty = 'easy' | 'normal' | 'hard';
@@ -145,6 +146,18 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
     buttons.heal = true;
   }
 
+  // A downed teammate to revive — gated on it being safe to reach so a bot
+  // doesn't walk into a closing storm just to stand next to a corpse.
+  let downedMate: PlayerEntity | null = null;
+  for (const p of ctx.players) {
+    if (p.id !== bot.id && !p.alive && p.teamId === bot.teamId) {
+      downedMate = p;
+      break;
+    }
+  }
+  const downedMateSafe =
+    downedMate !== null && dist(downedMate.x, downedMate.z, storm.x, storm.z) <= storm.radius - margin;
+
   // Storm retreat is a commitment: pick a point well inside the circle once
   // and walk to it. Re-deciding every tick made bots jitter in place at the
   // danger line, stepping in and out of the band forever.
@@ -186,6 +199,20 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
         st.landTargetZ = storm.z;
       }
       buttons.useItem = true;
+    }
+  } else if (downedMateSafe && !inCombat) {
+    // A downed teammate outranks roaming/engaging (but not this bot's own
+    // survival, handled above) — go stand next to the corpse and revive.
+    const d = dist(bot.x, bot.z, downedMate!.x, downedMate!.z);
+    if (d < INTERACT_RADIUS) {
+      buttons.interact = true; // moveX/moveZ default to 0 — hold still so the channel ticks
+    } else {
+      const dir = norm(downedMate!.x - bot.x, downedMate!.z - bot.z);
+      moveX = dir.x;
+      moveZ = dir.z;
+      yaw = yawToward(bot.x, bot.z, downedMate!.x, downedMate!.z);
+      aimX = bot.x + dir.x * 8;
+      aimZ = bot.z + dir.z * 8;
     }
   } else if (target && targetDist < diff.engage && bot.healCastTicks === 0) {
     // Engage: face the target with imperfect aim that worsens with range and
