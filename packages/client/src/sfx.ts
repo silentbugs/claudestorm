@@ -183,7 +183,24 @@ class Sfx {
    */
   updateGlideWinds(gliders: { id: number; x: number; z: number; y: number; isSelf: boolean }[]): void {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
+    if (!ctx) return;
+    if (ctx.state !== 'running') {
+      // The context can be suspended out from under us at any point (mobile
+      // Safari backgrounding/screen lock, autoplay policy) — but a caller
+      // clearing the glider list (e.g. returning to the menu) still has to
+      // be able to stop already-started loops. Bailing out here like every
+      // other sfx call does would strand them mid-loop: silent while
+      // suspended, then blaring again the instant the context resumes, with
+      // nothing left to tell them to stop. Since nothing is audible while
+      // suspended anyway, just drop every loop outright; live ones rebuild
+      // themselves next call once the context is running again.
+      for (const loop of this.glideLoops.values()) {
+        loop.src.stop();
+        loop.lfo.stop();
+      }
+      this.glideLoops.clear();
+      return;
+    }
     // Loudest chutes first; everyone past the voice cap is dropped outright.
     const MAX_VOICES = 5;
     const voiced = gliders
