@@ -382,6 +382,7 @@ export class GameApp {
     const circles = Number(choiceValue('circles-choice')) || 5;
     const paceMult = Number(choiceValue('pace-choice')) || 1;
     const maxLevel = Number(choiceValue('max-level-choice')) || 10;
+    document.body.classList.toggle('hide-attack-btn', choiceValue('attack-btn-choice') === 'off');
     this.tracker = new StatsTracker(SELF_ID, { bots: botCount, difficulty, circles });
     this.lastMatch = null;
     this.transport = new LocalTransport(
