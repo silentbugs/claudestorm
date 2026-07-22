@@ -306,6 +306,7 @@ export class GameSim {
           ? {
               landTargetX: Math.cos(landAngle) * landR,
               landTargetZ: Math.sin(landAngle) * landR,
+              nextLandCheckTick: 0,
               waypointX: x,
               waypointZ: z,
               strafeSign: 1,

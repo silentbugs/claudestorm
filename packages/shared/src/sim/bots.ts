@@ -51,16 +51,39 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   let aimZ = bot.aimZ;
   let yaw = bot.yaw;
 
-  // Drop phase: steer toward the chosen landing spot.
+  // Drop phase: steer toward the chosen landing spot, occasionally
+  // reconsidering it, and diving in once lined up to beat rivals down.
   if (bot.gliding) {
+    // Re-scout periodically while still high enough for a change of heart to
+    // matter: if other gliders are piling onto the same spot, peel off
+    // toward a fresh one instead of landing in a crowd.
+    if (bot.y > 60 && tick >= st.nextLandCheckTick) {
+      st.nextLandCheckTick = tick + rng.int(60, 100);
+      let crowding = 0;
+      for (const p of ctx.players) {
+        if (p.id === bot.id || !p.alive || !p.gliding) continue;
+        if (dist(p.x, p.z, st.landTargetX, st.landTargetZ) < 25) crowding++;
+      }
+      if (crowding >= 2) {
+        const angle = rng.range(0, Math.PI * 2);
+        const r = rng.range(20, 45);
+        st.landTargetX += Math.cos(angle) * r;
+        st.landTargetZ += Math.sin(angle) * r;
+      }
+    }
+
     const d = dist(bot.x, bot.z, st.landTargetX, st.landTargetZ);
-    // Already over the spot: hold course. Steering from here flips the
-    // direction every tick and the bot pirouettes all the way down.
+    // Already over the spot: hold course and drop in fast — steering from
+    // here flips the direction every tick and the bot pirouettes all the
+    // way down, and there's no reason to drift lazily once lined up.
     if (d < 2.5) {
+      buttons.dive = true;
       return { seq: tick, moveX: 0, moveZ: 0, yaw: bot.yaw, aimX: bot.aimX, aimZ: bot.aimZ, buttons, slotCasts };
     }
     const ease = Math.min(1, d / 8); // slow the approach so it doesn't overshoot
     const dir = norm(st.landTargetX - bot.x, st.landTargetZ - bot.z);
+    // Close enough to commit: dive the rest of the way in.
+    if (d < 10) buttons.dive = true;
     return {
       seq: tick,
       moveX: dir.x * ease,
@@ -105,15 +128,19 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   const stormDanger = distFromCenter > storm.radius - margin;
 
   // Heal strategically: only once the fight has broken off — channeling in
-  // combat just hands the enemy an interrupt.
+  // combat just hands the enemy an interrupt. Below 30% HP that patience
+  // becomes a liability of its own (a shrinking endgame circle keeps
+  // "stormDanger"/"retreating" true almost everywhere except dead center,
+  // which otherwise locks a cornered bot out of healing entirely while it
+  // bleeds out) — desperate bots heal the moment no one can interrupt them,
+  // storm position be damned.
   const inCombat = target !== null && targetDist < diff.engage + 8;
+  const desperate = bot.hp < bot.maxHp * 0.3;
   if (
     bot.healCdTicks === 0 &&
     bot.healCastTicks === 0 &&
-    bot.hp < bot.maxHp * 0.7 &&
     !inCombat &&
-    !stormDanger &&
-    !st.retreating
+    (desperate || (bot.hp < bot.maxHp * 0.7 && !stormDanger && !st.retreating))
   ) {
     buttons.heal = true;
   }

@@ -3,6 +3,8 @@ import type { AbilityId, PlayerSlots } from '../protocol/types.js';
 export interface BotState {
   landTargetX: number;
   landTargetZ: number;
+  /** Next tick a still-gliding bot re-checks whether its landing spot is worth keeping. */
+  nextLandCheckTick: number;
   waypointX: number;
   waypointZ: number;
   strafeSign: 1 | -1;
