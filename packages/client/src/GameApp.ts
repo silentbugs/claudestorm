@@ -12,6 +12,7 @@ import {
   lakeSurfaceY,
   lerp,
   type BotDifficulty,
+  type PlayerSetup,
   type Snapshot,
 } from '@claudestorm/shared';
 import { CameraRig } from './game/CameraRig.js';
@@ -80,6 +81,9 @@ export class GameApp {
   private tracker: StatsTracker | null = null;
   private lastMatch: MatchStats | null = null;
   private inMatch = false;
+  private duosMode = false;
+  private selfTeamId = SELF_ID;
+  private allyId: number | null = null;
   private menuTime = 0;
   private milestoneThresholds: number[] = [];
   private readonly announcedMilestones = new Set<number>();
@@ -150,7 +154,7 @@ export class GameApp {
           // Back out of spectating to the death screen (Play Again / Main Menu).
           this.spectateId = null;
           this.hud.showSpectate(null);
-          this.hud.showEnd(false, this.deathPlacement, true);
+          this.hud.showEnd(false, this.deathPlacement, true, '', this.duosMode);
         }
         return;
       }
@@ -378,8 +382,6 @@ export class GameApp {
       (document.getElementById('bot-count') as HTMLInputElement | null)?.value ?? 11,
     );
     this.announcedMilestones.clear();
-    // Candidate callouts, filtered to ones that actually happen this match.
-    this.milestoneThresholds = [20, 10, 5, 3, 2].filter((n) => n < botCount + 1);
     this.views.setSelfColor(Number(choiceValue('color-swatches')) || HERO_COLORS[0]!);
     this.views.setSelfModel((choiceValue('model-choice') || 'cloud') as HeroModel);
     this.sceneMgr.setEnvironment((choiceValue('time-choice') || 'day') as EnvironmentId);
@@ -388,19 +390,37 @@ export class GameApp {
     const paceMult = Number(choiceValue('pace-choice')) || 1;
     const maxLevel = Number(choiceValue('max-level-choice')) || 10;
     document.body.classList.toggle('hide-attack-btn', choiceValue('attack-btn-choice') === 'off');
-    this.tracker = new StatsTracker(SELF_ID, { bots: botCount, difficulty, circles });
+
+    const bots: PlayerSetup[] = Array.from({ length: botCount }, (_, i) => ({
+      id: i + 2,
+      name: botName(i),
+      isBot: true,
+    }));
+    this.duosMode = choiceValue('team-choice') === 'duos';
+    this.selfTeamId = SELF_ID;
+    this.allyId = null;
+    if (this.duosMode && bots.length > 0) {
+      bots[0]!.teamId = SELF_ID; // first bot is your ally
+      this.allyId = bots[0]!.id;
+      // Remaining bots pair consecutively into teams of two; an odd one out
+      // ends up on a solo team (its own id — same default the sim uses).
+      for (let i = 1; i < bots.length; i += 2) {
+        const teamId = bots[i]!.id;
+        bots[i]!.teamId = teamId;
+        if (bots[i + 1]) bots[i + 1]!.teamId = teamId;
+      }
+    }
+    // Candidate callouts, filtered to ones that actually happen this match —
+    // team count in Duos, raw player count in Solo (they're the same then).
+    const totalTeams = new Set([SELF_ID, ...bots.map((b) => b.teamId ?? b.id)]).size;
+    this.milestoneThresholds = [20, 10, 5, 3, 2].filter((n) => n < totalTeams + 1);
+
+    this.tracker = new StatsTracker(SELF_ID, this.selfTeamId, { bots: botCount, difficulty, circles });
     this.lastMatch = null;
     this.transport = new LocalTransport(
       {
         seed: Date.now() & 0x7fffffff,
-        players: [
-          { id: SELF_ID, name: 'You', isBot: false },
-          ...Array.from({ length: botCount }, (_, i) => ({
-            id: i + 2,
-            name: botName(i),
-            isBot: true,
-          })),
-        ],
+        players: [{ id: SELF_ID, name: 'You', isBot: false, teamId: SELF_ID }, ...bots],
         stormPhases: buildStormPhases(circles, paceMult),
         botDifficulty: difficulty,
         maxLevel,
@@ -481,7 +501,7 @@ export class GameApp {
           this.hideOtherOverlays();
           this.expectedUnlock = true;
           document.exitPointerLock();
-          this.hud.showEnd(false, this.deathPlacement, true, this.matchSummary());
+          this.hud.showEnd(false, this.deathPlacement, true, this.matchSummary(), this.duosMode);
         }
       }
       if (ev.type === 'death') {
@@ -497,20 +517,25 @@ export class GameApp {
             }
           }
           this.hud.pushKillfeed(killerName, victim.name);
+          if (this.duosMode && victim.teamId === this.selfTeamId && victim.id !== SELF_ID) {
+            this.hud.announceMilestone('Your ally has fallen');
+          }
         }
       }
     }
     for (const threshold of this.milestoneThresholds) {
-      if (snap.aliveCount <= threshold && !this.announcedMilestones.has(threshold)) {
+      if (snap.aliveTeamCount <= threshold && !this.announcedMilestones.has(threshold)) {
         this.announcedMilestones.add(threshold);
-        this.hud.announceMilestone(`${threshold} Plunderers remain`);
+        this.hud.announceMilestone(
+          this.duosMode ? `${threshold} teams remain` : `${threshold} Plunderers remain`,
+        );
       }
     }
     if (snap.phase === 'ended' && !this.endShown) {
       this.endShown = true;
       this.spectateId = null;
       this.hud.showSpectate(null);
-      const victory = snap.winnerId === SELF_ID;
+      const victory = snap.winnerTeamId === this.selfTeamId;
       if (victory) sfx.victory();
       this.closePause(false);
       this.hideOtherOverlays();
@@ -518,9 +543,10 @@ export class GameApp {
       document.exitPointerLock();
       this.hud.showEnd(
         victory,
-        victory ? 1 : this.deathPlacement || snap.aliveCount + 1,
+        victory ? 1 : this.deathPlacement || snap.aliveTeamCount + 1,
         false,
         this.matchSummary(),
+        this.duosMode,
       );
     }
   }
@@ -610,8 +636,11 @@ export class GameApp {
       if (this.spectateId !== null) {
         let target = next.players.find((p) => p.id === this.spectateId && p.alive);
         if (!target) {
-          // First pick, or the one we watched just died: follow someone alive.
-          target = next.players.find((p) => p.alive && p.id !== SELF_ID);
+          // First pick, or the one we watched just died: prefer a living
+          // teammate, falling back to whoever's alive.
+          target =
+            next.players.find((p) => p.alive && p.teamId === this.selfTeamId && p.id !== SELF_ID) ??
+            next.players.find((p) => p.alive && p.id !== SELF_ID);
           this.spectateId = target?.id ?? null;
         }
         if (target) {
@@ -621,7 +650,7 @@ export class GameApp {
       }
       // The HUD mirrors whoever the camera follows: while spectating, the
       // vitals, hotbar, cooldowns, and level are the spectated player's.
-      this.hud.update(next, focusNext?.id ?? SELF_ID);
+      this.hud.update(next, focusNext?.id ?? SELF_ID, this.duosMode ? this.allyId : null);
       const focusPrev = focusNext
         ? (prev.players.find((p) => p.id === focusNext.id) ?? focusNext)
         : undefined;
@@ -639,7 +668,16 @@ export class GameApp {
             .filter((p) => p.alive && p.gliding)
             .map((p) => ({ id: p.id, x: p.x, z: p.z, y: p.y, isSelf: p.id === focusNext.id })),
         );
-        this.map.update(dt, next.storm, x, z, this.spectateId !== null ? focusNext.facing : this.rig.yaw);
+        const allyP =
+          this.duosMode && this.allyId !== null ? next.players.find((p) => p.id === this.allyId) : undefined;
+        this.map.update(
+          dt,
+          next.storm,
+          x,
+          z,
+          this.spectateId !== null ? focusNext.facing : this.rig.yaw,
+          allyP ? { x: allyP.x, z: allyP.z, alive: allyP.alive } : null,
+        );
         if (this.spectateId === null) {
           if (this.touchMode || this.gamepads.recentlyActive) {
             // No cursor to aim with: ground circles land mid-range along the facing.

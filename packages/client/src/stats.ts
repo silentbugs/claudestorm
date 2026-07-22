@@ -53,7 +53,8 @@ export class StatsTracker {
 
   constructor(
     private readonly selfId: number,
-    private readonly setup: MatchSetup,
+    private readonly selfTeamId: number = selfId,
+    private readonly setup: MatchSetup = { bots: 0, difficulty: 'normal', circles: 0 },
   ) {}
 
   consume(snap: Snapshot): MatchStats | null {
@@ -105,11 +106,11 @@ export class StatsTracker {
     if (!selfDied && !ended) return null;
     this.done = true;
     const self = snap.players.find((p) => p.id === this.selfId);
-    const victory = ended && snap.winnerId === this.selfId;
+    const victory = ended && snap.winnerTeamId === this.selfTeamId;
     return {
       endedAt: Date.now(),
       victory,
-      placement: victory ? 1 : snap.aliveCount + 1,
+      placement: victory ? 1 : snap.aliveTeamCount + 1,
       survivalSeconds: Math.round(snap.time),
       kills: this.kills,
       mobKills: this.mobKills,

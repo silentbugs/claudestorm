@@ -72,7 +72,14 @@ export class MapView {
   private miniCd = 0;
   private bigCd = 0;
 
-  update(dt: number, storm: StormSnapshot, selfX: number, selfZ: number, selfYaw: number): void {
+  update(
+    dt: number,
+    storm: StormSnapshot,
+    selfX: number,
+    selfZ: number,
+    selfYaw: number,
+    ally?: { x: number; z: number; alive: boolean } | null,
+  ): void {
     if (!this.active) return;
     // Repainting canvases every rendered frame is wasted main-thread time;
     // nothing on the map moves fast enough to need more than ~8/30 Hz.
@@ -80,11 +87,11 @@ export class MapView {
     this.bigCd -= dt;
     if (this.miniCd <= 0) {
       this.miniCd = 0.12;
-      this.draw(this.mini, storm, selfX, selfZ, selfYaw, false);
+      this.draw(this.mini, storm, selfX, selfZ, selfYaw, false, ally);
     }
     if (!this.overlay.classList.contains('hidden') && this.bigCd <= 0) {
       this.bigCd = 0.033;
-      this.draw(this.big, storm, selfX, selfZ, selfYaw, true);
+      this.draw(this.big, storm, selfX, selfZ, selfYaw, true, ally);
     }
   }
 
@@ -198,6 +205,7 @@ export class MapView {
     selfZ: number,
     selfYaw: number,
     labels: boolean,
+    ally?: { x: number; z: number; alive: boolean } | null,
   ): void {
     if (labels) {
       // Match the overlay's CSS size in device pixels so it renders crisp.
@@ -273,5 +281,16 @@ export class MapView {
     ctx.fill();
     ctx.stroke();
     ctx.restore();
+
+    // Your Duos ally: a small dot in the same friendly teal as their in-world tint.
+    if (ally?.alive) {
+      ctx.beginPath();
+      ctx.arc(cx(ally.x), cy(ally.z), size / 90, 0, Math.PI * 2);
+      ctx.fillStyle = '#3ec9a7';
+      ctx.strokeStyle = '#10131f';
+      ctx.lineWidth = Math.max(1, size / 320);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 }

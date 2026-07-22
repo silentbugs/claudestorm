@@ -423,6 +423,49 @@ button {
   background: #f3c53d;
 }
 
+/* Duos only: your ally's status, right under your own level/XP row. */
+#ally-status {
+  position: absolute;
+  top: 74px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  text-shadow: 0 1px 3px #000;
+}
+
+#ally-status.hidden {
+  display: none;
+}
+
+#ally-name {
+  color: #3ec9a7;
+  font-weight: bold;
+}
+
+#ally-hpbar {
+  width: 140px;
+  height: 6px;
+  background: #1a1d2c;
+  border: 1px solid #444a63;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#ally-hpfill {
+  height: 100%;
+  width: 100%;
+  background: #3ec9a7;
+  transition: width 0.15s;
+}
+
+#ally-status.dead #ally-hpfill {
+  background: #50505a;
+}
+
 #center-msg {
   position: absolute;
   top: 26%;

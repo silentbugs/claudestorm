@@ -39,6 +39,10 @@
         <span id="level-badge"></span>
         <div id="xpbar"><div id="xpfill"></div></div>
       </div>
+      <div id="ally-status" class="hidden">
+        <span id="ally-name"></span>
+        <div id="ally-hpbar"><div id="ally-hpfill"></div></div>
+      </div>
       <div id="center-msg"></div>
       <div id="milestone-banner" class="hidden"></div>
       <div id="killfeed"></div>
@@ -94,6 +98,14 @@
               </div>
             </div>
             <div class="setting-desc">Bot sharpness: aim accuracy, how often they cast, and how far away they notice you.</div>
+            <div class="setting-row">
+              <label>Team mode</label>
+              <div id="team-choice" class="choices">
+                <button data-value="solo" class="selected">Solo</button>
+                <button data-value="duos">Duos</button>
+              </div>
+            </div>
+            <div class="setting-desc">Duos pairs you with one AI ally, and pairs remaining bots into rival duo-teams (an odd bot fights alone). No friendly fire within a team.</div>
             <div class="setting-row">
               <label>Circles</label>
               <div id="circles-choice" class="choices">

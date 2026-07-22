@@ -46,6 +46,9 @@ export class Hud {
   private readonly hpFill = document.getElementById('hpfill')!;
   private readonly shieldFill = document.getElementById('shieldfill')!;
   private readonly hpText = document.getElementById('hptext')!;
+  private readonly allyStatus = document.getElementById('ally-status')!;
+  private readonly allyName = document.getElementById('ally-name')!;
+  private readonly allyHpFill = document.getElementById('ally-hpfill')!;
   private readonly endScreen = document.getElementById('end-screen')!;
   private readonly endTitle = document.getElementById('end-title')!;
   private readonly endSub = document.getElementById('end-sub')!;
@@ -200,9 +203,22 @@ export class Hud {
       `<div class="skill-section">Items — consumables from chests and the world</div>${items}`;
   }
 
-  update(snap: Snapshot, selfId: number): void {
+  update(snap: Snapshot, selfId: number, allyId: number | null = null): void {
     this.setText(this.alive, `${snap.aliveCount} alive`);
     const self = snap.players.find((p) => p.id === selfId);
+
+    // Independent of `self`/`selfId` above (those track the camera's current
+    // focus, which changes while spectating) — the ally readout always
+    // tracks your actual teammate, not whoever you're currently watching.
+    const ally = allyId !== null ? snap.players.find((p) => p.id === allyId) : undefined;
+    if (ally) {
+      this.allyStatus.classList.remove('hidden');
+      this.allyStatus.classList.toggle('dead', !ally.alive);
+      this.setText(this.allyName, ally.alive ? ally.name : `${ally.name} (down)`);
+      this.setStyle(this.allyHpFill, 'width', `${Math.max(0, (ally.hp / ally.maxHp) * 100)}%`);
+    } else {
+      this.allyStatus.classList.add('hidden');
+    }
 
     // Keyed to this player's own glide state, not the global phase: you can
     // act the instant you land even if stragglers keep the match in 'drop',
@@ -364,12 +380,14 @@ export class Hud {
     }
   }
 
-  showEnd(victory: boolean, placement: number, canSpectate = false, statsLine = ''): void {
+  showEnd(victory: boolean, placement: number, canSpectate = false, statsLine = '', duos = false): void {
     this.endScreen.classList.remove('hidden');
     this.endTitle.textContent = victory ? 'VICTORY' : 'DEFEAT';
     this.endTitle.className = victory ? 'victory' : 'defeat';
     this.endSub.textContent = victory
-      ? 'Last one standing — the plunder is yours!'
+      ? duos
+        ? 'Your team is the last one standing — the plunder is yours!'
+        : 'Last one standing — the plunder is yours!'
       : `You placed #${placement}`;
     this.endStats.textContent = statsLine;
     this.endStats.classList.toggle('hidden', !statsLine);
@@ -426,5 +444,6 @@ export class Hud {
     this.killfeedRows.length = 0;
     this.milestoneTimer = 0;
     this.milestoneBanner.classList.add('hidden');
+    this.allyStatus.classList.add('hidden');
   }
 }

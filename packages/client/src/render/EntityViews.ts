@@ -31,6 +31,8 @@ const PLAYER_DRAW_DIST = 380;
 
 const SELF_COLOR = 0x4da6ff;
 const BOT_COLOR = 0xd9534f;
+/** A teammate reads as "not a threat" at a glance — distinct from both your own blue and enemy red. */
+const ALLY_COLOR = 0x3ec9a7;
 const DEAD_COLOR = 0x50505a;
 const SLOW_COLOR = 0x9fd8ff;
 const MOB_COLOR = 0x8a6b3d;
@@ -337,8 +339,9 @@ class PlayerView {
     isBot: boolean,
     selfColor: number = SELF_COLOR,
     model: HeroModel = 'cloud',
+    isAlly = false,
   ) {
-    this.base = isSelf || !isBot ? selfColor : BOT_COLOR;
+    this.base = isSelf || !isBot ? selfColor : isAlly ? ALLY_COLOR : BOT_COLOR;
     this.glowBase.setHex(this.base).lerp(WHITE, 0.72);
     // Hands glow when they strike — the hero's "weapon" is a giant slap.
     this.handMat = new THREE.MeshStandardMaterial({
@@ -1320,6 +1323,7 @@ export class EntityViews {
 
     // Players
     const prevPlayers = this.prevPlayerMap;
+    const selfTeamId = next.players.find((p) => p.id === selfId)?.teamId ?? selfId;
     for (const p of next.players) {
       let view = this.players.get(p.id);
       if (!view) {
@@ -1328,7 +1332,8 @@ export class EntityViews {
           p.id === selfId || !p.isBot
             ? this.selfModel
             : HERO_MODELS[p.id % HERO_MODELS.length]!.id;
-        view = new PlayerView(p.id === selfId, p.isBot, this.selfColor, model);
+        const isAlly = p.teamId === selfTeamId && p.id !== selfId;
+        view = new PlayerView(p.id === selfId, p.isBot, this.selfColor, model, isAlly);
         this.players.set(p.id, view);
         this.scene.add(view.group);
       }
