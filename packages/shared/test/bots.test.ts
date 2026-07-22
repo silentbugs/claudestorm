@@ -99,6 +99,41 @@ describe('bot glide decisions', () => {
     const moved = bot.bot!.landTargetX !== 0 || bot.bot!.landTargetZ !== 0;
     expect(moved).toBe(true);
   });
+
+  it('does not peel off when the "crowd" is entirely teammates', () => {
+    const sim = makeSim(
+      [
+        player(1, 0, 0, { isBot: true, teamId: 1 }),
+        player(2, 5, 0, { isBot: true, teamId: 1 }),
+        player(3, -5, 0, { isBot: true, teamId: 1 }),
+      ],
+      { skipDrop: false },
+    );
+    const bot = sim.players.get(1)!;
+    const p2 = sim.players.get(2)!;
+    const p3 = sim.players.get(3)!;
+    bot.gliding = true;
+    bot.y = 100;
+    p2.gliding = true;
+    p3.gliding = true;
+    bot.bot!.landTargetX = 0;
+    bot.bot!.landTargetZ = 0;
+    p2.x = 5;
+    p2.z = 0;
+    p3.x = -5;
+    p3.z = 0;
+
+    computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, p2, p3],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    expect(bot.bot!.landTargetX).toBe(0);
+    expect(bot.bot!.landTargetZ).toBe(0);
+  });
 });
 
 describe('duos target acquisition', () => {
@@ -125,5 +160,30 @@ describe('duos target acquisition', () => {
     // land under 10, rival at x=20 land well above it) — so this robustly
     // proves the rival was picked, not the much-closer teammate.
     expect(cmd.aimX).toBeGreaterThan(10);
+  });
+});
+
+describe('duos regroup behavior', () => {
+  it('roams toward a distant living teammate instead of a random waypoint', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 50, 0, { teamId: 1 }),
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    // No enemies exist (the only other player is a teammate), no storm danger,
+    // so this must be the roam branch — and with a teammate 50m away, it
+    // should head straight for them (+x) rather than a random waypoint.
+    expect(cmd.moveX).toBeCloseTo(1, 1);
+    expect(cmd.moveZ).toBeCloseTo(0, 1);
   });
 });

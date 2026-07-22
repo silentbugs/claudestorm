@@ -61,7 +61,7 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       st.nextLandCheckTick = tick + rng.int(60, 100);
       let crowding = 0;
       for (const p of ctx.players) {
-        if (p.id === bot.id || !p.alive || !p.gliding) continue;
+        if (p.id === bot.id || !p.alive || !p.gliding || p.teamId === bot.teamId) continue;
         if (dist(p.x, p.z, st.landTargetX, st.landTargetZ) < 25) crowding++;
       }
       if (crowding >= 2) {
@@ -255,22 +255,42 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
       moveZ = toTarget.x * st.strafeSign;
     }
   } else {
-    // Roam toward a waypoint inside the safe circle.
-    if (dist(bot.x, bot.z, st.waypointX, st.waypointZ) < 2.5 || tick >= st.nextDecisionTick) {
-      // Keep waypoints clear of the danger band, even in a tiny final circle.
-      const maxR = Math.max(2, storm.radius - Math.max(8, margin * 2));
-      const angle = rng.range(0, Math.PI * 2);
-      const r = Math.sqrt(rng.next()) * maxR;
-      st.waypointX = storm.x + Math.cos(angle) * r;
-      st.waypointZ = storm.z + Math.sin(angle) * r;
-      st.nextDecisionTick = tick + rng.int(80, 200);
+    // Roam toward a waypoint inside the safe circle — unless a living
+    // teammate has drifted off, in which case regroup with them instead.
+    // Applies to any duo (not just the human's ally), so rival teams look
+    // cohesive too. Only kicks in beyond ~12m so a nearby pair doesn't
+    // beeline onto each other's exact position.
+    let mate: PlayerEntity | null = null;
+    for (const p of ctx.players) {
+      if (p.id !== bot.id && p.alive && p.teamId === bot.teamId) {
+        mate = p;
+        break;
+      }
     }
-    const dir = norm(st.waypointX - bot.x, st.waypointZ - bot.z);
-    moveX = dir.x;
-    moveZ = dir.z;
-    yaw = yawToward(bot.x, bot.z, st.waypointX, st.waypointZ);
-    aimX = bot.x + dir.x * 8;
-    aimZ = bot.z + dir.z * 8;
+    if (mate && dist(bot.x, bot.z, mate.x, mate.z) > 12) {
+      const dir = norm(mate.x - bot.x, mate.z - bot.z);
+      moveX = dir.x;
+      moveZ = dir.z;
+      yaw = yawToward(bot.x, bot.z, mate.x, mate.z);
+      aimX = bot.x + dir.x * 8;
+      aimZ = bot.z + dir.z * 8;
+    } else {
+      if (dist(bot.x, bot.z, st.waypointX, st.waypointZ) < 2.5 || tick >= st.nextDecisionTick) {
+        // Keep waypoints clear of the danger band, even in a tiny final circle.
+        const maxR = Math.max(2, storm.radius - Math.max(8, margin * 2));
+        const angle = rng.range(0, Math.PI * 2);
+        const r = Math.sqrt(rng.next()) * maxR;
+        st.waypointX = storm.x + Math.cos(angle) * r;
+        st.waypointZ = storm.z + Math.sin(angle) * r;
+        st.nextDecisionTick = tick + rng.int(80, 200);
+      }
+      const dir = norm(st.waypointX - bot.x, st.waypointZ - bot.z);
+      moveX = dir.x;
+      moveZ = dir.z;
+      yaw = yawToward(bot.x, bot.z, st.waypointX, st.waypointZ);
+      aimX = bot.x + dir.x * 8;
+      aimZ = bot.z + dir.z * 8;
+    }
   }
 
   return { seq: tick, moveX, moveZ, yaw, aimX, aimZ, buttons, slotCasts };
