@@ -57,6 +57,24 @@ export class TouchControls {
     jump.addEventListener('pointercancel', stopDive);
     jump.addEventListener('pointerleave', stopDive);
 
+    // Optional (toggled from the start screen): a dedicated attack button
+    // near the right thumb, so attacking doesn't mean reaching over to the
+    // hotbar's melee slot. Mirrors the hotbar's own held-melee behavior.
+    const attack = document.createElement('button');
+    attack.id = 'touch-attack';
+    attack.textContent = 'ATTACK';
+    hud.appendChild(attack);
+    attack.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.input.touchMeleeAlt = true;
+    });
+    const stopAttack = () => {
+      this.input.touchMeleeAlt = false;
+    };
+    attack.addEventListener('pointerup', stopAttack);
+    attack.addEventListener('pointercancel', stopAttack);
+    attack.addEventListener('pointerleave', stopAttack);
+
     const menu = document.createElement('button');
     menu.id = 'touch-menu';
     menu.textContent = '⚙';

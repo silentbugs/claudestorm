@@ -49,6 +49,9 @@ export class InputManager {
   touchMoveF = 0;
   touchMoveS = 0;
   touchMelee = false;
+  /** The optional dedicated attack button — separate from touchMelee so
+   * releasing one doesn't clear a swing still held on the other. */
+  touchMeleeAlt = false;
   touchDive = false;
 
   /** Gamepad/touch: queue a one-shot button press. */
@@ -254,7 +257,7 @@ export class InputManager {
       aimX,
       aimZ,
       buttons: {
-        melee: this.keys.has('KeyR') || this.padMelee || this.touchMelee,
+        melee: this.keys.has('KeyR') || this.padMelee || this.touchMelee || this.touchMeleeAlt,
         dive: this.keys.has('Space') || this.padDive || this.touchDive,
         roll: this.pendingEdges.has('roll'),
         jump: this.pendingEdges.has('jump'),

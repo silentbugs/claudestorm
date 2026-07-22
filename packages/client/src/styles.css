@@ -100,9 +100,38 @@ button {
   z-index: 30;
 }
 
+/* Right of the move stick (left thumb steers), left of JUMP — reachable
+   without the right thumb leaving the "action" side of the screen at all. */
+#touch-attack {
+  display: none;
+  position: fixed;
+  right: 122px;
+  bottom: 128px;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 2px solid #e8927a;
+  background: rgba(80, 46, 42, 0.75);
+  color: #e8e6d9;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: bold;
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 30;
+}
+
 .touch-mode #touch-jump,
 .touch-mode #touch-menu {
   display: block;
+}
+
+.touch-mode #touch-attack {
+  display: block;
+}
+
+.touch-mode.hide-attack-btn #touch-attack {
+  display: none;
 }
 
 .touch-mode #controls-hint,
@@ -601,6 +630,20 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+/* Settings that only make sense on a touchscreen (desktop already has keys). */
+.setting-row.touch-only,
+.setting-desc.touch-only {
+  display: none;
+}
+
+.touch-mode .setting-row.touch-only {
+  display: flex;
+}
+
+.touch-mode .setting-desc.touch-only {
+  display: block;
 }
 
 .setting-row label {

@@ -221,6 +221,19 @@ export class GameApp {
     }
   }
 
+  /**
+   * The end screen has no explicit z-index, so any overlay that does (map,
+   * skills) silently sits on top of and blocks it if left open when the
+   * match ends — invisible popup, unreachable buttons, "stuck" for the
+   * player. Checking the minimap right as the match wraps up is common
+   * enough on a small mobile screen that this needs to be unconditional,
+   * not just an edge case.
+   */
+  private hideOtherOverlays(): void {
+    document.getElementById('map-overlay')!.classList.add('hidden');
+    document.getElementById('skills-overlay')!.classList.add('hidden');
+  }
+
   private closePause(relock: boolean): void {
     if (!this.pauseOpen) return;
     this.pauseOpen = false;
@@ -458,6 +471,7 @@ export class GameApp {
         // Offer to watch the rest of the match play out.
         if (snap.phase !== 'ended') {
           this.closePause(false);
+          this.hideOtherOverlays();
           this.expectedUnlock = true;
           document.exitPointerLock();
           this.hud.showEnd(false, this.deathPlacement, true, this.matchSummary());
@@ -492,6 +506,7 @@ export class GameApp {
       const victory = snap.winnerId === SELF_ID;
       if (victory) sfx.victory();
       this.closePause(false);
+      this.hideOtherOverlays();
       this.expectedUnlock = true;
       document.exitPointerLock();
       this.hud.showEnd(
