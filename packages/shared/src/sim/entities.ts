@@ -16,7 +16,15 @@ export interface BotState {
 }
 
 export interface ChestChannel {
+  kind: 'chest';
   chestId: number;
+  ticksLeft: number;
+  totalTicks: number;
+}
+
+export interface ReviveChannel {
+  kind: 'revive';
+  targetId: number;
   ticksLeft: number;
   totalTicks: number;
 }
@@ -110,7 +118,7 @@ export interface PlayerEntity {
   pullToX: number;
   pullToZ: number;
 
-  channel: ChestChannel | null;
+  channel: ChestChannel | ReviveChannel | null;
   /** Set when damaged this tick — cancels chest channeling. */
   damagedThisTick: boolean;
 

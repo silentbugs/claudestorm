@@ -52,6 +52,8 @@ import {
   PLAYER_BASE_HP,
   PLAYER_RADIUS,
   PLAYER_SPEED,
+  REVIVE_CHANNEL_SECONDS,
+  REVIVE_HP_FRACTION,
   ROLL_COOLDOWN,
   ROLL_DISTANCE,
   ROLL_DURATION,
@@ -499,6 +501,14 @@ export class GameSim {
   }
 
   private updatePlayer(p: PlayerEntity): void {
+    // Cancel a channel using damage taken since the last tick, before that
+    // flag is reset below. Damage from another player lands during *their*
+    // pass through this same loop (before or after this player's own), and
+    // storm DoT lands even later, in updateStorm() — both are always still
+    // in the future relative to a check placed after the reset, so this has
+    // to run first or a channel could never be interrupted by anything but
+    // the channeler's own poison ticking mid-update.
+    if (p.channel && p.damagedThisTick) p.channel = null;
     p.damagedThisTick = false;
     p.facing = p.yaw;
 
@@ -608,17 +618,23 @@ export class GameSim {
     p.pendingButtons.clear();
     p.pendingSlotCasts.clear();
 
-    // Channel: cancelled by moving, acting, or taking damage.
+    // Channel: cancelled by moving or rolling; otherwise ticks down and completes.
     if (p.channel) {
       const moved = Math.hypot(p.moveX, p.moveZ) > 0.1;
-      if (moved || p.damagedThisTick || p.rollTicks > 0) {
+      if (moved || p.rollTicks > 0) {
         p.channel = null;
       } else {
         p.channel.ticksLeft--;
         if (p.channel.ticksLeft <= 0) {
-          const chest = this.chests.get(p.channel.chestId);
-          p.channel = null;
-          if (chest && !chest.opened) this.openChest(chest, p);
+          if (p.channel.kind === 'chest') {
+            const chest = this.chests.get(p.channel.chestId);
+            p.channel = null;
+            if (chest && !chest.opened) this.openChest(chest, p);
+          } else {
+            const target = this.players.get(p.channel.targetId);
+            p.channel = null;
+            if (target && !target.alive) this.revivePlayer(target, p);
+          }
         }
       }
     }
@@ -1171,6 +1187,23 @@ export class GameSim {
   }
 
   private handleInteract(p: PlayerEntity): void {
+    // Revive a downed teammate before anything else — their own dropped
+    // loot is probably scattered right on top of them.
+    let bestDowned: PlayerEntity | null = null;
+    let bestDownedDist = INTERACT_RADIUS;
+    for (const other of this.players.values()) {
+      if (other.id === p.id || other.alive || other.teamId !== p.teamId) continue;
+      const d = dist(p.x, p.z, other.x, other.z);
+      if (d < bestDownedDist) {
+        bestDownedDist = d;
+        bestDowned = other;
+      }
+    }
+    if (bestDowned && !p.channel) {
+      const total = Math.round(REVIVE_CHANNEL_SECONDS * TICK_RATE);
+      p.channel = { kind: 'revive', targetId: bestDowned.id, ticksLeft: total, totalTicks: total };
+      return;
+    }
     let bestScroll: ScrollEntity | null = null;
     let bestScrollDist = INTERACT_RADIUS;
     for (const s of this.scrolls.values()) {
@@ -1214,7 +1247,7 @@ export class GameSim {
     }
     if (bestChest && !p.channel) {
       const total = Math.round(CHEST_CHANNEL_SECONDS * TICK_RATE);
-      p.channel = { chestId: bestChest.id, ticksLeft: total, totalTicks: total };
+      p.channel = { kind: 'chest', chestId: bestChest.id, ticksLeft: total, totalTicks: total };
     }
   }
 
@@ -1732,6 +1765,12 @@ export class GameSim {
       target.alive = false;
       target.channel = null;
       target.chargeSlot = null;
+      // A corpse can now stick around indefinitely waiting on a revive (no
+      // expiry), so it must land on the ground — otherwise a death mid-leap,
+      // mid-knockback, or mid-redeploy-glide leaves it floating forever.
+      target.y = 0;
+      target.vy = 0;
+      target.gliding = false;
       this.dropDeathLoot(target);
       this.events.push({ type: 'death', id: target.id, killerId: sourceId, x: target.x, z: target.z });
       const killer = sourceId !== null ? this.players.get(sourceId) : undefined;
@@ -1752,12 +1791,50 @@ export class GameSim {
         equipped.rarity,
       );
     }
+    // The loadout scatters as pickups above — clear it so a future revive
+    // can't hand back the same abilities that are now lying on the ground.
+    p.slots.offense = [null, null];
+    p.slots.utility = [null, null];
     const coins = Math.min(DEATH_COIN_DROP_MAX, Math.floor(p.plunder * DEATH_COIN_DROP_FRACTION));
     for (let i = 0; i < coins; i++) this.spawnCoin(p.x, p.z);
     if (p.item) {
       this.spawnItem(p.x + this.rng.range(-1.2, 1.2), p.z + this.rng.range(-1.2, 1.2), p.item);
       p.item = null;
     }
+  }
+
+  /**
+   * Duos: a living teammate channeled next to the corpse for the full
+   * revive time. Bring them back at partial HP and clear everything that
+   * was frozen mid-effect at the moment of death — none of it should
+   * resume just because updatePlayer starts ticking for them again.
+   */
+  private revivePlayer(target: PlayerEntity, reviver: PlayerEntity): void {
+    target.alive = true;
+    target.hp = target.maxHp * REVIVE_HP_FRACTION;
+    target.stealthTicks = 0;
+    target.poisonTicks = 0;
+    target.poisonDps = 0;
+    target.slowTicks = 0;
+    target.slowFactor = 1;
+    target.rootTicks = 0;
+    target.stunTicks = 0;
+    target.immuneTicks = 0;
+    target.faeTicks = 0;
+    target.speedBuffTicks = 0;
+    target.speedBuffMult = 1;
+    target.shieldHp = 0;
+    target.shieldTicks = 0;
+    target.auraTicks = 0;
+    target.auraDps = 0;
+    target.hotTicks = 0;
+    target.hotPerTick = 0;
+    target.kbTicks = 0;
+    target.pullTicks = 0;
+    target.leapTicks = 0;
+    target.rollTicks = 0;
+    target.chargeSlot = null;
+    this.events.push({ type: 'revived', id: target.id, reviverId: reviver.id, x: target.x, z: target.z });
   }
 
   /** Touching down mid-dive crushes any mob (elites included) underfoot. */
@@ -1903,7 +1980,7 @@ export class GameSim {
           : p.healCastTicks > 0
             ? 1 - p.healCastTicks / (HEAL_CAST_SECONDS * TICK_RATE)
             : -1,
-        channelKind: p.channel ? 'chest' : p.healCastTicks > 0 ? 'heal' : null,
+        channelKind: p.channel ? p.channel.kind : p.healCastTicks > 0 ? 'heal' : null,
         charging:
           p.chargeSlot !== null && p.chargeMaxTicks > 0
             ? Math.min(1, p.chargeTicks / p.chargeMaxTicks)

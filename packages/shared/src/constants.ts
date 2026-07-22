@@ -98,6 +98,10 @@ export const DEATH_COIN_DROP_MAX = 12;
 export const INTERACT_RADIUS = 2.6;
 export const CHEST_CHANNEL_SECONDS = 1.5;
 
+/** Duos: revive a downed teammate by channeling next to their corpse. */
+export const REVIVE_CHANNEL_SECONDS = 10;
+export const REVIVE_HP_FRACTION = 0.5;
+
 /** Mobs (wild creatures that drop loot). */
 export const MOB_HP = 40;
 export const MOB_SPEED = 5.5;

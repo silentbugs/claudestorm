@@ -112,7 +112,7 @@ export interface PlayerSnapshot {
   /** Chest-open/heal progress 0..1, or -1 when not channeling. */
   channeling: number;
   /** What the channel bar is for. */
-  channelKind: 'chest' | 'heal' | null;
+  channelKind: 'chest' | 'heal' | 'revive' | null;
   /** Charge-and-release cast progress 0..1, or -1 when not charging. */
   charging: number;
   slots: PlayerSlots;
@@ -215,7 +215,8 @@ export type GameEvent =
   | { type: 'heal'; playerId: number; amount: number; x: number; z: number }
   | { type: 'itemPickup'; playerId: number; itemId: import('../sim/items.js').ItemId }
   | { type: 'itemUsed'; playerId: number; itemId: import('../sim/items.js').ItemId; x: number; z: number }
-  | { type: 'diveImpact'; playerId: number; x: number; z: number };
+  | { type: 'diveImpact'; playerId: number; x: number; z: number }
+  | { type: 'revived'; id: number; reviverId: number; x: number; z: number };
 
 export interface Snapshot {
   tick: number;
