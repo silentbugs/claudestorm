@@ -76,6 +76,8 @@ export interface PlayerSnapshot {
   id: number;
   name: string;
   isBot: boolean;
+  /** Shared by teammates; a solo player's teamId is just their own id. */
+  teamId: number;
   x: number;
   /** Height above ground (jumping, gliding, leaping). */
   y: number;
@@ -221,7 +223,11 @@ export interface Snapshot {
   time: number;
   phase: MatchPhase;
   winnerId: number | null;
+  /** The winning team's id — the authoritative field for "did my team win," even if winnerId is a teammate. */
+  winnerTeamId: number | null;
   aliveCount: number;
+  /** Distinct teams with at least one living member. Equals aliveCount in solo (1 team per player). */
+  aliveTeamCount: number;
   storm: StormSnapshot;
   players: PlayerSnapshot[];
   mobs: MobSnapshot[];

@@ -252,6 +252,29 @@ describe('match flow', () => {
   });
 });
 
+describe('duos win condition', () => {
+  it('ends when only one team has a living member, not one player', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { teamId: 1 }),
+      player(2, 1, 0, { teamId: 1 }), // teammate, still alive
+      player(3, 6, 0, { teamId: 2 }),
+    ]);
+    sim.players.get(3)!.alive = false; // last member of team 2 dies
+    const snap = sim.step();
+    expect(snap.phase).toBe('ended');
+    expect(snap.winnerTeamId).toBe(1);
+    expect(snap.aliveTeamCount).toBe(1);
+    expect(snap.aliveCount).toBe(2); // both teammates still alive individually
+  });
+
+  it('a same-team-only sim never auto-ends (regression: checkWin\'s guard must be team-count-based)', () => {
+    const sim = makeSim([player(1, 0, 0, { teamId: 1 }), player(2, 1, 0, { teamId: 1 })]);
+    let snap = sim.step();
+    for (let i = 0; i < TICK_RATE * 5; i++) snap = sim.step();
+    expect(snap.phase).not.toBe('ended');
+  });
+});
+
 describe('determinism', () => {
   it('two sims with the same seed and inputs produce identical snapshots', () => {
     const build = () =>

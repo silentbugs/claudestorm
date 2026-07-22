@@ -25,6 +25,8 @@ export interface PlayerEntity {
   id: number;
   name: string;
   isBot: boolean;
+  /** Shared by teammates; defaults to the player's own id (a team of one) when unpaired. */
+  teamId: number;
   x: number;
   /** Height above ground. */
   y: number;

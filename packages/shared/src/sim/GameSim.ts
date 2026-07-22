@@ -132,6 +132,8 @@ export interface PlayerSetup {
   id: number;
   name: string;
   isBot: boolean;
+  /** Shared by teammates. Omit for solo/FFA — defaults to this player's own id. */
+  teamId?: number;
   /** Test hook: land at this position instead of dropping in. */
   spawn?: { x: number; z: number };
   /** Starting loadout (bots get a random one when omitted). */
@@ -168,6 +170,7 @@ export class GameSim {
   private tick = 0;
   private phase: MatchPhase;
   private winnerId: number | null = null;
+  private winnerTeamId: number | null = null;
   private readonly rng: Rng;
 
   private projectiles: ProjectileEntity[] = [];
@@ -227,6 +230,7 @@ export class GameSim {
         id: setup.id,
         name: setup.name,
         isBot: setup.isBot,
+        teamId: setup.teamId ?? setup.id,
         x,
         y: dropping ? DROP_START_Y : 0,
         z,
@@ -655,7 +659,8 @@ export class GameSim {
       // Slicing Winds: carve through anyone touched mid-dash, once each.
       if (p.leapDashDamage > 0) {
         for (const target of this.players.values()) {
-          if (!target.alive || target.id === p.id || p.leapHitIds.has(target.id)) continue;
+          if (!target.alive || target.id === p.id || target.teamId === p.teamId || p.leapHitIds.has(target.id))
+            continue;
           if (dist(p.x, p.z, target.x, target.z) < 1.4) {
             p.leapHitIds.add(target.id);
             this.damagePlayer(target, p.leapDashDamage, p.id);
@@ -733,7 +738,7 @@ export class GameSim {
     this.events.push({ type: 'melee', casterId: p.id, x: p.x, z: p.z, facing: p.facing, combo: p.comboCount });
 
     for (const target of this.players.values()) {
-      if (!target.alive || target.id === p.id) continue;
+      if (!target.alive || target.id === p.id || target.teamId === p.teamId) continue;
       if (!this.inMeleeArc(p.x, p.z, fx, fz, target.x, target.z, PLAYER_RADIUS)) continue;
       this.damagePlayer(target, damage, p.id);
     }
@@ -1101,7 +1106,7 @@ export class GameSim {
       return ((tx - p.x) / d) * fx + ((tz - p.z) / d) * fz > arcCos;
     };
     for (const target of this.players.values()) {
-      if (!target.alive || target.id === p.id) continue;
+      if (!target.alive || target.id === p.id || target.teamId === p.teamId) continue;
       if (!inCone(target.x, target.z, PLAYER_RADIUS)) continue;
       let damage = def.damage * scale;
       if (def.poisonBonusMult && target.poisonTicks > 0) damage *= def.poisonBonusMult;
@@ -1128,7 +1133,7 @@ export class GameSim {
     if (p.leapLandRadius <= 0) return; // pure movement dash: no landing slam
     this.events.push({ type: 'detonate', x: p.x, z: p.z, radius: p.leapLandRadius, abilityId: 'quakingLeap' });
     for (const target of this.players.values()) {
-      if (!target.alive || target.id === p.id) continue;
+      if (!target.alive || target.id === p.id || target.teamId === p.teamId) continue;
       const d = dist(p.x, p.z, target.x, target.z);
       if (d > p.leapLandRadius) continue;
       this.damagePlayer(target, p.leapDamage, p.id);
@@ -1153,7 +1158,7 @@ export class GameSim {
 
   private auraDamage(p: PlayerEntity): void {
     for (const target of this.players.values()) {
-      if (!target.alive || target.id === p.id) continue;
+      if (!target.alive || target.id === p.id || target.teamId === p.teamId) continue;
       if (dist(p.x, p.z, target.x, target.z) <= p.auraRadius + PLAYER_RADIUS) {
         this.damagePlayer(target, p.auraDps * TICK_DT, p.id);
       }
@@ -1306,8 +1311,10 @@ export class GameSim {
       }
 
       if (!gone) {
+        const ownerTeamId = owner?.teamId ?? -1;
         for (const target of this.players.values()) {
-          if (!target.alive || target.id === proj.ownerId || proj.hitIds.has(target.id)) continue;
+          if (!target.alive || target.id === proj.ownerId || target.teamId === ownerTeamId || proj.hitIds.has(target.id))
+            continue;
           if (target.rollTicks > 0) continue; // barrel roll dodges projectiles
           if (dist(proj.x, proj.z, target.x, target.z) < proj.radius + PLAYER_RADIUS) {
             proj.hitIds.add(target.id);
@@ -1331,7 +1338,8 @@ export class GameSim {
             // Chilling splash around the impact (Rime Arrow).
             if (def.splashRadius) {
               for (const other of this.players.values()) {
-                if (!other.alive || other.id === proj.ownerId || other.id === target.id) continue;
+                if (!other.alive || other.id === proj.ownerId || other.teamId === ownerTeamId || other.id === target.id)
+                  continue;
                 if (dist(proj.x, proj.z, other.x, other.z) <= def.splashRadius) {
                   this.damagePlayer(other, proj.damage * (def.splashMult ?? 0.5), proj.ownerId);
                   if (other.alive && def.slowDuration) {
@@ -1410,8 +1418,9 @@ export class GameSim {
         }
         this.events.push({ type: 'detonate', x: zone.x, z: zone.z, radius: zone.radius, abilityId: zone.abilityId });
         const zoneDef = ABILITIES[zone.abilityId];
+        const telegraphOwnerTeamId = this.players.get(zone.ownerId)?.teamId ?? -1;
         for (const target of this.players.values()) {
-          if (!target.alive || target.id === zone.ownerId) continue;
+          if (!target.alive || target.id === zone.ownerId || target.teamId === telegraphOwnerTeamId) continue;
           if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
             if (zone.damage > 0) this.damagePlayer(target, zone.damage, zone.ownerId);
             if (!target.alive) continue;
@@ -1449,8 +1458,9 @@ export class GameSim {
       } else if (zone.kind === 'trap') {
         if (this.tick >= zone.endTick) continue;
         let sprung = false;
+        const trapOwnerTeamId = this.players.get(zone.ownerId)?.teamId ?? -1;
         for (const target of this.players.values()) {
-          if (!target.alive || target.id === zone.ownerId) continue;
+          if (!target.alive || target.id === zone.ownerId || target.teamId === trapOwnerTeamId) continue;
           if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
             this.damagePlayer(target, zone.damage, zone.ownerId);
             if (target.alive) {
@@ -1465,8 +1475,9 @@ export class GameSim {
       } else {
         // Damaging / chilling pool
         if (this.tick >= zone.endTick) continue;
+        const poolOwnerTeamId = this.players.get(zone.ownerId)?.teamId ?? -1;
         for (const target of this.players.values()) {
-          if (!target.alive || target.id === zone.ownerId) continue;
+          if (!target.alive || target.id === zone.ownerId || target.teamId === poolOwnerTeamId) continue;
           if (dist(zone.x, zone.z, target.x, target.z) <= zone.radius + PLAYER_RADIUS / 2) {
             if (zone.dps > 0) this.damagePlayer(target, zone.dps * TICK_DT, zone.ownerId);
             if (target.alive && zone.slowFactor < 1) {
@@ -1800,19 +1811,22 @@ export class GameSim {
 
   private checkWin(): void {
     if (this.phase !== 'live') return;
-    // A solo sandbox (tests, practice) never auto-ends.
-    if (this.players.size <= 1) return;
-    let aliveCount = 0;
+    const seenTeams = new Set<number>();
+    for (const p of this.players.values()) seenTeams.add(p.teamId);
+    // A solo sandbox (tests, practice) — or an all-one-team fixture — never auto-ends.
+    if (seenTeams.size <= 1) return;
     let lastAlive: PlayerEntity | null = null;
+    const aliveTeams = new Set<number>();
     for (const p of this.players.values()) {
       if (p.alive) {
-        aliveCount++;
+        aliveTeams.add(p.teamId);
         lastAlive = p;
       }
     }
-    if (aliveCount <= 1) {
+    if (aliveTeams.size <= 1) {
       this.phase = 'ended';
       this.winnerId = lastAlive?.id ?? null;
+      this.winnerTeamId = lastAlive?.teamId ?? null;
     }
   }
 
@@ -1825,14 +1839,22 @@ export class GameSim {
       this.stormPhaseTime <= phaseDef.hold + phaseDef.shrink;
 
     let aliveCount = 0;
-    for (const p of this.players.values()) if (p.alive) aliveCount++;
+    const aliveTeamIds = new Set<number>();
+    for (const p of this.players.values()) {
+      if (p.alive) {
+        aliveCount++;
+        aliveTeamIds.add(p.teamId);
+      }
+    }
 
     const snapshot: Snapshot = {
       tick: this.tick,
       time: this.tick * TICK_DT,
       phase: this.phase,
       winnerId: this.winnerId,
+      winnerTeamId: this.winnerTeamId,
       aliveCount,
+      aliveTeamCount: aliveTeamIds.size,
       storm: {
         x: this.stormCenterX,
         z: this.stormCenterZ,
@@ -1851,6 +1873,7 @@ export class GameSim {
         id: p.id,
         name: p.name,
         isBot: p.isBot,
+        teamId: p.teamId,
         x: p.x,
         y: p.y,
         z: p.z,

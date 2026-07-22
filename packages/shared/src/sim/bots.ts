@@ -102,7 +102,7 @@ export function computeBotInput(bot: PlayerEntity, ctx: BotContext): InputComman
   let target: PlayerEntity | null = null;
   let targetDist = Infinity;
   for (const p of ctx.players) {
-    if (p.id === bot.id || !p.alive || p.stealthTicks > 0) continue;
+    if (p.id === bot.id || !p.alive || p.stealthTicks > 0 || p.teamId === bot.teamId) continue;
     const d = dist(bot.x, bot.z, p.x, p.z);
     if (d < targetDist) {
       targetDist = d;

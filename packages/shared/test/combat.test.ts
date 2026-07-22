@@ -492,6 +492,62 @@ describe("Hunter's Chains", () => {
   });
 });
 
+describe('duos: no friendly fire', () => {
+  it('melee does not damage a teammate', () => {
+    const sim = makeSim([player(1, 0, 0, { teamId: 1 }), player(2, 2, 0, { teamId: 1 })]);
+    sim.applyInput(1, cmd({ yaw: Math.PI / 2, buttons: HOLD_MELEE }));
+    sim.step();
+    expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+  });
+
+  it('a splash projectile (Rime Arrow) passes through teammates, splash included', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { teamId: 1, loadout: loadout(['rimeArrow']) }),
+      player(2, 10, 0, { teamId: 1 }),
+      player(3, 10, 1.5, { teamId: 1 }), // inside the splash radius too
+    ]);
+    sim.applyInput(1, castCmd(0, 10, 0));
+    for (let i = 0; i < 10; i++) sim.step();
+    expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+    expect(sim.players.get(2)!.slowTicks).toBe(0);
+    expect(sim.players.get(3)!.hp).toBe(PLAYER_BASE_HP);
+  });
+
+  it('a telegraph zone (Star Bomb) does not damage a teammate standing in it', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { teamId: 1, loadout: loadout(['starBomb']) }),
+      player(2, 5, 0, { teamId: 1 }),
+    ]);
+    sim.applyInput(1, castCmd(0, 5, 0));
+    const telegraphTicks = Math.round(ABILITIES.starBomb.telegraph! * TICK_RATE);
+    for (let i = 0; i < telegraphTicks + 2; i++) sim.step();
+    expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+  });
+
+  it('an aura tick (Fire Whirl) does not damage a teammate standing inside it', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { teamId: 1, loadout: loadout(['fireWhirl']) }),
+      player(2, 2, 0, { teamId: 1 }),
+    ]);
+    sim.applyInput(1, castCmd(0, 0, 0));
+    for (let i = 0; i < 20; i++) sim.step();
+    expect(sim.players.get(2)!.hp).toBe(PLAYER_BASE_HP);
+  });
+
+  it("Hunter's Chains does not pull or root a teammate (proves the exclusion isn't just damagePlayer)", () => {
+    const sim = makeSim([
+      player(1, 0, 0, { teamId: 1, loadout: loadout([null, null], ['huntersChains']) }),
+      player(2, 10, 0, { teamId: 1 }),
+    ]);
+    sim.applyInput(1, castCmd(2, 10, 0));
+    for (let i = 0; i < 10; i++) sim.step();
+    const b = sim.players.get(2)!;
+    expect(b.x).toBeCloseTo(10, 1); // never pulled toward the caster
+    expect(b.rootTicks).toBe(0);
+    expect(b.hp).toBe(PLAYER_BASE_HP);
+  });
+});
+
 describe('Steel Traps', () => {
   it('roots and damages the enemy who springs a trap', () => {
     const sim = makeSim([

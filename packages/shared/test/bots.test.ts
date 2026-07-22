@@ -100,3 +100,30 @@ describe('bot glide decisions', () => {
     expect(moved).toBe(true);
   });
 });
+
+describe('duos target acquisition', () => {
+  it('never targets a living teammate, even when it is the nearest player', () => {
+    const sim = makeSim([
+      player(1, 0, 0, { isBot: true, teamId: 1 }),
+      player(2, 1, 0, { teamId: 1 }), // teammate, closest
+      player(3, 20, 0, { teamId: 2 }), // rival, farther away
+    ]);
+    const bot = sim.players.get(1)!;
+    const mate = sim.players.get(2)!;
+    const rival = sim.players.get(3)!;
+
+    const cmd = computeBotInput(bot, {
+      tick: 0,
+      rng: new Rng(1),
+      players: [bot, mate, rival],
+      storm: { x: 0, z: 0, radius: 400 },
+      difficulty: 'normal',
+    });
+
+    // Aim scatter (up to a few meters) means this can't be an exact match, but
+    // the teammate- and rival-aim ranges don't overlap (teammate at x=1 aims
+    // land under 10, rival at x=20 land well above it) — so this robustly
+    // proves the rival was picked, not the much-closer teammate.
+    expect(cmd.aimX).toBeGreaterThan(10);
+  });
+});
