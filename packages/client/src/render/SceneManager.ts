@@ -74,7 +74,7 @@ const ENVIRONMENTS: Record<EnvironmentId, EnvPreset> = {
     water: { fog: 0xa7cfe6, deep: 0x0e3f62, shallow: 0x5ec8c2, skyTint: 0x8ec2dd, sunTint: 0xffe2a8 },
     puff: 0xffffff, puffOpacity: 0.9,
     motes: { color: 0xfff0b8, intensity: 0.55, size: 0.08, rise: 0.15 },
-    cloudShadow: 0.24,
+    cloudShadow: 0.2,
     wind: 0.35,
   },
   dusk: {

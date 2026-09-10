@@ -127,7 +127,7 @@ export class GrassField {
           p.y -= dot( bend, bend ) * 0.35;
           // Flower heads: a small camera-facing quad on the center blade's tip.
           if ( isFlower > 0.5 ) {
-            float bloom = step( 0.955, r3 ) * tall;
+            float bloom = step( 0.972, r3 ) * tall;
             vec3 right = vec3( viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0] );
             vec3 up = vec3( viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1] );
             float size = 0.06 * bloom;
@@ -137,7 +137,7 @@ export class GrassField {
           gPos = p;
           // Color: the ground's own tint, shaded dark at the root and bright
           // at the tip, with a little per-tuft hue jitter.
-          vec3 tint = tcol.rgb * mix( 0.5, 1.5, t );
+          vec3 tint = tcol.rgb * mix( 0.55, 1.6, t );
           tint *= vec3( 0.92 + r3 * 0.16, 0.95 + r2 * 0.1, 0.9 + r1 * 0.2 );
           tint = mix( tint, tint * vec3( 1.1, 0.95, 0.75 ), splat.g );
           if ( isFlower > 0.5 ) {
