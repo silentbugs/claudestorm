@@ -18,7 +18,7 @@ export interface WaterSettings {
 
 export function makeWaterMaterial(
   normals: THREE.Texture,
-  opts: { alpha: number; transparent: boolean },
+  opts: { alpha: number; transparent: boolean; sea?: { coastR: number } },
 ): THREE.ShaderMaterial {
   const mat = new THREE.ShaderMaterial({
     transparent: opts.transparent,
@@ -33,6 +33,7 @@ export function makeWaterMaterial(
       uSunTint: { value: new THREE.Color(0xffd08a) },
       uAlpha: { value: opts.alpha },
       uFogRange: { value: new THREE.Vector2(280, 920) },
+      uCoastR: { value: opts.sea?.coastR ?? 0 },
     },
     vertexShader: /* glsl */ `
       ${SHARED_PARS}
@@ -60,10 +61,21 @@ export function makeWaterMaterial(
       uniform vec3 uSunTint;
       uniform float uAlpha;
       uniform vec2 uFogRange;
+      uniform float uCoastR;
       varying vec3 vWorld;
       varying vec3 vView;
       varying float vDist;
+      // The island's irregular coastline (shared/maps coastRadius): the sea
+      // exists only outside it, so sunken inland floors — the Undercroft,
+      // the Pit, the smugglers' trench — stay dry.
+      float coastRadiusAt( float angle ) {
+        return uCoastR * ( 1.0 + 0.08 * sin( angle * 3.0 + 1.7 ) + 0.055 * sin( angle * 5.0 - 0.8 ) + 0.028 * sin( angle * 9.0 + 3.1 ) );
+      }
       void main() {
+        if ( uCoastR > 0.0 ) {
+          float over = length( vWorld.xz ) - coastRadiusAt( atan( vWorld.x, vWorld.z ) );
+          if ( over < -14.0 ) discard;
+        }
         float ground = terrainHeightAt( vWorld.xz );
         float depth = max( vWorld.y - ground, 0.0 );
         vec3 n1 = texture2D( uNormals, vWorld.xz * 0.020 + vec2( uTime * 0.020, uTime * 0.014 ) ).xyz * 2.0 - 1.0;
@@ -82,10 +94,10 @@ export function makeWaterMaterial(
         // Shoreline foam: a thin lace at the waterline, lapping in and out,
         // broken up by the noise atlas so it never reads as a solid ring.
         float foamN = texture2D( uNoise, vWorld.xz * 0.09 + vec2( uTime * 0.025, uTime * 0.018 ) ).r;
-        float lap = 0.18 + 0.1 * sin( uTime * 1.3 + foamN * 6.0 );
+        float lap = 0.11 + 0.07 * sin( uTime * 1.3 + foamN * 6.0 );
         float shore = 1.0 - smoothstep( 0.0, lap, depth );
         float lace = smoothstep( 0.42, 0.7, foamN + shore * 0.35 ) * shore;
-        float edge = ( 1.0 - smoothstep( 0.0, 0.06, depth ) ) * 0.6;
+        float edge = ( 1.0 - smoothstep( 0.0, 0.05, depth ) ) * 0.4;
         float foam = clamp( lace + edge, 0.0, 1.0 );
         col = mix( col, vec3( 0.93, 0.97, 1.0 ), foam * 0.8 );
         // Depth-based translucency, opaque out at sea; a soft alpha edge on the sand.
