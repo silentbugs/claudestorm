@@ -218,7 +218,8 @@ function beamMaterial(rarity: Rarity): THREE.ShaderMaterial {
         uniform float uTime;
         varying vec2 vUv;
         void main() {
-          float fade = pow( 1.0 - vUv.y, 1.6 );
+          // MSAA can extrapolate uv past 1 at edges; pow of a negative is NaN.
+          float fade = pow( clamp( 1.0 - vUv.y, 0.0, 1.0 ), 1.6 );
           float ripple = 0.85 + 0.15 * sin( vUv.y * 30.0 - uTime * 4.0 );
           gl_FragColor = vec4( uColor * 1.3, fade * ripple * 0.55 );
         }`,
@@ -1513,12 +1514,13 @@ const CELESTIAL_MAT = new THREE.ShaderMaterial({
     uniform float uTime;
     varying vec2 vUv;
     void main() {
-      float head = pow(vUv.x, 2.2);                        // dims from the front backwards
+      float x = clamp(vUv.x, 0.0, 1.0);                   // MSAA may extrapolate uv past the edge
+      float head = pow(x, 2.2);                            // dims from the front backwards
       float vert = sin(vUv.y * 3.14159);                   // soft top and bottom
       float rays = 0.72 + 0.28 * sin(vUv.y * 26.0 + uTime * 9.0 + vUv.x * 6.0);
       float flicker = 0.8 + 0.2 * sin(uTime * 27.0 + vUv.x * 18.0);
       vec3 col = mix(vec3(0.36, 0.16, 0.85), vec3(0.75, 0.55, 1.0), vUv.y);
-      col += vec3(0.55, 0.6, 1.0) * pow(vUv.x, 8.0);       // electric leading edge
+      col += vec3(0.55, 0.6, 1.0) * pow(x, 8.0);           // electric leading edge
       gl_FragColor = vec4(col, head * vert * rays * flicker * 0.85);
     }`,
 });

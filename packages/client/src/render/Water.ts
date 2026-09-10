@@ -73,7 +73,7 @@ export function makeWaterMaterial(
       }
       void main() {
         if ( uCoastR > 0.0 ) {
-          float over = length( vWorld.xz ) - coastRadiusAt( atan( vWorld.x, vWorld.z ) );
+          float over = length( vWorld.xz ) - coastRadiusAt( atan( vWorld.x, vWorld.z + 1e-5 ) );
           if ( over < -14.0 ) discard;
         }
         float ground = terrainHeightAt( vWorld.xz );
@@ -84,7 +84,7 @@ export function makeWaterMaterial(
         float calm = mix( 0.55, 1.0, smoothstep( 0.0, 2.0, depth ) );
         vec3 n = normalize( vec3( ( n1.x + n2.x ) * calm, 3.2, ( n1.y + n2.y ) * calm ) );
         vec3 viewDir = normalize( vView );
-        float fresnel = pow( 1.0 - max( dot( viewDir, n ), 0.0 ), 3.0 );
+        float fresnel = pow( clamp( 1.0 - dot( viewDir, n ), 0.0, 1.0 ), 3.0 );
         vec3 body = mix( uShallow, uDeep, smoothstep( 0.0, 3.0, depth ) );
         vec3 col = mix( body, uSkyTint, fresnel * 0.8 );
         vec3 halfway = viewDir + uSunDir;

@@ -118,9 +118,10 @@ export class GrassField {
           // Characters push the blades away as they pass.
           for ( int i = 0; i < ${MAX_PUSHERS}; i++ ) {
             vec4 P = uPushers[ i ];
+            if ( P.w <= 0.0 ) continue; // empty slot: radius 0 would divide by zero in smoothstep
             vec2 d = base - P.xy;
             float l = length( d );
-            float f = ( 1.0 - smoothstep( 0.0, P.z, l ) ) * P.w;
+            float f = ( 1.0 - smoothstep( 0.0, max( P.z, 0.01 ), l ) ) * P.w;
             bend += ( d / max( l, 0.05 ) ) * f * t * 1.1;
           }
           p.xz += bend;

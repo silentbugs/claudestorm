@@ -50,7 +50,7 @@ function sigilMaterial(color: number): THREE.ShaderMaterial {
       void main() {
         vec2 p = vUv * 2.0 - 1.0;
         float r = length( p );
-        float a = atan( p.y, p.x );
+        float a = atan( p.y, p.x + 1e-5 ); // never atan(0,0): NaN on some GPUs
         // Outer and inner rings, a band of rune ticks spinning between them,
         // and three orbiting points.
         float outer = smoothstep( 0.04, 0.0, abs( r - 0.92 ) - 0.015 );
@@ -236,7 +236,7 @@ export function crackDecal(x: number, y: number, z: number, radius: number, glow
       void main() {
         vec2 p = vUv * 2.0 - 1.0;
         float r = length( p );
-        float a = atan( p.y, p.x );
+        float a = atan( p.y, p.x + 1e-5 );
         // Seven jagged fissures radiating from the center.
         float spokes = abs( sin( a * 3.5 + sin( r * 9.0 + uSeed ) * 0.6 + uSeed ) );
         float crack = smoothstep( 0.985, 1.0, spokes ) * ( 1.0 - smoothstep( 0.55, 1.0, r ) );
@@ -573,9 +573,9 @@ export function wardMaterial(): THREE.ShaderMaterial {
       varying vec3 vViewDir;
       varying vec3 vLocal;
       void main() {
-        float fres = pow( 1.0 - abs( dot( normalize( vNormalW ), normalize( vViewDir ) ) ), 2.5 );
+        float fres = pow( clamp( 1.0 - abs( dot( normalize( vNormalW ), normalize( vViewDir ) ) ), 0.0, 1.0 ), 2.5 );
         // Crawling arcs: thin ridges of a scrolling noise field.
-        vec2 uv = vec2( atan( vLocal.z, vLocal.x ) * 0.6, vLocal.y * 0.8 ) + uTime * vec2( 0.15, 0.4 );
+        vec2 uv = vec2( atan( vLocal.z, vLocal.x + 1e-5 ) * 0.6, vLocal.y * 0.8 ) + uTime * vec2( 0.15, 0.4 );
         float n = texture2D( uNoise, uv ).r;
         float arc = smoothstep( 0.035, 0.0, abs( n - 0.5 ) ) * uArcs;
         float flicker = 0.8 + 0.2 * sin( uTime * 40.0 + vLocal.y * 10.0 );
@@ -712,7 +712,7 @@ export function lightPillar(x: number, y: number, z: number, color: number, heig
       varying vec2 vUv;
       void main() {
         float rays = 0.7 + 0.3 * sin( vUv.x * 40.0 + uTime * 6.0 );
-        float a = pow( 1.0 - vUv.y, 1.4 ) * rays * uFade;
+        float a = pow( clamp( 1.0 - vUv.y, 0.0, 1.0 ), 1.4 ) * rays * uFade;
         gl_FragColor = vec4( uColor * 1.8, a * 0.7 );
       }`,
   });

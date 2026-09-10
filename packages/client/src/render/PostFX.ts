@@ -13,6 +13,21 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
  * final image. Tone mapping happens here rather than per-material, so the
  * bloom sees true linear HDR values.
  */
+function scrubNaN(material: THREE.ShaderMaterial, sample: string, variable: string): void {
+  if (!material.fragmentShader.includes(sample)) return;
+  // A true per-component select: mix() would multiply the NaN and keep it.
+  const v = variable;
+  material.fragmentShader = material.fragmentShader.replace(
+    sample,
+    `${sample}
+      {
+        bvec4 finite = lessThanEqual( abs( ${v} ), vec4( 65504.0 ) );
+        ${v} = vec4( finite.x ? ${v}.x : 0.0, finite.y ? ${v}.y : 0.0, finite.z ? ${v}.z : 0.0, finite.w ? ${v}.w : 0.0 );
+      }`,
+  );
+  material.needsUpdate = true;
+}
+
 export class PostFX {
   private readonly composer: EffectComposer;
   private readonly bloom: UnrealBloomPass;
@@ -37,7 +52,15 @@ export class PostFX {
     // The pass halves the resolution itself, then blurs down 5 mip levels.
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), opts.bloomStrength, 0.55, 1.0);
     this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
+    const output = new OutputPass();
+    this.composer.addPass(output);
+    // Safety net: a single NaN pixel (from any undefined shader math on a
+    // given GPU) would be smeared into a black block by the bloom blur and
+    // turn black in the tone mapper. Comparisons with NaN are false, so
+    // anything not provably finite is zeroed before the blur and again
+    // before tone mapping.
+    scrubNaN(this.bloom.materialHighPassFilter, 'vec4 texel = texture2D( tDiffuse, vUv );', 'texel');
+    scrubNaN(output.material, 'gl_FragColor = texture2D( tDiffuse, vUv );', 'gl_FragColor');
   }
 
   setSize(width: number, height: number): void {

@@ -108,7 +108,10 @@ export function addRimGlow(
         {
           vec3 rimN = normalize( vNormal );
           vec3 rimV = normalize( vViewPosition );
-          float rim = pow( 1.0 - max( dot( rimN, rimV ), 0.0 ), ${power.toFixed(1)} );
+          // Clamped: a dot product can exceed 1.0 by rounding, and pow() of a
+          // negative base is NaN on real GPUs — which the bloom blur would
+          // smear into a black block riding on the character.
+          float rim = pow( clamp( 1.0 - dot( rimN, rimV ), 0.0, 1.0 ), ${power.toFixed(1)} );
           totalEmissiveRadiance += uRim * rim * uRimStrength;
         }`,
       );
