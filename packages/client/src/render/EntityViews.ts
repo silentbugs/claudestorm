@@ -417,6 +417,16 @@ class PlayerView {
   private castTimer = 0;
   private bobPhase = 0;
   private deploy = 0;
+  /** Squash-and-stretch: >0 squashes (landing), <0 stretches (leaping). */
+  private squash = 0;
+  private wasAirborne = false;
+  private lastFacing = Number.NaN;
+  private bank = 0;
+  /** Body lunge on a slap, in meters forward. */
+  private lunge = 0;
+  private pulse = 0;
+  /** Set for one frame when a footstep lands (for dust). */
+  step = false;
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
   private stepTimer = 0;
@@ -832,7 +842,6 @@ class PlayerView {
     this.deadFor = 0;
     this.group.visible = true;
     this.reviveBeacon.visible = false;
-    this.bodyPivot.scale.setScalar(this.baseScale);
 
     this.group.rotation.y = p.facing;
     const now = performance.now() / 1000;
@@ -892,6 +901,7 @@ class PlayerView {
       if (this.stepTimer <= 0) {
         this.stepAlt = !this.stepAlt;
         sfx.footstep(p.x, p.z, isSelf, this.stepAlt);
+        this.step = true;
         // Faster stride ticks faster; clamp so a sprint or crawl still reads.
         this.stepTimer = Math.max(0.24, Math.min(0.7, (0.5 * PLAYER_SPEED) / speed));
       }
@@ -901,6 +911,26 @@ class PlayerView {
     this.bobPhase += dt * (2.4 + Math.min(9, speed * 1.1));
     this.bodyPivot.position.y = 1.0 + Math.sin(this.bobPhase) * (speed > 0.6 ? 0.06 : 0.035);
     this.animateBody(this.bobPhase, speed, dt);
+    // Squash on touchdown, stretch on takeoff; both spring back.
+    if (this.wasAirborne && !airborne && !p.gliding) this.squash = 1;
+    else if (!this.wasAirborne && airborne) this.squash = -0.6;
+    this.wasAirborne = airborne;
+    this.squash *= Math.max(0, 1 - dt * 9);
+    // Bank into turns: lean the body by the facing's rate of change.
+    const facingRate = Number.isNaN(this.lastFacing) ? 0 : lerpAngle(this.lastFacing, p.facing, 1) - this.lastFacing;
+    this.lastFacing = p.facing;
+    const bankTarget = THREE.MathUtils.clamp((dt > 0 ? facingRate / dt : 0) * -0.06, -0.35, 0.35);
+    this.bank += (bankTarget - this.bank) * Math.min(1, dt * 10);
+    this.pulse *= Math.max(0, 1 - dt * 7);
+    this.lunge *= Math.max(0, 1 - dt * 12);
+    const sq = this.squash;
+    const pulse = 1 + this.pulse * 0.12;
+    this.bodyPivot.scale.set(
+      this.baseScale * (1 + sq * 0.22) * pulse,
+      this.baseScale * (1 - sq * 0.28) * pulse,
+      this.baseScale * (1 + sq * 0.22) * pulse,
+    );
+    this.bodyPivot.position.z = this.lunge;
     if (p.rolling) {
       this.rollSpin += dt * 18;
       this.bodyPivot.rotation.x = this.rollSpin;
@@ -913,6 +943,7 @@ class PlayerView {
       // Lean into the direction of travel; pull up a touch mid-jump.
       this.bodyPivot.rotation.x = airborne ? -0.12 : Math.min(0.2, speed * 0.018);
     }
+    this.bodyPivot.rotation.z = p.rolling ? 0 : this.bank;
 
     // Paraglider: pops open on deploy, folds in for a dive, and re-pops the
     // instant the dive releases — the same ease-out pop, just retargetable.
@@ -1017,11 +1048,13 @@ class PlayerView {
   triggerSwing(combo: number): void {
     this.swingTimer = SWING_DURATION;
     this.swingCombo = combo;
+    this.lunge = combo === 3 ? 0.35 : 0.2;
   }
 
   triggerCast(abilityId?: AbilityId): void {
     this.castTimer = 0.35;
     this.sigilTimer = 0.55;
+    this.pulse = 1;
     if (abilityId) {
       this.castElement = elementKeyOf(abilityId);
       (this.sigil.mat.uniforms.uColor!.value as THREE.Color).setHex(ELEMENT_PALETTE[this.castElement].glow);
@@ -1244,6 +1277,8 @@ interface Effect {
   spin?: number;
   /** Set when the effect owns its geometry (chain lines) and must dispose it. */
   ownsGeometry?: boolean;
+  /** Peak opacity (default 0.85); the effect fades from here to zero. */
+  maxOpacity?: number;
 }
 
 /*
@@ -1261,7 +1296,6 @@ const DISC_BOSS_GEO = new THREE.SphereGeometry(0.15, 10, 8);
 const ARCHON_GEO = new THREE.OctahedronGeometry(0.28);
 const MANA_GEO = new THREE.SphereGeometry(0.5, 14, 12);
 const ORBIT_RING_GEO = new THREE.TorusGeometry(0.66, 0.035, 6, 22);
-const KNOT_GEO = new THREE.TorusKnotGeometry(0.3, 0.1, 32, 6);
 const CHAIN_LINK_GEO = new THREE.TorusGeometry(0.11, 0.036, 6, 10);
 CHAIN_LINK_GEO.rotateX(Math.PI / 2); // link plane contains the flight axis
 const ORB_GEO = new THREE.SphereGeometry(0.32, 12, 10);
@@ -1412,7 +1446,6 @@ function makeProjectileView(abilityId: AbilityId): ProjView {
       const funnel = tornado();
       group.add(funnel.obj);
       addTail(1.4, 1.2);
-      void KNOT_GEO;
       return { obj: group, anim: funnel.anim };
     }
     case 'huntersChains': {
@@ -1627,6 +1660,13 @@ export class EntityViews {
         // Touchdown: a puff of dust kicked up as the glider folds.
         this.spawnBurst(ix, iz, 1.8, 0xd8c8a0, 0.4);
         this.spawnElementBurst(ix, iz, 'physical', 0.8);
+      }
+      if (view.step) {
+        view.step = false;
+        // A scuff of dust under each stride, close by only.
+        const dx = ix - camX;
+        const dz = iz - camZ;
+        if (dx * dx + dz * dz < 30 * 30) this.spawnDust(ix, iz);
       }
       if (p.alive && !p.gliding && this.pushers.length < 8) {
         const dx = ix - camX;
@@ -2222,6 +2262,21 @@ export class EntityViews {
     }
   }
 
+  /** One soft dust puff at ground level: footsteps and scuffs. */
+  private spawnDust(x: number, z: number): void {
+    const mat = new THREE.SpriteMaterial({
+      map: glowTexture,
+      color: 0xcfc2a0,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    });
+    const puff = new THREE.Sprite(mat);
+    puff.position.set(x + (Math.random() - 0.5) * 0.3, groundAt(x, z) + 0.15, z + (Math.random() - 0.5) * 0.3);
+    this.scene.add(puff);
+    this.effects.push({ obj: puff, mat, age: 0, ttl: 0.4, growth: 1.6, baseX: 0.5, baseY: 0.5, baseZ: 1, rise: 0.5, maxOpacity: 0.35 });
+  }
+
   private spawnFlash(x: number, z: number, size: number, color: number, ttl: number): void {
     // Flashes are additive light, run hot (HDR) so the bloom pass haloes them.
     const mat = new THREE.MeshBasicMaterial({
@@ -2279,7 +2334,7 @@ export class EntityViews {
         fx.obj.rotation.x += fx.spin * dt;
         fx.obj.rotation.y += fx.spin * 0.7 * dt;
       }
-      fx.mat.opacity = (1 - t) * 0.85;
+      fx.mat.opacity = (1 - t) * (fx.maxOpacity ?? 0.85);
       survivors.push(fx);
     }
     this.effects = survivors;

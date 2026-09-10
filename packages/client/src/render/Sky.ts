@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SHARED, SHARED_PARS, bindShared } from './shaderlib.js';
+import { SHARED_PARS, bindShared } from './shaderlib.js';
 
 /**
  * The sky dome: a gradient with a warm sun-side glow, a sun (or moon) disc
@@ -124,7 +124,6 @@ export class SkyDome {
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1000, 32, 16), this.mat);
     this.mesh.frustumCulled = false;
     this.mesh.name = 'sky';
-    void SHARED;
   }
 
   apply(s: SkySettings): void {

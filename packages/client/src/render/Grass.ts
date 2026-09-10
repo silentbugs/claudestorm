@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SHARED, SHARED_PARS, bindShared } from './shaderlib.js';
+import { SHARED_PARS, bindShared } from './shaderlib.js';
 
 /**
  * GPU meadow. One instanced draw of many three-blade tufts laid on a jittered
@@ -144,7 +144,7 @@ export class GrassField {
             float pick = r4 * 4.0;
             tint = pick < 1.0 ? vec3( 1.0, 0.95, 0.9 ) : pick < 2.0 ? vec3( 1.0, 0.85, 0.3 )
                  : pick < 3.0 ? vec3( 0.75, 0.45, 0.95 ) : vec3( 0.95, 0.35, 0.35 );
-            tint *= 1.15;
+            tint *= 0.95;
           }
           vTint = tint;`,
         )
@@ -185,7 +185,6 @@ export class GrassField {
     this.mesh.receiveShadow = true;
     this.mesh.castShadow = false;
     this.mesh.name = 'grass';
-    void SHARED;
   }
 
   /** Re-center the tuft grid on the camera (snapped, so blades stay put). */

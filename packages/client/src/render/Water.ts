@@ -99,7 +99,7 @@ export function makeWaterMaterial(
         float lace = smoothstep( 0.42, 0.7, foamN + shore * 0.35 ) * shore;
         float edge = ( 1.0 - smoothstep( 0.0, 0.05, depth ) ) * 0.4;
         float foam = clamp( lace + edge, 0.0, 1.0 );
-        col = mix( col, vec3( 0.93, 0.97, 1.0 ), foam * 0.8 );
+        col = mix( col, mix( uSkyTint, vec3( 1.0 ), 0.65 ), foam * 0.8 );
         // Depth-based translucency, opaque out at sea; a soft alpha edge on the sand.
         float alpha = mix( 0.2, uAlpha, smoothstep( 0.0, 1.2, depth ) );
         alpha = max( alpha, foam * 0.85 );

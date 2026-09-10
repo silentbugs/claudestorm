@@ -155,7 +155,6 @@ function glow(ctx: Ctx, x: number, y: number, r: number, color: string): void {
 }
 
 const WHITE = '#fff6e0';
-const GOLD = '#ffd75e';
 
 /** One painter per ability, in a 128×128 space. */
 const ABILITY_GLYPHS: Record<AbilityId, (ctx: Ctx) => void> = {
@@ -500,4 +499,3 @@ export function iconUrl(kind: IconKind, id: string): string {
   return url;
 }
 
-void GOLD;

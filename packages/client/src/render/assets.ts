@@ -69,7 +69,6 @@ const WHEAT = 0xe6c45c;
 export class AssetLibrary {
   private constructor(
     private readonly models: Map<ModelName, { scene: THREE.Group; size: THREE.Vector3 }>,
-    readonly grassTexture: THREE.Texture,
     readonly waterNormals: THREE.Texture,
   ) {}
 
@@ -78,8 +77,7 @@ export class AssetLibrary {
     const texLoader = new THREE.TextureLoader();
     const models = new Map<ModelName, { scene: THREE.Group; size: THREE.Vector3 }>();
 
-    const [grassTexture, waterNormals] = await Promise.all([
-      texLoader.loadAsync('/assets/textures/grass.jpg'),
+    const [waterNormals] = await Promise.all([
       texLoader.loadAsync('/assets/textures/waternormals.jpg'),
       ...MODEL_NAMES.map(async (name) => {
         const gltf = await gltfLoader.loadAsync(`/assets/models/${name}.glb`);
@@ -128,10 +126,8 @@ export class AssetLibrary {
         models.set(name, { scene, size });
       }),
     ]);
-    grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
-    grassTexture.colorSpace = THREE.SRGBColorSpace;
     waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
-    return new AssetLibrary(models, grassTexture, waterNormals);
+    return new AssetLibrary(models, waterNormals);
   }
 
   /** A fresh clone of the model, shadows already enabled on the template. */

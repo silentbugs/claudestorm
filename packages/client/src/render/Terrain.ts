@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ARENA } from '@claudestorm/shared';
 import type { DetailTextures } from './proctex.js';
-import { SHARED, SHARED_PARS, bindShared } from './shaderlib.js';
+import { SHARED_PARS, bindShared } from './shaderlib.js';
 import { exactHeight, type TerrainData } from './TerrainData.js';
 
 /**
@@ -132,6 +132,5 @@ export function buildTerrain(
   mesh.receiveShadow = true;
   mesh.frustumCulled = false; // one mesh, always in view
   mesh.name = 'terrain';
-  void SHARED;
   return mesh;
 }

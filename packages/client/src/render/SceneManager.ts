@@ -189,8 +189,11 @@ export class SceneManager {
     this.lowPower = lowPower;
     this.quality = quality;
     this.preset = QUALITY_PRESETS[quality];
+    // Canvas MSAA stays on for desktop: the post pipeline resolves its own
+    // multisampled target, but Low quality renders straight to the canvas
+    // and the tier can change at runtime.
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !lowPower && !this.preset.post, // the post pipeline brings its own MSAA
+      antialias: !lowPower,
       powerPreference: 'high-performance',
     });
     this.renderer.setPixelRatio(Math.min(this.preset.maxPixelRatio, window.devicePixelRatio));
@@ -428,12 +431,24 @@ export class SceneManager {
     return model;
   }
 
-  /** The static material for a kit material: a clone with wind sway compiled in. */
+  /**
+   * The static material for a kit material, with wind sway compiled in.
+   * Every flat-colored kit material collapses into ONE vertex-colored
+   * material (the color is baked per vertex at merge time), so a map cell's
+   * whole scenery — trees, rocks, bushes, ruins — is a single draw call
+   * instead of one per kit material. Textured (colormap) props keep their
+   * own material.
+   */
   private staticMaterial(source: THREE.Material & { map?: THREE.Texture | null }): THREE.Material {
-    const key = `${source.name}|${source.map ? 'tex' : 'flat'}`;
+    const key = source.map ? `tex|${source.name}` : 'flat';
     let mat = this.staticMaterials.get(key);
     if (!mat) {
-      mat = source.clone();
+      if (source.map) {
+        mat = source.clone();
+      } else {
+        mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+        mat.name = 'statics';
+      }
       addSway(mat);
       this.staticMaterials.set(key, mat);
     }
@@ -485,8 +500,21 @@ export class SceneManager {
         }
         geo.setAttribute('aSway', new THREE.BufferAttribute(swayAttr, 1));
         geo.setAttribute('aPivot', new THREE.BufferAttribute(pivotAttr, 2));
+        if (!source.map) {
+          // Bake the kit color (and the faint leaf glow) into the vertices.
+          const c = (source as THREE.MeshStandardMaterial).color;
+          const e = (source as THREE.MeshStandardMaterial).emissive;
+          const ei = (source as THREE.MeshStandardMaterial).emissiveIntensity ?? 0;
+          const colorAttr = new Float32Array(pos.count * 3);
+          for (let i = 0; i < pos.count; i++) {
+            colorAttr[i * 3] = c.r + e.r * ei;
+            colorAttr[i * 3 + 1] = c.g + e.g * ei;
+            colorAttr[i * 3 + 2] = c.b + e.b * ei;
+          }
+          geo.setAttribute('color', new THREE.BufferAttribute(colorAttr, 3));
+        }
         const material = this.staticMaterial(source);
-        const key = `${source.name}|${source.map ? 'tex' : 'flat'}|${cellKey}`;
+        const key = `${source.map ? `tex|${source.name}` : 'flat'}|${cellKey}`;
         let group = groups.get(key);
         if (!group) {
           group = { material, geos: [] };
@@ -639,8 +667,6 @@ export class SceneManager {
           this.placeModel('patch-sand-foliage', 0.5, lm.x + 3, lm.z + 15, 0.8);
           // The dock: the cove's shore direction is outward from the island.
           const seaward = Math.atan2(lm.x, lm.z);
-          const shoreR = coastRadius(coast, seaward);
-          const dockR = shoreR + 2;
           const dx = Math.sin(seaward);
           const dz = Math.cos(seaward);
           const px = Math.cos(seaward);
@@ -662,7 +688,6 @@ export class SceneManager {
           this.placeRaised('flag-pennant', 3, sx + dx * 12.2 + px * 1.4, sz + dz * 12.2 + pz * 1.4, seaward, 0.65);
           this.placeRaised('crate', 0.8, sx + dx * 6.1 + px * 1.2, sz + dz * 6.1 + pz * 1.2, seaward + 0.4, 0.65);
           this.placeRaised('barrel', 0.8, sx + dx * 9.2 - px * 1.2, sz + dz * 9.2 - pz * 1.2, 0, 0.65);
-          void dockR;
           break;
         }
         case 'spire': {
@@ -679,7 +704,7 @@ export class SceneManager {
         case 'stonering': {
           // The Stone Ring: obelisks (via the obstacles) around a paved
           // circle with a broken ring-altar and a fire at its heart.
-          this.placeModel('path_stoneCircle', 0.3, lm.x, lm.z, 0.2).scale.multiplyScalar(1);
+          this.placeModel('path_stoneCircle', 0.3, lm.x, lm.z, 0.2);
           this.placeModel('campfire_stones', 0.9, lm.x, lm.z + 2.5, 0);
           this.placeModel('statue_ring', 3.2, lm.x - 6, lm.z - 4, 0.9);
           this.placeModel('statue_block', 1.0, lm.x + 7, lm.z + 1, 0.4);

@@ -9,7 +9,7 @@ npm install
 npm run dev     # open http://localhost:5173, then hit Start Game
 ```
 
-Set up your match on the start screen — hero color, opponent count (3–49 bots, up to a 50-player match), bot difficulty, time of day (Day / Dusk / Night, previewed live on the menu), how many circles the storm has (3–6), and how fast they close — then hit Start Game.
+Set up your match on the start screen — hero color, opponent count (3–49 bots, up to a 50-player match), bot difficulty, graphics tier (Low / Medium / High, previewed live behind the menu and remembered between visits), time of day (Day / Dusk / Night, also previewed live), how many circles the storm has (3–6), and how fast they close — then hit Start Game.
 
 - **W / S** — move forward / back (relative to your character's facing)
 - **A / D** — turn (WoW keyboard turning); while holding right mouse they strafe instead
@@ -86,4 +86,19 @@ Load-bearing rules:
 
 The sim is deterministic for a given seed + input stream (covered by a test), which keeps the door open for replays and server reconciliation.
 
-Art: the client bundles CC0 models from Kenney's Nature and Pirate kits plus MIT textures from the three.js examples (see `packages/client/public/assets/ASSETS.md`), loaded through `AssetLibrary` before the start screen unlocks. Characters are procedural "storm constructs" — hovering crystalline creatures built from shared low-poly geometries that tint to the hero color.
+## Rendering
+
+Everything visual lives in `packages/client/src/render` and is built around the island baked into textures once at load (`TerrainData`): a half-float heightmap, a macro tint map, and splat weights (grass / dry earth / rock / sand). Every custom shader reads the same bake, so the ground, the grass on it, the water lapping it, and the foliage scattered over it all agree on what's where.
+
+- **Terrain** (`Terrain.ts`) — a dense displaced grid wearing procedurally painted detail textures (`proctex.ts`, no image files) blended by the splat weights, two-scale anti-tiling, derivative bump, distance fade, and drifting cloud shadows.
+- **Grass** (`Grass.ts`) — one instanced draw of tens of thousands of wind-swept tufts placed entirely on the GPU from the heightmap: stable across camera moves, fading with distance, bending around anyone who walks through, the odd flower head. Zero CPU work per frame.
+- **Sky** (`Sky.ts`) — a procedural cloud layer (the very noise the ground uses for its shadows), a sun or moon disc bright enough to bloom, stars at night.
+- **Water** (`Water.ts`) — depth from the heightmap gives shallow tinting, a soft shoreline, and lapping foam on the sea and the lakes; the sea is clipped to the coastline so sunken inland floors stay dry.
+- **Scenery** — the Kenney kits (CC0, see `packages/client/public/assets/ASSETS.md`) with their teal palette remapped to meadow greens, dressed per landmark (obelisks, colonnades, cliffs, a dock and a moored sloop, camps, a wheat field), scattered by biome, and merged per map cell into a handful of vertex-colored draw calls with wind sway compiled in (shadow pass included).
+- **Spells** (`SpellFX.ts`) — bespoke effects per ability: falling meteors, rock spikes, tornadoes, arc-crawling wards, rune sigils, chains, snow, traps, a fish.
+- **Icons** (`ui/icons.ts`) — the hotbar, compendium, and loot drops share a set of thirty painted icons drawn on canvas at load.
+- **Post** (`PostFX.ts`) — an MSAA half-float pipeline with bloom and a final ACES output pass, on Medium and High. Low renders straight to the canvas.
+
+`quality.ts` holds the three tiers (post pipeline, shadow map size, terrain density, grass radius, foliage fraction, motes). Phones default to Low; desktop to High. Characters are procedural "storm constructs" — hovering elemental creatures built from shared geometries that tint to the hero color, rim-lit with HDR visors.
+
+Every shader shares one uniform set (`shaderlib.ts`), so time, wind, cloud drift, and the terrain bake are set once per frame for all of them.
