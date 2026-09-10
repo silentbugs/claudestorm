@@ -18,6 +18,24 @@ import { sfx } from '../sfx.js';
 import type { AssetLibrary } from './assets.js';
 import { addRimGlow } from './shaderlib.js';
 import { iconCanvas, type IconKind } from '../ui/icons.js';
+import {
+  bearTrap,
+  caltrops,
+  chainLine,
+  crackDecal,
+  fireWhirl,
+  fishSlap,
+  lightningArcs,
+  lightPillar,
+  makeSigil,
+  meteor,
+  rockSpikes,
+  shockwave,
+  snowfall,
+  tornado,
+  wardMaterial,
+  type FxHandle,
+} from './SpellFX.js';
 
 /**
  * Draw distances for small entities (players are always drawn). A critter at
@@ -376,9 +394,17 @@ class PlayerView {
   private readonly handR = new THREE.Group();
   private readonly chute = new THREE.Group();
   private readonly shield: THREE.Mesh;
-  private readonly aura: THREE.Mesh;
   private readonly reviveBeacon: THREE.Mesh;
   private readonly hoverGlow: THREE.Sprite;
+  private readonly sigil: { mesh: THREE.Mesh; mat: THREE.ShaderMaterial };
+  private sigilTimer = 0;
+  private castElement: Element = 'holy';
+  private readonly chargeOrb: THREE.Mesh;
+  private readonly chargeMat: THREE.MeshBasicMaterial;
+  private readonly whirl: ReturnType<typeof fireWhirl>;
+  private readonly wardMat: THREE.ShaderMaterial;
+  private readonly wisps: THREE.Sprite[] = [];
+  private hitFlash = 0;
   private readonly hpGroup: THREE.Group;
   private readonly hpFill: THREE.Mesh;
   /** Set for one frame when the glider folds away on touchdown. */
@@ -469,22 +495,37 @@ class PlayerView {
     this.chute.visible = false;
     this.group.add(this.chute);
 
-    this.shield = new THREE.Mesh(
-      new THREE.SphereGeometry(1.15, 18, 14),
-      new THREE.MeshBasicMaterial({ color: 0x9fc4e8, transparent: true, opacity: 0.3, depthWrite: false }),
-    );
+    // Wards (Lightning Bulwark, Repel): a bubble alive with crawling arcs.
+    this.wardMat = wardMaterial();
+    this.shield = new THREE.Mesh(new THREE.SphereGeometry(1.15, 24, 18), this.wardMat);
     this.shield.position.y = 1;
     this.shield.visible = false;
+    this.shield.renderOrder = 3;
     this.group.add(this.shield);
 
-    this.aura = new THREE.Mesh(
-      new THREE.TorusGeometry(1, 0.22, 10, 32),
-      new THREE.MeshBasicMaterial({ color: 0xff7b2e, transparent: true, opacity: 0.7 }),
-    );
-    this.aura.rotation.x = Math.PI / 2;
-    this.aura.position.y = 0.9;
-    this.aura.visible = false;
-    this.group.add(this.aura);
+    // Fire Whirl: tongues of flame orbiting the body.
+    this.whirl = fireWhirl();
+    this.whirl.obj.position.y = 0.3;
+    this.whirl.obj.visible = false;
+    this.group.add(this.whirl.obj);
+
+    // Cast sigil under the feet and the charge orb between the hands.
+    this.sigil = makeSigil(0xffffff, 1.5);
+    this.sigil.mesh.position.y = 0.06;
+    this.sigil.mesh.visible = false;
+    this.group.add(this.sigil.mesh);
+    this.chargeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
+    this.chargeOrb = new THREE.Mesh(CORE_GEO, this.chargeMat);
+    this.chargeOrb.position.set(0, 0.05, 0.42);
+    this.chargeOrb.visible = false;
+    this.bodyPivot.add(this.chargeOrb);
+    // Wisps: shadow motes while stealthed, fae sparkles while transformed.
+    for (let i = 0; i < 3; i++) {
+      const w = makeGlow(0xffffff, 0.5, 0.8);
+      w.visible = false;
+      this.group.add(w);
+      this.wisps.push(w);
+    }
 
     // Duos: marks a downed teammate's corpse as revivable — pulses so it
     // reads at a glance from across the arena, unlike the shrinking body.
@@ -743,6 +784,7 @@ class PlayerView {
       poisoned: boolean;
       auraActive: boolean;
       auraRadius: number;
+      charging: number;
     },
     isSelf: boolean,
     isBot: boolean,
@@ -768,9 +810,12 @@ class PlayerView {
       for (const o of this.deathHide) o.visible = false;
       this.hpGroup.visible = false;
       this.shield.visible = false;
-      this.aura.visible = false;
       this.chute.visible = false;
       this.hoverGlow.visible = false;
+      this.whirl.obj.visible = false;
+      this.sigil.mesh.visible = false;
+      this.chargeOrb.visible = false;
+      for (const w of this.wisps) w.visible = false;
       this.landed = false;
       this.wasGliding = false;
       this.reviveBeacon.visible = isRevivableAlly;
@@ -790,16 +835,49 @@ class PlayerView {
     this.bodyPivot.scale.setScalar(this.baseScale);
 
     this.group.rotation.y = p.facing;
+    const now = performance.now() / 1000;
     this.shield.visible = p.shielded || p.immune;
-    (this.shield.material as THREE.MeshBasicMaterial).color.setHex(
+    if (this.shield.visible) {
       // Repel's arcane ward vs. Lightning Bulwark's electric charge.
-      p.immune ? ELEMENT_PALETTE.arcane.glow : ELEMENT_PALETTE.electric.core,
-    );
-    this.aura.visible = p.auraActive;
-    if (p.auraActive) {
-      this.aura.scale.setScalar(p.auraRadius);
-      this.aura.rotation.z += dt * 6;
+      (this.wardMat.uniforms.uColor!.value as THREE.Color).setHex(
+        p.immune ? ELEMENT_PALETTE.arcane.glow : ELEMENT_PALETTE.electric.core,
+      );
+      this.wardMat.uniforms.uArcs!.value = p.immune ? 0.4 : 1;
+      this.shield.scale.setScalar(1 + 0.03 * Math.sin(now * 9));
     }
+    this.whirl.obj.visible = p.auraActive;
+    if (p.auraActive) this.whirl.anim(now, p.auraRadius);
+    // Sigil: flares on every cast, holds while a charge is wound up.
+    this.sigilTimer = Math.max(0, this.sigilTimer - dt);
+    const charging = p.charging >= 0;
+    this.sigil.mesh.visible = this.sigilTimer > 0 || charging;
+    if (this.sigil.mesh.visible) {
+      this.sigil.mat.uniforms.uFade!.value = charging ? 0.6 + p.charging * 0.5 : Math.min(1, this.sigilTimer / 0.25);
+      this.sigil.mat.uniforms.uSpin!.value = now * 1.2;
+      this.sigil.mesh.rotation.y = -p.facing; // stays world-aligned while the body turns
+    }
+    this.chargeOrb.visible = charging;
+    if (charging) {
+      const c = 0.5 + p.charging * 1.6;
+      this.chargeOrb.scale.setScalar(c * (1 + 0.1 * Math.sin(now * 20)));
+      this.chargeMat.color.setHex(ELEMENT_PALETTE[this.castElement].glow).multiplyScalar(1.5 + p.charging * 2);
+    }
+    // Wisps: shadow motes while stealthed, fae sparkles while transformed.
+    const wispKind = p.stealthed ? 'shadow' : p.fae ? 'fae' : null;
+    this.wisps.forEach((w, i) => {
+      w.visible = wispKind !== null;
+      if (!wispKind) return;
+      const a = now * (wispKind === 'fae' ? 4 : 1.6) + (i / 3) * Math.PI * 2;
+      const r = wispKind === 'fae' ? 0.7 : 0.55;
+      w.position.set(Math.sin(a) * r, 1 + Math.sin(now * 3 + i) * 0.3, Math.cos(a) * r);
+      const m = w.material as THREE.SpriteMaterial;
+      m.color.setHex(wispKind === 'fae' ? 0xffb0e8 : 0x5a3a90);
+      m.opacity = wispKind === 'fae' ? 0.9 : 0.6;
+    });
+    // Hit flash: the body blinks white for a few frames.
+    this.hitFlash = Math.max(0, this.hitFlash - dt * 6);
+    for (const t of this.tintMats) t.mat.emissive.setScalar(this.hitFlash * 0.9);
+    this.handMat.emissive.copy(this.glowBase).lerp(WHITE, this.hitFlash);
 
     // Hover cycle driven by observed horizontal speed: faster bob on the move.
     const moved = Number.isNaN(this.lastX) ? 0 : Math.hypot(p.x - this.lastX, p.z - this.lastZ);
@@ -941,13 +1019,25 @@ class PlayerView {
     this.swingCombo = combo;
   }
 
-  triggerCast(): void {
+  triggerCast(abilityId?: AbilityId): void {
     this.castTimer = 0.35;
+    this.sigilTimer = 0.55;
+    if (abilityId) {
+      this.castElement = elementKeyOf(abilityId);
+      (this.sigil.mat.uniforms.uColor!.value as THREE.Color).setHex(ELEMENT_PALETTE[this.castElement].glow);
+    }
+  }
+
+  /** A hit landed on this character. */
+  flashHit(): void {
+    this.hitFlash = 1;
   }
 }
 
 class MobView {
   readonly group = new THREE.Group();
+  private readonly hideMat: THREE.MeshStandardMaterial;
+  private hitFlash = 0;
   private readonly hpFill: THREE.Mesh;
   private readonly hpGroup: THREE.Group;
   private readonly barWidth: number;
@@ -966,6 +1056,7 @@ class MobView {
     // Higher-level mobs read as battle-worn: darker, more saturated hide.
     if (level > 1) hide.offsetHSL(0.02 * (level - 1), 0.08 * (level - 1), -0.05 * (level - 1));
     const hideMat = new THREE.MeshStandardMaterial({ color: hide, roughness: 0.85 });
+    this.hideMat = hideMat;
     // A fur-like rim: light catching the bristles along the silhouette.
     addRimGlow(hideMat, new THREE.Color(hide).lerp(new THREE.Color(0xfff0d0), 0.5), elite ? 0.5 : 0.3, 3.2);
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x6e5430, roughness: 0.8 });
@@ -1063,9 +1154,15 @@ class MobView {
     }
   }
 
+  flashHit(): void {
+    this.hitFlash = 1;
+  }
+
   update(x: number, z: number, facing: number, hpFrac: number, camera: THREE.Camera, dt: number): void {
     this.group.position.set(x, groundAt(x, z), z);
     this.group.rotation.y = facing;
+    this.hitFlash = Math.max(0, this.hitFlash - dt * 6);
+    this.hideMat.emissive.setScalar(this.hitFlash * 0.8);
 
     // Scurry: diagonal leg pairs alternate while moving.
     const moved = Number.isNaN(this.lastX) ? 0 : Math.hypot(x - this.lastX, z - this.lastZ);
@@ -1264,9 +1361,12 @@ function makeProjectileView(abilityId: AbilityId): ProjView {
       };
     }
     case 'stormArchon': {
-      // A crackling core with stray sparks snapping around it.
+      // A crackling core with stray sparks snapping around it, and jagged
+      // arcs of lightning crawling off it.
       const orb = new THREE.Mesh(ARCHON_GEO, core);
       group.add(orb);
+      const arcs = lightningArcs(3, 6, 0.6);
+      group.add(arcs.obj);
       const bolts = [0, 1].map((i) => {
         const b = new THREE.Mesh(BOLT_SEG_GEO, ELECTRIC_SPARK_MAT);
         b.scale.setScalar(1.4 - i * 0.4);
@@ -1279,6 +1379,7 @@ function makeProjectileView(abilityId: AbilityId): ProjView {
         anim: (now) => {
           orb.rotation.x = now * 9;
           orb.rotation.y = now * 7;
+          arcs.anim(now);
           bolts.forEach((b, i) => {
             const a = now * 23 + i * Math.PI;
             b.position.set(Math.sin(a) * 0.34, Math.cos(a * 1.3) * 0.22, Math.sin(a * 0.7) * 0.12);
@@ -1307,17 +1408,12 @@ function makeProjectileView(abilityId: AbilityId): ProjView {
       };
     }
     case 'windstorm': {
-      // A tumbling gust knot with a long streaming wake.
-      const knot = new THREE.Mesh(KNOT_GEO, core);
-      group.add(knot);
-      addTail(1.7, 1.5);
-      return {
-        obj: group,
-        anim: (now) => {
-          knot.rotation.z = now * 8;
-          knot.rotation.y = now * 3;
-        },
-      };
+      // A tornado: a spinning vapor funnel carrying debris, with a wake.
+      const funnel = tornado();
+      group.add(funnel.obj);
+      addTail(1.4, 1.2);
+      void KNOT_GEO;
+      return { obj: group, anim: funnel.anim };
     }
     case 'huntersChains': {
       // Real chain links, planes alternating around the flight axis.
@@ -1408,6 +1504,11 @@ export class EntityViews {
     { group: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh; radius: number; kind: string }
   >();
   private effects: Effect[] = [];
+  /** Self-animating spell effects (meteors, spikes, chains…). */
+  private fx: FxHandle[] = [];
+  /** Zone dressing that lives as long as the zone: snow, caltrops, traps. */
+  private readonly zoneDressing = new Map<number, THREE.Object3D>();
+  private readonly glowSprite: THREE.Texture;
   /** prev-snapshot lookups, rebuilt only when a new snapshot arrives (20 Hz, not per frame). */
   private cachedPrev: Snapshot | null = null;
   private readonly prevPlayerMap = new Map<number, Snapshot['players'][number]>();
@@ -1433,6 +1534,7 @@ export class EntityViews {
     glowSprite: THREE.Texture,
   ) {
     glowTexture = glowSprite;
+    this.glowSprite = glowSprite;
   }
 
   /** Hero color from the start screen; applies to views created afterwards. */
@@ -1513,6 +1615,7 @@ export class EntityViews {
           poisoned: p.poisoned,
           auraActive: p.auraActive,
           auraRadius: ABILITIES.fireWhirl.auraRadius ?? 3,
+          charging: p.charging,
         },
         p.id === selfId,
         p.isBot,
@@ -1739,10 +1842,26 @@ export class EntityViews {
         fill.rotation.x = -Math.PI / 2;
         fill.scale.setScalar(zone.radius);
         group.add(outline, fill);
-        group.position.set(zone.x, groundAt(zone.x, zone.z) + 0.06, zone.z);
+        const zoneY = groundAt(zone.x, zone.z);
+        group.position.set(zone.x, zoneY + 0.06, zone.z);
         view = { group, fill, outline, radius: zone.radius, kind: zone.kind };
         this.zones.set(zone.id, view);
         this.scene.add(group);
+        // Spell-specific dressing on top of the telegraph/pool disc.
+        let dressing: THREE.Object3D | null = null;
+        if (zone.abilityId === 'starBomb' && zone.kind === 'telegraph') {
+          this.addFx(meteor(zone.x, zoneY, zone.z, Math.max(0.2, zone.endsIn), this.glowSprite));
+        } else if (zone.abilityId === 'snowdrift' && zone.kind === 'pool') {
+          dressing = snowfall(zone.x, zoneY + 0.1, zone.z, zone.radius, this.glowSprite);
+        } else if (zone.abilityId === 'explosiveCaltrops' && zone.kind === 'pool') {
+          dressing = caltrops(zone.x, groundAt, zone.z, zone.radius);
+        } else if (zone.kind === 'trap') {
+          dressing = bearTrap(zone.x, zoneY + 0.02, zone.z, zone.radius);
+        }
+        if (dressing) {
+          this.zoneDressing.set(zone.id, dressing);
+          this.scene.add(dressing);
+        }
       }
       if (zone.kind === 'telegraph') {
         const telegraph = ABILITIES[zone.abilityId].telegraph ?? 1;
@@ -1762,10 +1881,55 @@ export class EntityViews {
         (view.fill.material as THREE.Material).dispose();
         (view.outline.material as THREE.Material).dispose();
         this.zones.delete(id);
+        this.removeZoneDressing(id, view);
       }
     }
 
     this.updateEffects(dt);
+    this.updateFx(dt);
+  }
+
+  private removeZoneDressing(id: number, view: { group: THREE.Group; radius: number; kind: string }, silent = false): void {
+    const dressing = this.zoneDressing.get(id);
+    if (!dressing) return;
+    this.zoneDressing.delete(id);
+    this.scene.remove(dressing);
+    const x = view.group.position.x;
+    const z = view.group.position.z;
+    if (dressing instanceof THREE.Points) {
+      dressing.geometry.dispose();
+      (dressing.material as THREE.Material).dispose();
+    } else if (silent) {
+      // Match teardown: no farewell puffs.
+    } else if (view.kind === 'trap') {
+      // Sprung or expired: the jaws snap shut in a puff.
+      this.spawnFlash(x, z, 0.8, ELEMENT_PALETTE.physical.glow, 0.15);
+      this.spawnElementBurst(x, z, 'physical', 0.7);
+    } else if (view.kind === 'pool') {
+      // Caltrops go up in flame when the pool ends.
+      this.spawnBurst(x, z, view.radius, ELEMENT_PALETTE.fire.core, 0.35);
+      this.spawnElementBurst(x, z, 'fire', view.radius * 0.5);
+    }
+  }
+
+  private addFx(handle: FxHandle): void {
+    this.scene.add(handle.obj);
+    this.fx.push(handle);
+  }
+
+  private updateFx(dt: number): void {
+    let alive = 0;
+    for (const h of this.fx) {
+      h.age += dt;
+      if (h.age >= h.ttl) {
+        this.scene.remove(h.obj);
+        h.dispose();
+        continue;
+      }
+      h.tick(Math.min(1, h.age / h.ttl), dt);
+      this.fx[alive++] = h;
+    }
+    this.fx.length = alive;
   }
 
   handleEvents(events: GameEvent[], selfId: number, snap: Snapshot): void {
@@ -1773,7 +1937,7 @@ export class EntityViews {
     for (const ev of events) {
       switch (ev.type) {
         case 'cast':
-          this.players.get(ev.casterId)?.triggerCast();
+          this.players.get(ev.casterId)?.triggerCast(ev.abilityId);
           switch (ev.abilityId) {
             case 'quakingLeap':
             case 'explosiveCaltrops':
@@ -1800,8 +1964,13 @@ export class EntityViews {
               break;
             }
             case 'toxicSmackerel': {
+              // The fish itself, whipped through the arc, plus its slime.
               const caster = playerById.get(ev.casterId);
-              if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, ELEMENT_PALETTE.nature.glow);
+              if (caster) {
+                this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, ELEMENT_PALETTE.nature.glow);
+                this.addFx(fishSlap(ev.x, groundAt(ev.x, ev.z), ev.z, caster.facing));
+              }
+              this.spawnElementBurst(ev.x, ev.z, 'nature', 0.8);
               break;
             }
             case 'fadeToShadow':
@@ -1809,6 +1978,7 @@ export class EntityViews {
               break;
             case 'repel':
               this.spawnFlash(ev.x, ev.z, 1.5, ELEMENT_PALETTE.arcane.glow, 0.3); // arcane ward shimmers up
+              this.addFx(shockwave(ev.x, groundAt(ev.x, ev.z), ev.z, 5, ELEMENT_PALETTE.arcane.glow, 0.5));
               break;
             case 'faeform':
               this.spawnBurst(ev.x, ev.z, 1.4, 0xe98fd8, 0.4, 1.0); // fae's own pink, not plain nature-green
@@ -1844,22 +2014,33 @@ export class EntityViews {
           sfx.melee(ev.combo, ev);
           break;
         }
-        case 'detonate':
+        case 'detonate': {
+          const groundY = groundAt(ev.x, ev.z);
           if (ev.abilityId === 'starBomb') {
-            // Cosmic blast: a bright column stabbing down from the sky.
+            // The meteor lands: a column of light, a shockwave, and stardust.
             this.spawnColumn(ev.x, ev.z, 0.5, 16, ELEMENT_PALETTE.arcane.glow, 0.25);
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.arcane.core, 0.35);
+            this.addFx(shockwave(ev.x, groundY, ev.z, ev.radius * 1.4, ELEMENT_PALETTE.arcane.glow, 0.55));
+            this.addFx(crackDecal(ev.x, groundY, ev.z, ev.radius * 0.7, ELEMENT_PALETTE.arcane.glow, 3));
             this.spawnElementBurst(ev.x, ev.z, 'arcane', ev.radius * 0.5);
+            this.spawnFlash(ev.x, ev.z, ev.radius * 0.5, 0xffffff, 0.12);
           } else if (ev.abilityId === 'snowdrift') {
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.frost.glow, 0.4);
             this.spawnElementBurst(ev.x, ev.z, 'frost', ev.radius * 0.5);
           } else if (ev.abilityId === 'earthbreaker') {
+            // The earth heaves: spikes tear up through a fractured ring.
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.earth.core, 0.4);
             this.spawnFlash(ev.x, ev.z, ev.radius * 0.5, ELEMENT_PALETTE.earth.glow, 0.25);
             this.spawnElementBurst(ev.x, ev.z, 'earth', ev.radius * 0.6);
+            this.addFx(rockSpikes(ev.x, groundAt, ev.z, ev.radius, 10, 1.8));
+            this.addFx(crackDecal(ev.x, groundY, ev.z, ev.radius, ELEMENT_PALETTE.earth.glow, 3));
+            this.addFx(shockwave(ev.x, groundY, ev.z, ev.radius * 1.3, ELEMENT_PALETTE.earth.glow, 0.4));
           } else if (ev.abilityId === 'quakingLeap') {
             this.spawnBurst(ev.x, ev.z, ev.radius, ELEMENT_PALETTE.earth.glow, 0.35);
             this.spawnElementBurst(ev.x, ev.z, 'earth', ev.radius * 0.5);
+            this.addFx(rockSpikes(ev.x, groundAt, ev.z, ev.radius * 0.9, 6, 1.2));
+            this.addFx(shockwave(ev.x, groundY, ev.z, ev.radius * 1.4, ELEMENT_PALETTE.earth.glow, 0.4));
+            this.addFx(crackDecal(ev.x, groundY, ev.z, ev.radius * 0.8, ELEMENT_PALETTE.earth.glow, 2));
           } else if (ev.abilityId === 'steelTraps') {
             this.spawnFlash(ev.x, ev.z, 1.0, ELEMENT_PALETTE.physical.glow, 0.2);
           } else {
@@ -1868,8 +2049,13 @@ export class EntityViews {
           }
           sfx.impact(ev.abilityId, ev);
           break;
+        }
         case 'hit':
-          if (ev.sourceId !== null) this.spawnFlash(ev.x, ev.z, 0.8, 0xff5b4d, 0.18);
+          if (ev.sourceId !== null) {
+            this.spawnFlash(ev.x, ev.z, 0.8, 0xff5b4d, 0.18);
+            this.players.get(ev.targetId)?.flashHit();
+            this.mobs.get(ev.targetId)?.flashHit();
+          }
           if (ev.sourceId !== null && ev.amount > 3) sfx.hit(ev);
           break;
         case 'projectileGone': {
@@ -1889,7 +2075,11 @@ export class EntityViews {
           break;
         }
         case 'death':
+          // The construct comes apart: a storm-colored flash and scattered sparks.
           this.spawnBurst(ev.x, ev.z, 2.2, 0x3a3a4a, 0.6);
+          this.spawnFlash(ev.x, ev.z, 1.6, ELEMENT_PALETTE.electric.core, 0.25);
+          this.spawnElementBurst(ev.x, ev.z, 'electric', 1.4);
+          this.spawnElementBurst(ev.x, ev.z, 'arcane', 1.2);
           sfx.death(ev.id === selfId, ev);
           break;
         case 'revived':
@@ -1901,11 +2091,16 @@ export class EntityViews {
           break;
         case 'chestOpened':
           this.spawnFlash(ev.x, ev.z, 1.4, 0xffd75e, 0.4);
+          this.addFx(lightPillar(ev.x, groundAt(ev.x, ev.z), ev.z, 0xffd75e, 5, 0.8));
           sfx.chest(ev);
           break;
         case 'levelUp': {
           const p = playerById.get(ev.playerId);
-          if (p) this.spawnBurst(p.x, p.z, 2.5, 0xffd75e, 0.7);
+          if (p) {
+            this.spawnBurst(p.x, p.z, 2.5, 0xffd75e, 0.7);
+            this.addFx(lightPillar(p.x, groundAt(p.x, p.z), p.z, 0xffd75e, 9, 1.1));
+            this.addFx(shockwave(p.x, groundAt(p.x, p.z), p.z, 3.5, 0xffd75e, 0.5));
+          }
           if (ev.playerId === selfId) sfx.levelUp();
           break;
         }
@@ -1936,12 +2131,19 @@ export class EntityViews {
         case 'pull': {
           const a = playerById.get(ev.casterId);
           const b = playerById.get(ev.targetId);
-          if (a && b) this.spawnChainLine(a.x, a.z, b.x, b.z);
+          if (a && b) {
+            this.addFx(chainLine(
+              new THREE.Vector3(a.x, groundAt(a.x, a.z) + 1.1, a.z),
+              new THREE.Vector3(b.x, groundAt(b.x, b.z) + 1.0, b.z),
+            ));
+          }
           break;
         }
         case 'diveImpact':
           this.spawnBurst(ev.x, ev.z, 2.4, 0xc9b48a, 0.5);
           this.spawnFlash(ev.x, ev.z, 1.6, 0xfff2d0, 0.2);
+          this.addFx(shockwave(ev.x, groundAt(ev.x, ev.z), ev.z, 4, 0xe8d8b0, 0.4));
+          this.addFx(crackDecal(ev.x, groundAt(ev.x, ev.z), ev.z, 2.2, 0xe8d8b0, 2));
           sfx.diveImpact(ev.x, ev.z, ev.playerId === selfId);
           break;
       }
@@ -2021,9 +2223,15 @@ export class EntityViews {
   }
 
   private spawnFlash(x: number, z: number, size: number, color: number, ttl: number): void {
-    // Flashes run hot (HDR) so the bloom pass blooms them.
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
-    mat.color.multiplyScalar(1.8);
+    // Flashes are additive light, run hot (HDR) so the bloom pass haloes them.
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    mat.color.multiplyScalar(1.4);
     const mesh = new THREE.Mesh(FLASH_GEO, mat);
     mesh.position.set(x, groundAt(x, z) + 1, z);
     this.scene.add(mesh);
@@ -2099,6 +2307,13 @@ export class EntityViews {
       this.scene.remove(fx.obj);
       this.disposeEffect(fx);
     }
+    for (const h of this.fx) {
+      this.scene.remove(h.obj);
+      h.dispose();
+    }
+    this.fx = [];
+    for (const [id, view] of this.zones) this.removeZoneDressing(id, view, true);
+    this.zoneDressing.clear();
     this.players.clear();
     this.mobs.clear();
     this.chests.clear();
