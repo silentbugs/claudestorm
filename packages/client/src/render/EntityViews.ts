@@ -16,6 +16,7 @@ import {
 import { ABILITY_ELEMENT, ELEMENT_PALETTE, elementKeyOf, elementOf, type Element } from '../elements.js';
 import { sfx } from '../sfx.js';
 import type { AssetLibrary } from './assets.js';
+import { addRimGlow } from './shaderlib.js';
 
 /**
  * Draw distances for small entities (players are always drawn). A critter at
@@ -38,6 +39,11 @@ const SLOW_COLOR = 0x9fd8ff;
 const MOB_COLOR = 0x8a6b3d;
 const ELITE_COLOR = 0x9c3f3f;
 const SWING_DURATION = 0.28;
+/** Unlit glow bits render brighter than white so the bloom pass haloes them. */
+const VISOR_HDR = 2.4;
+/** How far a character bends the grass, and how hard. */
+const GRASS_PUSH_RADIUS = 1.4;
+const GRASS_PUSH = 0.55;
 
 export const RARITY_COLORS: Record<Rarity, number> = {
   common: 0xb8b5a5,
@@ -70,7 +76,7 @@ const SHARD_GEO = new THREE.OctahedronGeometry(0.15, 0);
 const CHUNK_GEO = new THREE.BoxGeometry(0.22, 0.22, 0.22);
 const MOTE_GEO = new THREE.SphereGeometry(0.12, 6, 5);
 const LEAF_GEO = new THREE.PlaneGeometry(0.18, 0.3);
-const BEAM_GEO = new THREE.BoxGeometry(0.05, 0.05, 0.4);
+const RAY_GEO = new THREE.BoxGeometry(0.05, 0.05, 0.4);
 
 /**
  * Per-element particle motifs for spawnElementBurst: fire flicks up in warm
@@ -94,13 +100,13 @@ const ELEMENT_PARTICLE_SPEC: Record<
 > = {
   fire: { geo: EMBER_GEO, count: 7, speed: 2.2, rise: 1.9, spin: 6, ttl: 0.5, growth: 0.4 },
   frost: { geo: SHARD_GEO, count: 6, speed: 3.0, rise: -0.5, spin: 4, ttl: 0.45, growth: 0.3 },
-  electric: { geo: BEAM_GEO, count: 6, speed: 6.5, rise: 0, spin: 0, ttl: 0.14, growth: 0.8 },
+  electric: { geo: RAY_GEO, count: 6, speed: 6.5, rise: 0, spin: 0, ttl: 0.14, growth: 0.8 },
   earth: { geo: CHUNK_GEO, count: 6, speed: 2.4, rise: 2.3, spin: 5, ttl: 0.5, growth: 0.25 },
   nature: { geo: LEAF_GEO, count: 7, speed: 1.7, rise: 1.0, spin: 7, ttl: 0.6, growth: 0.2 },
-  holy: { geo: BEAM_GEO, count: 8, speed: 3.4, rise: 0.5, spin: 0, ttl: 0.3, growth: 1.3 },
+  holy: { geo: RAY_GEO, count: 8, speed: 3.4, rise: 0.5, spin: 0, ttl: 0.3, growth: 1.3 },
   arcane: { geo: MOTE_GEO, count: 6, speed: 1.6, rise: 0.9, spin: 8, ttl: 0.5, growth: 0.4 },
   shadow: { geo: MOTE_GEO, count: 6, speed: 2.8, rise: 0.2, spin: 3, ttl: 0.4, growth: -0.7, inward: true },
-  wind: { geo: BEAM_GEO, count: 5, speed: 6.5, rise: 0, spin: 0, ttl: 0.18, growth: 0.5 },
+  wind: { geo: RAY_GEO, count: 5, speed: 6.5, rise: 0, spin: 0, ttl: 0.18, growth: 0.5 },
   physical: { geo: CHUNK_GEO, count: 5, speed: 2.0, rise: 0.6, spin: 5, ttl: 0.35, growth: 0.2 },
 };
 
@@ -150,7 +156,8 @@ function gemMaterial(rarity: Rarity): THREE.MeshStandardMaterial {
     mat = new THREE.MeshStandardMaterial({
       color: RARITY_COLORS[rarity],
       emissive: RARITY_COLORS[rarity],
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 1.3,
+      roughness: 0.3,
     });
     gemMats.set(rarity, mat);
   }
@@ -165,6 +172,60 @@ function glyphMaterial(glyph: string): THREE.SpriteMaterial {
     glyphMats.set(glyph, mat);
   }
   return mat;
+}
+
+/**
+ * Loot beams: a soft additive pillar of light in the drop's rarity color,
+ * so a scroll on the ground reads from across the field (Plunderstorm's
+ * own tell). One cached shader per rarity; the geometry is shared.
+ */
+const BEAM_GEO = new THREE.CylinderGeometry(0.28, 0.42, 7, 10, 1, true);
+BEAM_GEO.translate(0, 3.5, 0);
+const beamMats = new Map<Rarity, THREE.ShaderMaterial>();
+function beamMaterial(rarity: Rarity): THREE.ShaderMaterial {
+  let mat = beamMats.get(rarity);
+  if (!mat) {
+    mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uColor: { value: new THREE.Color(RARITY_COLORS[rarity]) }, uTime: { value: 0 } },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor;
+        uniform float uTime;
+        varying vec2 vUv;
+        void main() {
+          float fade = pow( 1.0 - vUv.y, 1.6 );
+          float ripple = 0.85 + 0.15 * sin( vUv.y * 30.0 - uTime * 4.0 );
+          gl_FragColor = vec4( uColor * 1.3, fade * ripple * 0.55 );
+        }`,
+    });
+    beamMats.set(rarity, mat);
+  }
+  return mat;
+}
+
+/** Soft additive glow sprite (hover lights, chest sparkles); the texture is injected by the scene. */
+let glowTexture: THREE.Texture | null = null;
+function makeGlow(color: number, size: number, opacity: number): THREE.Sprite {
+  const mat = new THREE.SpriteMaterial({
+    map: glowTexture,
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(size, size, 1);
+  return sprite;
 }
 
 /** Terrain height under a world position — everything dynamic stands on the hills. */
@@ -319,8 +380,12 @@ class PlayerView {
   private readonly shield: THREE.Mesh;
   private readonly aura: THREE.Mesh;
   private readonly reviveBeacon: THREE.Mesh;
+  private readonly hoverGlow: THREE.Sprite;
   private readonly hpGroup: THREE.Group;
   private readonly hpFill: THREE.Mesh;
+  /** Set for one frame when the glider folds away on touchdown. */
+  landed = false;
+  private wasGliding = false;
   private deadFor = 0;
   private rollSpin = 0;
   private swingTimer = 0;
@@ -440,6 +505,12 @@ class PlayerView {
     this.reviveBeacon.visible = false;
     this.group.add(this.reviveBeacon);
 
+    // The construct's energy lights the ground under it: a soft tinted pool
+    // that breathes with the hover, which also anchors the body visually.
+    this.hoverGlow = makeGlow(this.glowBase.getHex(), 2.6, 0.45);
+    this.hoverGlow.position.y = 0.12;
+    this.group.add(this.hoverGlow);
+
     const bar = makeBar(1.3);
     this.hpGroup = bar.group;
     this.hpFill = bar.fill;
@@ -457,6 +528,9 @@ class PlayerView {
       mat.transparent = true;
       mat.opacity = baseOpacity;
     }
+    // Storm energy along every silhouette: the glow tint, brightest on the
+    // dark underbellies so the body reads as lit from inside.
+    addRimGlow(mat, this.glowBase, mode === 'dark' ? 0.9 : 0.55);
     this.tintMats.push({ mat, mode, baseOpacity });
     return mat;
   }
@@ -698,6 +772,9 @@ class PlayerView {
       this.shield.visible = false;
       this.aura.visible = false;
       this.chute.visible = false;
+      this.hoverGlow.visible = false;
+      this.landed = false;
+      this.wasGliding = false;
       this.reviveBeacon.visible = isRevivableAlly;
       if (isRevivableAlly) {
         const pulse = 0.5 + Math.sin(this.deadFor * 3) * 0.3;
@@ -777,6 +854,8 @@ class PlayerView {
     } else {
       this.deploy = 0;
     }
+    this.landed = this.wasGliding && !p.gliding;
+    this.wasGliding = p.gliding;
 
     // Hands drift on their own slightly offset rhythms.
     this.handL.position.y = this.handRestY + Math.sin(this.bobPhase + 1.6) * 0.03;
@@ -832,8 +911,17 @@ class PlayerView {
       .copy(this.glowBase)
       .multiplyScalar(0.82 + Math.sin(this.bobPhase * 1.3) * 0.1 + Math.sin(this.bobPhase * 7.7) * 0.08);
     if (this.swingCombo === 3) this.visorMat.color.lerp(WHITE, Math.min(1, slapR));
+    this.visorMat.color.multiplyScalar(VISOR_HDR);
     // Stealth: nearly invisible to enemies, ghostly to yourself.
     const opacity = p.stealthed ? (isSelf ? 0.4 : 0.12) : 1;
+    this.hoverGlow.visible = !p.stealthed && !p.gliding;
+    if (this.hoverGlow.visible) {
+      const pulse = 0.38 + Math.sin(this.bobPhase * 1.2) * 0.07 + Math.max(slapL, slapR) * 0.35;
+      (this.hoverGlow.material as THREE.SpriteMaterial).opacity = pulse * (airborne ? 0.5 : 1);
+      const glowSize = 2.4 + Math.min(0.8, speed * 0.05);
+      this.hoverGlow.scale.set(glowSize, glowSize, 1);
+      this.hoverGlow.position.y = 0.12 + (airborne ? -p.y : 0) + 0.02;
+    }
     for (const t of this.tintMats) {
       if (t.mode === 'light') t.mat.color.copy(TINT).lerp(WHITE, 0.45);
       else if (t.mode === 'dark') t.mat.color.copy(TINT).multiplyScalar(0.5);
@@ -880,6 +968,8 @@ class MobView {
     // Higher-level mobs read as battle-worn: darker, more saturated hide.
     if (level > 1) hide.offsetHSL(0.02 * (level - 1), 0.08 * (level - 1), -0.05 * (level - 1));
     const hideMat = new THREE.MeshStandardMaterial({ color: hide, roughness: 0.85 });
+    // A fur-like rim: light catching the bristles along the silhouette.
+    addRimGlow(hideMat, new THREE.Color(hide).lerp(new THREE.Color(0xfff0d0), 0.5), elite ? 0.5 : 0.3, 3.2);
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x6e5430, roughness: 0.8 });
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.55, 4, 10), hideMat);
     body.rotation.x = Math.PI / 2;
@@ -923,7 +1013,12 @@ class MobView {
       beast.add(ear);
     }
     const eyeGeo = new THREE.SphereGeometry(0.05, 8, 6);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1208, roughness: 0.3 });
+    const eyeMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1208,
+      roughness: 0.3,
+      emissive: elite ? 0xff4020 : 0xffb040,
+      emissiveIntensity: elite ? 2.2 : 0.9,
+    });
     for (const side of [-1, 1]) {
       const eye = new THREE.Mesh(eyeGeo, eyeMat);
       eye.position.set(side * 0.15, 0.62, 0.68);
@@ -999,21 +1094,38 @@ class MobView {
 class ChestView {
   readonly group: THREE.Group;
   private readonly lid: THREE.Object3D | null;
+  private readonly sparkle: THREE.Sprite;
+  private readonly sparkleSize: number;
   private opened = false;
 
   constructor(assets: AssetLibrary, x: number, z: number) {
     // The pirate-kit chest ships with a separate hinged lid node.
     this.group = assets.model('chest');
-    this.group.scale.setScalar(1.5 / Math.max(0.001, assets.size('chest').x));
+    const scale = 1.5 / Math.max(0.001, assets.size('chest').x);
+    this.group.scale.setScalar(scale);
     this.lid = this.group.getObjectByName('lid') ?? null;
     this.group.position.set(x, groundAt(x, z), z);
     this.group.rotation.y = (x * 7 + z * 13) % Math.PI;
+    // A golden glint hovering over unopened plunder.
+    this.sparkleSize = 1.2 / scale;
+    this.sparkle = makeGlow(0xffd75e, this.sparkleSize, 0.7);
+    this.sparkle.position.y = 1.3 / scale;
+    this.group.add(this.sparkle);
   }
 
   setOpened(opened: boolean): void {
     if (opened === this.opened) return;
     this.opened = opened;
     if (this.lid) this.lid.rotation.x = opened ? -2.1 : 0;
+    this.sparkle.visible = !opened;
+  }
+
+  animate(now: number): void {
+    if (this.opened) return;
+    const phase = now * 3.1 + this.group.position.x;
+    (this.sparkle.material as THREE.SpriteMaterial).opacity = 0.5 + 0.25 * Math.sin(phase);
+    const s = this.sparkleSize * (1 + 0.08 * Math.sin(now * 5 + phase));
+    this.sparkle.scale.set(s, s, 1);
   }
 }
 
@@ -1289,7 +1401,7 @@ export class EntityViews {
   private players = new Map<number, PlayerView>();
   private mobs = new Map<number, MobView>();
   private chests = new Map<number, ChestView>();
-  private scrolls = new Map<number, THREE.Group>();
+  private scrolls = new Map<number, { group: THREE.Group; spin: THREE.Group }>();
   private coins = new Map<number, THREE.Mesh>();
   private items = new Map<number, THREE.Group>();
   private projectiles = new Map<number, ProjView>();
@@ -1314,11 +1426,16 @@ export class EntityViews {
 
   private selfColor = SELF_COLOR;
   private selfModel: HeroModel = 'cloud';
+  /** Characters near the camera this frame, for the grass to bend around. */
+  readonly pushers: { x: number; z: number; radius: number; strength: number }[] = [];
 
   constructor(
     private readonly scene: THREE.Scene,
     private readonly assets: AssetLibrary,
-  ) {}
+    glowSprite: THREE.Texture,
+  ) {
+    glowTexture = glowSprite;
+  }
 
   /** Hero color from the start screen; applies to views created afterwards. */
   setSelfColor(color: number): void {
@@ -1345,8 +1462,11 @@ export class EntityViews {
   sync(prev: Snapshot, next: Snapshot, t: number, selfId: number, camera: THREE.Camera, dt: number): void {
     const now = performance.now() / 1000;
     CELESTIAL_MAT.uniforms.uTime!.value = now;
+    for (const mat of beamMats.values()) mat.uniforms.uTime!.value = now;
     const camX = camera.position.x;
     const camZ = camera.position.z;
+    this.pushers.length = 0;
+    const pushRange = 60 * 60;
     const beyond = (x: number, z: number, drawDist: number): boolean =>
       (x - camX) * (x - camX) + (z - camZ) * (z - camZ) > drawDist * drawDist;
     this.ensurePrevMaps(prev);
@@ -1402,6 +1522,18 @@ export class EntityViews {
         camera,
         !p.alive && p.teamId === selfTeamId && p.id !== selfId,
       );
+      if (view.landed) {
+        // Touchdown: a puff of dust kicked up as the glider folds.
+        this.spawnBurst(ix, iz, 1.8, 0xd8c8a0, 0.4);
+        this.spawnElementBurst(ix, iz, 'physical', 0.8);
+      }
+      if (p.alive && !p.gliding && this.pushers.length < 8) {
+        const dx = ix - camX;
+        const dz = iz - camZ;
+        if (dx * dx + dz * dz < pushRange) {
+          this.pushers.push({ x: ix, z: iz, radius: GRASS_PUSH_RADIUS, strength: GRASS_PUSH });
+        }
+      }
     }
 
     // Mobs
@@ -1421,7 +1553,12 @@ export class EntityViews {
       }
       view.group.visible = true;
       const pm = prevMobs.get(m.id) ?? m;
-      view.update(lerp(pm.x, m.x, t), lerp(pm.z, m.z, t), lerpAngle(pm.facing, m.facing, t), m.hp / m.maxHp, camera, dt);
+      const mx = lerp(pm.x, m.x, t);
+      const mz = lerp(pm.z, m.z, t);
+      view.update(mx, mz, lerpAngle(pm.facing, m.facing, t), m.hp / m.maxHp, camera, dt);
+      if (this.pushers.length < 8 && (mx - camX) * (mx - camX) + (mz - camZ) * (mz - camZ) < pushRange) {
+        this.pushers.push({ x: mx, z: mz, radius: m.elite ? 2.2 : 1.2, strength: m.elite ? 0.7 : 0.4 });
+      }
     }
     for (const [id, view] of this.mobs) {
       if (!liveMobs.has(id)) {
@@ -1440,6 +1577,7 @@ export class EntityViews {
       }
       view.group.visible = !beyond(c.x, c.z, CHEST_DRAW_DIST);
       view.setOpened(c.opened);
+      if (view.group.visible) view.animate(now);
     }
 
     // Scrolls: a rarity-colored gem with the spell's icon floating above it,
@@ -1447,30 +1585,38 @@ export class EntityViews {
     const liveScrolls = new Set<number>();
     for (const s of next.scrolls) {
       liveScrolls.add(s.id);
-      let group = this.scrolls.get(s.id);
-      if (!group) {
-        group = new THREE.Group();
+      let view = this.scrolls.get(s.id);
+      if (!view) {
+        const group = new THREE.Group();
+        const spin = new THREE.Group();
         const gem = new THREE.Mesh(this.scrollGeo, gemMaterial(s.rarity));
-        group.add(gem);
+        spin.add(gem);
         const icon = new THREE.Sprite(glyphMaterial(ABILITIES[s.abilityId].icon));
         icon.scale.set(0.85, 0.85, 1);
         icon.position.y = 0.95;
-        group.add(icon);
-        this.scrolls.set(s.id, group);
+        spin.add(icon);
+        group.add(spin);
+        // The rarity beam stands still while the gem spins inside it.
+        const beam = new THREE.Mesh(BEAM_GEO, beamMaterial(s.rarity));
+        beam.position.y = -0.8;
+        beam.renderOrder = 2;
+        group.add(beam);
+        view = { group, spin };
+        this.scrolls.set(s.id, view);
         this.scene.add(group);
       }
       if (beyond(s.x, s.z, PICKUP_DRAW_DIST)) {
-        group.visible = false;
+        view.group.visible = false;
         continue;
       }
-      group.visible = true;
-      group.position.set(s.x, groundAt(s.x, s.z) + 0.85 + Math.sin(now * 2.2 + s.id) * 0.12, s.z);
-      group.rotation.y = now * 1.6 + s.id;
+      view.group.visible = true;
+      view.group.position.set(s.x, groundAt(s.x, s.z) + 0.85 + Math.sin(now * 2.2 + s.id) * 0.12, s.z);
+      view.spin.rotation.y = now * 1.6 + s.id;
     }
-    for (const [id, group] of this.scrolls) {
+    for (const [id, view] of this.scrolls) {
       if (!liveScrolls.has(id)) {
-        // Gem and glyph materials are cached and shared — nothing to dispose.
-        this.scene.remove(group);
+        // Gem, glyph, and beam materials are cached and shared — nothing to dispose.
+        this.scene.remove(view.group);
         this.scrolls.delete(id);
       }
     }
@@ -1877,7 +2023,9 @@ export class EntityViews {
   }
 
   private spawnFlash(x: number, z: number, size: number, color: number, ttl: number): void {
+    // Flashes run hot (HDR) so the bloom pass blooms them.
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
+    mat.color.multiplyScalar(1.8);
     const mesh = new THREE.Mesh(FLASH_GEO, mat);
     mesh.position.set(x, groundAt(x, z) + 1, z);
     this.scene.add(mesh);
@@ -1891,6 +2039,7 @@ export class EntityViews {
       opacity: 0.7,
       side: THREE.DoubleSide,
     });
+    mat.color.multiplyScalar(1.35);
     const mesh = new THREE.Mesh(BURST_GEO, mat);
     mesh.position.set(x, groundAt(x, z) + 0.3, z);
     this.scene.add(mesh);
@@ -1939,7 +2088,7 @@ export class EntityViews {
     for (const view of this.players.values()) this.scene.remove(view.group);
     for (const view of this.mobs.values()) this.scene.remove(view.group);
     for (const view of this.chests.values()) this.scene.remove(view.group);
-    for (const group of this.scrolls.values()) this.scene.remove(group);
+    for (const view of this.scrolls.values()) this.scene.remove(view.group);
     for (const mesh of this.coins.values()) this.scene.remove(mesh);
     for (const mesh of this.items.values()) this.scene.remove(mesh);
     for (const view of this.projectiles.values()) this.scene.remove(view.obj);

@@ -10,8 +10,18 @@ import {
   lakeSurfaceY,
 } from '@claudestorm/shared';
 import type { AssetLibrary, ModelName } from './assets.js';
+import { GrassField } from './Grass.js';
+import { Motes } from './Motes.js';
+import { PostFX } from './PostFX.js';
+import { makeDetailTextures, makeGlowSprite, makeNoiseTexture, type DetailTextures } from './proctex.js';
+import { QUALITY_PRESETS, type Quality, type QualityPreset } from './quality.js';
+import { SHARED, SHARED_PARS, bindShared } from './shaderlib.js';
+import { SkyDome, type SkySettings } from './Sky.js';
+import { bakeTerrainData, sampleBiome, sampleHeight, type BiomeSample, type TerrainData } from './TerrainData.js';
+import { buildTerrain } from './Terrain.js';
+import { applyWaterSettings, makeWaterMaterial, type WaterSettings } from './Water.js';
 
-const SUN_DIR = new THREE.Vector3(0.55, 0.5, 0.32).normalize();
+const SUN_DIR = SHARED.uSunDir.value;
 
 /** Ruined masonry: box obstacles render as clean stone blocks (the sim shape, exactly). */
 const STONE_GEO = new THREE.BoxGeometry(1, 1, 1);
@@ -22,116 +32,167 @@ const STONE_MATS = [
 STONE_MATS[0]!.name = 'stoneA';
 STONE_MATS[1]!.name = 'stoneB';
 
-/** Deterministic smooth value noise in [0, 1] — patchiness for the ground. */
-function hash2(x: number, z: number): number {
-  const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-function valueNoise(x: number, z: number): number {
-  const xi = Math.floor(x);
-  const zi = Math.floor(z);
-  const u = (x - xi) * (x - xi) * (3 - 2 * (x - xi));
-  const v = (z - zi) * (z - zi) * (3 - 2 * (z - zi));
-  const a = hash2(xi, zi);
-  const b = hash2(xi + 1, zi);
-  const c = hash2(xi, zi + 1);
-  const d = hash2(xi + 1, zi + 1);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
-
 /** Start-screen time-of-day choices. */
 export type EnvironmentId = 'day' | 'dusk' | 'night';
 
 interface EnvPreset {
   fog: number;
-  zenith: number;
-  horizon: number;
-  glow: number;
-  glowStrength: number;
+  fogNear: number;
+  fogFar: number;
+  sky: SkySettings;
   hemiSky: number;
   hemiGround: number;
   hemiIntensity: number;
   sun: number;
   sunIntensity: number;
-  waterDeep: number;
-  waterSky: number;
   exposure: number;
-  cloud: number;
-  cloudOpacity: number;
+  water: WaterSettings;
+  puff: number;
+  puffOpacity: number;
+  motes: { color: number; intensity: number; size: number; rise: number };
+  cloudShadow: number;
+  wind: number;
 }
 
 /** Day is the default — bright and saturated, the Plunderstorm look. */
 const ENVIRONMENTS: Record<EnvironmentId, EnvPreset> = {
   day: {
-    fog: 0x9cc2dd, zenith: 0x2660c2, horizon: 0xaadcf2, glow: 0xfff2cc, glowStrength: 0.35,
-    hemiSky: 0xcfe5ff, hemiGround: 0x3d5a34, hemiIntensity: 0.95, sun: 0xfff2d8, sunIntensity: 1.8,
-    waterDeep: 0x0d3852, waterSky: 0x80b2cc, exposure: 1.12, cloud: 0xffffff, cloudOpacity: 0.85,
+    fog: 0xa7cfe6,
+    fogNear: 260,
+    fogFar: 900,
+    sky: {
+      zenith: 0x2a6bd4, horizon: 0xa9d5f0, glow: 0xfff0c8, glowStrength: 0.4,
+      disc: 0xfff6e0, discIntensity: 7, discSize: 0.99945,
+      cloudColor: 0xffffff, cloudShade: 0xb4c2d6, cloudCover: 0.5, cloudOpacity: 0.92, stars: 0,
+    },
+    hemiSky: 0xd6e8ff, hemiGround: 0x55763f, hemiIntensity: 1.45,
+    sun: 0xfff1d6, sunIntensity: 2.1, exposure: 1.15,
+    water: { fog: 0xa7cfe6, deep: 0x0e3f62, shallow: 0x5ec8c2, skyTint: 0x8ec2dd, sunTint: 0xffe2a8 },
+    puff: 0xffffff, puffOpacity: 0.9,
+    motes: { color: 0xfff0b8, intensity: 0.55, size: 0.08, rise: 0.15 },
+    cloudShadow: 0.24,
+    wind: 0.35,
   },
   dusk: {
-    fog: 0x453e58, zenith: 0x1a2447, horizon: 0x8c6b85, glow: 0xffb861, glowStrength: 0.5,
-    hemiSky: 0xbfd4ff, hemiGround: 0x30281e, hemiIntensity: 0.85, sun: 0xffe6c0, sunIntensity: 1.7,
-    waterDeep: 0x0a1c33, waterSky: 0x5c5c7a, exposure: 1.05, cloud: 0xd9dce8, cloudOpacity: 0.82,
+    fog: 0x6d5470,
+    fogNear: 220,
+    fogFar: 820,
+    sky: {
+      zenith: 0x1b2656, horizon: 0xe0895c, glow: 0xffb35c, glowStrength: 0.65,
+      disc: 0xffc078, discIntensity: 5, discSize: 0.9993,
+      cloudColor: 0xf2c5a4, cloudShade: 0x5a4a72, cloudCover: 0.55, cloudOpacity: 0.85, stars: 0.25,
+    },
+    hemiSky: 0xc4b4ff, hemiGround: 0x4a3830, hemiIntensity: 1.05,
+    sun: 0xffd0a0, sunIntensity: 1.9, exposure: 1.08,
+    water: { fog: 0x6d5470, deep: 0x0c1e3a, shallow: 0x3f8a92, skyTint: 0x8a6a80, sunTint: 0xffb070 },
+    puff: 0xe8c8d0, puffOpacity: 0.85,
+    motes: { color: 0xffa050, intensity: 0.9, size: 0.07, rise: 0.4 },
+    cloudShadow: 0.2,
+    wind: 0.45,
   },
   night: {
-    fog: 0x141a2c, zenith: 0x050810, horizon: 0x1a2138, glow: 0x9fb6ff, glowStrength: 0.25,
-    hemiSky: 0x8fa8d8, hemiGround: 0x101418, hemiIntensity: 0.55, sun: 0xbdd2ff, sunIntensity: 0.95,
-    waterDeep: 0x03080f, waterSky: 0x26304d, exposure: 1.0, cloud: 0x2a3048, cloudOpacity: 0.6,
+    fog: 0x16203a,
+    fogNear: 180,
+    fogFar: 760,
+    sky: {
+      zenith: 0x040610, horizon: 0x1c2640, glow: 0x9fb6ff, glowStrength: 0.22,
+      disc: 0xe4ecff, discIntensity: 3, discSize: 0.9989,
+      cloudColor: 0x2c3654, cloudShade: 0x10141f, cloudCover: 0.4, cloudOpacity: 0.75, stars: 1,
+    },
+    hemiSky: 0x8ea4d8, hemiGround: 0x141a22, hemiIntensity: 0.7,
+    sun: 0xbfd0ff, sunIntensity: 1.1, exposure: 1.0,
+    water: { fog: 0x16203a, deep: 0x040a14, shallow: 0x1a3e4c, skyTint: 0x2a3550, sunTint: 0xc0d0ff },
+    puff: 0x2a3048, puffOpacity: 0.6,
+    motes: { color: 0xc8ff70, intensity: 1.4, size: 0.1, rise: 0.05 },
+    cloudShadow: 0.12,
+    wind: 0.28,
   },
 };
 
-const FOG_COLOR = ENVIRONMENTS.day.fog;
+/** How strongly a scattered model rocks in the wind (0 = rigid). */
+const SWAY: Partial<Record<ModelName, number>> = {
+  tree_oak: 1, tree_fat: 1, tree_tall: 1.1, tree_thin: 1.2, tree_pineDefaultA: 0.8, tree_pineDefaultB: 0.8,
+  tree_palm: 1.4, tree_palmTall: 1.5,
+  plant_bush: 0.7, plant_bushLarge: 0.6, grass: 1, grass_large: 1,
+  flower_redA: 0.9, flower_purpleA: 0.9, flower_yellowA: 0.9,
+  mushroom_red: 0.2, mushroom_tanGroup: 0.15,
+  'flag-pirate-high': 1.6,
+};
 
-/** Owns the Three.js scene, camera, lights, sky, water, arena geometry, and storm wall. */
+/** Owns the Three.js scene, camera, lights, sky, water, terrain, foliage, storm wall, and post pipeline. */
 export class SceneManager {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
+  quality: Quality;
+  private preset: QualityPreset;
   private readonly stormWall: THREE.Mesh;
   private readonly stormWallMat: THREE.ShaderMaterial;
-  private readonly waterMat: THREE.ShaderMaterial;
+  private seaMat!: THREE.ShaderMaterial;
   private lakeMat!: THREE.ShaderMaterial;
-  private readonly clouds: { group: THREE.Group; speed: number }[] = [];
+  private sea!: THREE.Mesh;
+  private readonly lakes: THREE.Mesh[] = [];
+  private readonly puffs: { group: THREE.Group; speed: number }[] = [];
   private readonly clock = new THREE.Clock();
   private readonly sun: THREE.DirectionalLight;
   private readonly hemi: THREE.HemisphereLight;
-  private sky!: THREE.Mesh;
-  private skyMat!: THREE.ShaderMaterial;
-  private cloudMat!: THREE.MeshStandardMaterial;
+  private readonly sky: SkyDome;
+  private puffMat!: THREE.MeshStandardMaterial;
+  private readonly terrainData: TerrainData;
+  private readonly details: DetailTextures;
+  readonly noiseTexture: THREE.Texture;
+  readonly glowSprite: THREE.Texture;
+  private terrain: THREE.Mesh | null = null;
+  private grass: GrassField | null = null;
+  private post: PostFX | null = null;
+  private motes: Motes | null = null;
+  private staticMeshes: THREE.Mesh[] = [];
   /** Staging area for static scenery; merged into per-material meshes at the end. */
   private readonly staticStage = new THREE.Group();
+  private readonly staticMaterials = new Map<string, THREE.Material>();
+  private readonly staticDepth: THREE.MeshDepthMaterial;
+  private envId: EnvironmentId = 'day';
+  private readonly lowPower: boolean;
 
   /**
-   * `lowPower` (touch/mobile): antialiasing and soft PCF shadow filtering are
-   * two of the priciest per-pixel costs on a phone GPU, and a high-DPI phone
-   * panel (3x devicePixelRatio) makes every other cost worse on top — so
-   * mobile trims all three instead of rendering at desktop settings and
-   * hoping the hardware keeps up.
+   * `lowPower` (touch/mobile) forces the Low tier's renderer settings: no
+   * MSAA, hard shadows, a capped pixel ratio — the priciest per-pixel costs
+   * on a phone GPU.
    */
-  constructor(container: HTMLElement, private readonly assets: AssetLibrary, lowPower = false) {
+  constructor(container: HTMLElement, private readonly assets: AssetLibrary, lowPower = false, quality: Quality = 'high') {
+    this.lowPower = lowPower;
+    this.quality = quality;
+    this.preset = QUALITY_PRESETS[quality];
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !lowPower,
+      antialias: !lowPower && !this.preset.post, // the post pipeline brings its own MSAA
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(lowPower ? 1.5 : 2, window.devicePixelRatio));
+    this.renderer.setPixelRatio(Math.min(this.preset.maxPixelRatio, window.devicePixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = lowPower ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(
-      55,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1150,
-    );
+    this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1150);
 
-    this.scene.fog = new THREE.Fog(FOG_COLOR, 280, 920);
+    // Procedural art, baked once: noise atlas, ground details, the island.
+    const aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    this.noiseTexture = makeNoiseTexture();
+    SHARED.uNoise.value = this.noiseTexture;
+    this.glowSprite = makeGlowSprite();
+    this.details = makeDetailTextures(aniso);
+    this.terrainData = bakeTerrainData();
+    SHARED.uHeightMap.value = this.terrainData.height;
+    SHARED.uTerrainColor.value = this.terrainData.color;
+    SHARED.uSplat.value = this.terrainData.splat;
+
+    this.scene.fog = new THREE.Fog(ENVIRONMENTS.day.fog, 260, 900);
     // Anything past the far plane (the water plane's edge, the dome's rim)
     // must resolve to the fog color, never the default black.
-    this.scene.background = new THREE.Color(FOG_COLOR);
-    this.buildSky();
+    this.scene.background = new THREE.Color(ENVIRONMENTS.day.fog);
+    this.sky = new SkyDome();
+    this.scene.add(this.sky.mesh);
 
     this.hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
     this.scene.add(this.hemi);
@@ -140,56 +201,73 @@ export class SceneManager {
     // and the texels land where the fight is.
     this.sun = new THREE.DirectionalLight(0xffe6c0, 1.7);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.camera.left = -70;
     this.sun.shadow.camera.right = 70;
     this.sun.shadow.camera.top = 70;
     this.sun.shadow.camera.bottom = -70;
     this.sun.shadow.camera.far = 420;
+    this.sun.shadow.bias = -0.0003;
+    this.sun.shadow.normalBias = 0.04;
+    // Shadows stay readable rather than pitch black: the sky fills them in.
+    this.sun.shadow.intensity = 0.82;
     this.scene.add(this.sun, this.sun.target);
     this.setFocus(0, 0);
 
-    this.buildGround();
-    this.waterMat = this.buildWater();
+    // Scenery materials: clones of the kit materials with wind sway wired in.
+    this.staticDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    addSway(this.staticDepth);
+
+    this.buildWater();
     this.buildLakes();
-    this.buildObstacles();
-    this.buildLandmarks();
-    this.buildShoreline();
-    this.mergeStatics();
     this.buildClouds();
 
-    // Storm wall: scrolling energy bands, denser toward the ground.
+    // Storm wall: turbulent energy shot through with lightning, denser toward the ground.
     this.stormWallMat = new THREE.ShaderMaterial({
       transparent: true,
       side: THREE.DoubleSide,
       depthWrite: false,
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: `
+      uniforms: {},
+      vertexShader: /* glsl */ `
         varying vec2 vUv;
         void main() {
           vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
         }`,
-      fragmentShader: `
-        uniform float uTime;
+      fragmentShader: /* glsl */ `
+        ${SHARED_PARS}
         varying vec2 vUv;
+        float hash11( float p ) { return fract( sin( p * 127.1 ) * 43758.5453 ); }
         void main() {
-          float bands = sin(vUv.x * 80.0 + uTime * 1.6 + sin(vUv.y * 9.0 + uTime) * 1.8) * 0.5 + 0.5;
-          float rise = sin(vUv.y * 24.0 - uTime * 2.4 + vUv.x * 40.0) * 0.5 + 0.5;
-          float glow = bands * 0.6 + rise * 0.4;
-          float vert = 1.0 - vUv.y;                    // fades with height
-          float alpha = (0.3 + glow * 0.45) * (0.45 + vert * 0.55);
-          vec3 col = mix(vec3(0.42, 0.18, 0.8), vec3(0.78, 0.5, 1.0), glow);
-          gl_FragColor = vec4(col, alpha);
+          vec2 uv1 = vec2( vUv.x * 12.0 + uTime * 0.04, vUv.y * 1.8 - uTime * 0.07 );
+          vec2 uv2 = vec2( vUv.x * 28.0 - uTime * 0.08, vUv.y * 3.5 - uTime * 0.15 );
+          float n = texture2D( uNoise, uv1 ).r * 0.6 + texture2D( uNoise, uv2 ).g * 0.4;
+          float turb = smoothstep( 0.3, 0.78, n );
+          float rise = sin( vUv.y * 24.0 - uTime * 2.4 + vUv.x * 40.0 ) * 0.5 + 0.5;
+          float glow = turb * 0.7 + rise * 0.3;
+          // Lightning: a random column flashes for a few frames, its bolt
+          // shape carved from the fine noise channel; now and then the
+          // whole wall pulses.
+          float col = floor( vUv.x * 160.0 );
+          float tick = floor( uTime * 7.0 );
+          float strike = step( 0.985, hash11( col + tick * 0.37 ) );
+          float bolt = strike * smoothstep( 0.55, 0.9, texture2D( uNoise, vec2( vUv.x * 160.0, vUv.y * 2.5 + tick ) ).a );
+          float pulse = step( 0.965, hash11( tick * 1.7 ) ) * 0.35;
+          float vert = 1.0 - vUv.y;
+          float alpha = ( 0.28 + glow * 0.45 ) * ( 0.4 + vert * 0.6 ) + bolt * 0.9 + pulse;
+          vec3 color = mix( vec3( 0.28, 0.1, 0.55 ), vec3( 0.75, 0.45, 1.0 ), glow );
+          color += vec3( 0.85, 0.75, 1.3 ) * bolt * 2.5;
+          color += vec3( 0.6, 0.45, 1.0 ) * pulse;
+          gl_FragColor = vec4( color, alpha );
         }`,
     });
-    this.stormWall = new THREE.Mesh(
-      new THREE.CylinderGeometry(1, 1, 60, 128, 1, true),
-      this.stormWallMat,
-    );
+    bindShared(this.stormWallMat);
+    this.stormWall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 60, 128, 1, true), this.stormWallMat);
     this.stormWall.position.y = 30;
+    this.stormWall.renderOrder = 3;
     this.setStorm(0, 0, STORM_START_RADIUS);
     this.scene.add(this.stormWall);
+
+    this.applyQuality();
     this.setEnvironment('day');
 
     // Compile every shader up front so the first frames of a match don't hitch.
@@ -198,217 +276,131 @@ export class SceneManager {
     window.addEventListener('resize', () => this.resize());
   }
 
-  /**
-   * Gradient sky dome with a warm glow around the sun's side of the horizon.
-   * The dome follows the camera every frame: a world-centered dome bigger than
-   * the far plane gets clipped when you walk away from the island's middle,
-   * leaving a black hole in the sky that tracks the camera.
-   */
-  private buildSky(): void {
-    this.skyMat = new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      fog: false,
-      uniforms: {
-        uSunDir: { value: SUN_DIR },
-        uZenith: { value: new THREE.Color() },
-        uHorizon: { value: new THREE.Color() },
-        uGlowColor: { value: new THREE.Color() },
-        uGlowStrength: { value: 0.5 },
-      },
-      vertexShader: `
-        varying vec3 vLocal;
-        void main() {
-          vLocal = position;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: `
-        uniform vec3 uSunDir;
-        uniform vec3 uZenith;
-        uniform vec3 uHorizon;
-        uniform vec3 uGlowColor;
-        uniform float uGlowStrength;
-        varying vec3 vLocal;
-        void main() {
-          vec3 dir = normalize(vLocal);
-          float h = dir.y * 0.5 + 0.5;
-          vec3 col = mix(uHorizon, uZenith, smoothstep(0.5, 0.78, h));
-          float sunGlow = pow(max(dot(dir, uSunDir), 0.0), 10.0);
-          col += uGlowColor * sunGlow * uGlowStrength;
-          gl_FragColor = vec4(col, 1.0);
-        }`,
-    });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(1000, 24, 12), this.skyMat);
-    this.sky = sky;
-    this.scene.add(sky);
+  /** Switch graphics tier at runtime (start-screen setting). */
+  setQuality(quality: Quality): void {
+    if (quality === this.quality) return;
+    this.quality = quality;
+    this.preset = QUALITY_PRESETS[quality];
+    this.applyQuality();
+    this.setEnvironment(this.envId);
+    this.renderer.compile(this.scene, this.camera);
   }
 
-  /**
-   * Rolling terrain: the ground plane displaced by the shared hill function,
-   * tinted drier toward the hilltops and sandy toward the shoreline, over a
-   * real tiling grass texture.
-   */
-  private buildGround(): void {
-    const groundGeo = new THREE.PlaneGeometry(ARENA.size, ARENA.size, 150, 150);
-    groundGeo.rotateX(-Math.PI / 2);
-    const pos = groundGeo.attributes.position as THREE.BufferAttribute;
-    const colors = new Float32Array(pos.count * 3);
-    const low = new THREE.Color(0x76b356);
-    const high = new THREE.Color(0xc3bd66);
-    const rock = new THREE.Color(0x8d8a80);
-    const marsh = new THREE.Color(0x5e7f4e);
-    const mud = new THREE.Color(0x9a835c);
-    const sand = new THREE.Color(0xe0c684);
-    const dry = new THREE.Color(0xb3a95e);
-    const lush = new THREE.Color(0x4b9a4e);
-    const tmp = new THREE.Color();
-    const half = ARENA.size / 2;
-    const coastBase = ARENA.coastR ?? half;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = groundHeight(ARENA, x, z);
-      pos.setY(i, h);
-      tmp.copy(low).lerp(high, Math.min(1, h / 6));
-      // Meadow patchiness: broad dry/lush blotches plus fine brightness
-      // jitter, so the plain never reads as one repeating green.
-      const patch = valueNoise(x * 0.016, z * 0.016) * 0.65 + valueNoise(x * 0.055, z * 0.055) * 0.35;
-      if (patch > 0.58) tmp.lerp(dry, Math.min(1, (patch - 0.58) * 2.2));
-      else if (patch < 0.42) tmp.lerp(lush, Math.min(1, (0.42 - patch) * 2.2));
-      tmp.multiplyScalar(0.93 + valueNoise(x * 0.14 + 41, z * 0.14 - 17) * 0.14);
-      // High massifs go stony; lowland basins go marshy; pits go bare rock.
-      if (h > 7) tmp.lerp(rock, Math.min(1, (h - 7) / 5));
-      if (h < -0.3) tmp.lerp(marsh, Math.min(1, -(h + 0.3) / 1.5));
-      if (h < -2.5) tmp.lerp(rock, Math.min(1, -(h + 2.5) / 3));
-      // Muddy shores ringing the waterline.
-      for (const lake of ARENA.lakes) {
-        const d = Math.hypot(x - lake.x, z - lake.z);
-        const shore = lake.r * LAKE_WATERLINE_FACTOR + 5;
-        if (d < shore) tmp.lerp(mud, 0.6 * Math.min(1, (shore - d) / 9));
-      }
-      // Beach where the land meets the sea; the drowned skirt is all sand.
-      const over = Math.hypot(x, z) - coastRadius(coastBase, Math.atan2(x, z));
-      if (over > -12) tmp.lerp(sand, Math.min(1, (over + 12) / 10));
-      colors[i * 3] = tmp.r;
-      colors[i * 3 + 1] = tmp.g;
-      colors[i * 3 + 2] = tmp.b;
+  /** (Re)build everything the quality tier scales: shadows, ground, grass, foliage, post. */
+  private applyQuality(): void {
+    const p = this.preset;
+    const low = this.lowPower;
+    this.renderer.setPixelRatio(Math.min(p.maxPixelRatio, window.devicePixelRatio));
+    this.renderer.shadowMap.type = p.softShadows && !low ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    const shadowSize = low ? Math.min(1024, p.shadowMap) : p.shadowMap;
+    if (this.sun.shadow.mapSize.x !== shadowSize) {
+      this.sun.shadow.mapSize.set(shadowSize, shadowSize);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
     }
-    groundGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    groundGeo.computeVertexNormals();
 
-    const grassTex = this.assets.grassTexture;
-    grassTex.repeat.set(56, 56);
-    const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: grassTex });
-    // Anti-tiling: blend the grass texture with itself at an irrational-ish
-    // second scale, so the 56×56 repeat never lines up into a visible grid.
-    groundMat.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <map_fragment>',
-        `#ifdef USE_MAP
-          vec4 sampledDiffuseColor = mix(
-            texture2D( map, vMapUv ),
-            texture2D( map, vMapUv * 0.372 + vec2( 0.13, 0.71 ) ),
-            0.5
-          );
-          diffuseColor *= sampledDiffuseColor;
-        #endif`,
-      );
-    };
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-  }
-
-  /**
-   * One shader, two materials: the sea stays opaque (it fills half the screen
-   * at the horizon — blending it would be the biggest fill cost in the frame),
-   * while the lakes are translucent and double-sided so you can see your
-   * character in the pool and the surface from below when the camera dives.
-   */
-  private makeWaterMat(alpha: number): THREE.ShaderMaterial {
-    return new THREE.ShaderMaterial({
-      transparent: alpha < 1,
-      side: alpha < 1 ? THREE.DoubleSide : THREE.FrontSide,
-      uniforms: {
-        uTime: { value: 0 },
-        uNormals: { value: this.assets.waterNormals },
-        uSunDir: { value: SUN_DIR },
-        uFogColor: { value: new THREE.Color(FOG_COLOR) },
-        uDeep: { value: new THREE.Color(0x0a1c33) },
-        uSkyTint: { value: new THREE.Color(0x5c5c7a) },
-        uAlpha: { value: alpha },
-      },
-      vertexShader: `
-        uniform float uTime;
-        varying vec3 vWorld;
-        varying vec3 vView;
-        varying float vDist;
-        void main() {
-          vec3 p = position;
-          // Barely-there swell: big waves made the lakes visibly heave.
-          p.y += sin(p.x * 0.06 + uTime * 0.8) * 0.06 + cos(p.z * 0.05 + uTime * 0.6) * 0.05;
-          vec4 world = modelMatrix * vec4(p, 1.0);
-          vWorld = world.xyz;
-          vView = cameraPosition - world.xyz;
-          vec4 mv = viewMatrix * world;
-          vDist = -mv.z;
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: `
-        uniform float uTime;
-        uniform sampler2D uNormals;
-        uniform vec3 uSunDir;
-        uniform vec3 uFogColor;
-        uniform vec3 uDeep;
-        uniform vec3 uSkyTint;
-        uniform float uAlpha;
-        varying vec3 vWorld;
-        varying vec3 vView;
-        varying float vDist;
-        void main() {
-          vec3 n1 = texture2D(uNormals, vWorld.xz * 0.020 + vec2(uTime * 0.020, uTime * 0.014)).xyz * 2.0 - 1.0;
-          vec3 n2 = texture2D(uNormals, vWorld.xz * 0.047 - vec2(uTime * 0.016, uTime * 0.022)).xyz * 2.0 - 1.0;
-          vec3 n = normalize(vec3(n1.x + n2.x, 3.0, n1.y + n2.y));
-          vec3 viewDir = normalize(vView);
-          float fresnel = pow(1.0 - max(dot(viewDir, n), 0.0), 3.0);
-          vec3 col = mix(uDeep, uSkyTint, fresnel * 0.8);
-          float spec = pow(max(dot(n, normalize(viewDir + uSunDir)), 0.0), 70.0);
-          col += vec3(1.0, 0.82, 0.55) * spec * 0.9;
-          col = mix(col, uFogColor, smoothstep(280.0, 920.0, vDist));
-          gl_FragColor = vec4(col, uAlpha);
-        }`,
+    if (this.terrain) {
+      this.scene.remove(this.terrain);
+      this.terrain.geometry.dispose();
+      (this.terrain.material as THREE.Material).dispose();
+    }
+    this.terrain = buildTerrain(this.terrainData, this.details, {
+      segments: p.terrainSegments,
+      pbr: p.terrainPbr && !low,
     });
+    this.scene.add(this.terrain);
+
+    if (this.grass) {
+      this.scene.remove(this.grass.mesh);
+      this.grass.dispose();
+    }
+    this.grass = new GrassField({ radius: p.grassRadius, spacing: p.grassSpacing });
+    this.scene.add(this.grass.mesh);
+
+    for (const m of this.staticMeshes) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+    }
+    this.staticMeshes = [];
+    this.buildObstacles();
+    this.buildLandmarks();
+    this.buildShoreline();
+    this.scatterFoliage(p.foliage);
+    this.mergeStatics();
+
+    // The sea stays opaque on Low: blending it would be the single biggest
+    // fill cost in the frame on a phone. Higher tiers get the soft shoreline.
+    this.seaMat.transparent = p.softSea && !low;
+    this.seaMat.depthWrite = !this.seaMat.transparent;
+    this.seaMat.needsUpdate = true;
+
+    if (this.motes) {
+      this.scene.remove(this.motes.mesh);
+      this.motes.dispose();
+      this.motes = null;
+    }
+    if (p.motes > 0 && !low) {
+      this.motes = new Motes(p.motes, this.glowSprite);
+      this.scene.add(this.motes.mesh);
+    }
+
+    this.post?.dispose();
+    this.post = null;
+    if (p.post && !low) {
+      this.post = new PostFX(this.renderer, this.scene, this.camera, {
+        samples: p.msaaSamples,
+        bloomStrength: p.bloomStrength,
+      });
+    }
   }
 
-  /** The sea: normal-mapped waves with a sun glint, fading into the fog. */
-  private buildWater(): THREE.ShaderMaterial {
-    const mat = this.makeWaterMat(1);
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3800, 32, 32), mat);
-    water.geometry.rotateX(-Math.PI / 2);
-    water.position.y = -0.55;
-    this.scene.add(water);
-    return mat;
+  private buildWater(): void {
+    this.seaMat = makeWaterMaterial(this.assets.waterNormals, { alpha: 1, transparent: false });
+    this.sea = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3800, 48, 48), this.seaMat);
+    this.sea.geometry.rotateX(-Math.PI / 2);
+    this.sea.position.y = -0.55;
+    this.sea.renderOrder = -2;
+    this.sea.frustumCulled = false;
+    this.scene.add(this.sea);
   }
 
   /** Translucent pools filling the lowland bowls up to the shared waterline. */
   private buildLakes(): void {
-    this.lakeMat = this.makeWaterMat(0.62);
+    this.lakeMat = makeWaterMaterial(this.assets.waterNormals, { alpha: 0.72, transparent: true });
     for (const lake of ARENA.lakes) {
-      const disc = new THREE.Mesh(
-        new THREE.CircleGeometry(lake.r * LAKE_WATERLINE_FACTOR, 28),
-        this.lakeMat,
-      );
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(lake.r * LAKE_WATERLINE_FACTOR + 1.5, 40), this.lakeMat);
       disc.geometry.rotateX(-Math.PI / 2);
       disc.position.set(lake.x, lakeSurfaceY(ARENA, lake), lake.z);
+      disc.renderOrder = -1;
+      this.lakes.push(disc);
       this.scene.add(disc);
     }
   }
 
   /** Stage a model clone on the terrain; mergeStatics() bakes the stage down. */
-  private place(model: THREE.Group, x: number, z: number, rotY = 0): void {
+  private place(model: THREE.Group, x: number, z: number, rotY = 0, sway = 0): void {
     model.position.set(x, groundHeight(ARENA, x, z), z);
     model.rotation.y = rotY;
+    model.userData.sway = sway;
     this.staticStage.add(model);
+  }
+
+  private placeModel(name: ModelName, height: number, x: number, z: number, rotY = 0): THREE.Group {
+    const model = this.assets.modelAtHeight(name, height);
+    this.place(model, x, z, rotY, SWAY[name] ?? 0);
+    return model;
+  }
+
+  /** The static material for a kit material: a clone with wind sway compiled in. */
+  private staticMaterial(source: THREE.Material & { map?: THREE.Texture | null }): THREE.Material {
+    const key = `${source.name}|${source.map ? 'tex' : 'flat'}`;
+    let mat = this.staticMaterials.get(key);
+    if (!mat) {
+      mat = source.clone();
+      addSway(mat);
+      this.staticMaterials.set(key, mat);
+    }
+    return mat;
   }
 
   /**
@@ -416,33 +408,56 @@ export class SceneManager {
    * ~95m grid cell. Merging kills draw-call count; chunking keeps frustum
    * culling alive — without it every merged mesh spans the whole island, so
    * looking at your feet still drew every tree, and the shadow pass
-   * re-rendered all island geometry into the 2048² map every frame.
+   * re-rendered all island geometry into the shadow map every frame.
+   * Every vertex carries its sway weight and its model's root, so the
+   * merged canopies still rock in the wind around their own trunks.
    */
   private mergeStatics(): void {
     this.staticStage.updateMatrixWorld(true);
     const cell = ARENA.size / 8;
     const groups = new Map<string, { material: THREE.Material; geos: THREE.BufferGeometry[] }>();
     const wp = new THREE.Vector3();
-    this.staticStage.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
-      const material = o.material as THREE.Material & { map?: THREE.Texture | null };
-      const geo = (o.geometry as THREE.BufferGeometry).clone();
-      geo.applyMatrix4(o.matrixWorld);
-      // Attribute sets must match to merge: uv only matters on textured materials.
-      if (!material.map) {
-        geo.deleteAttribute('uv');
-        geo.deleteAttribute('uv1');
-      }
-      o.getWorldPosition(wp);
+    const box = new THREE.Box3();
+    for (const root of this.staticStage.children) {
+      const sway = (root.userData.sway as number) ?? 0;
+      box.setFromObject(root);
+      const baseY = box.min.y;
+      const span = Math.max(0.01, box.max.y - box.min.y);
+      root.getWorldPosition(wp);
+      const pivotX = wp.x;
+      const pivotZ = wp.z;
       const cellKey = `${Math.floor(wp.x / cell)}|${Math.floor(wp.z / cell)}`;
-      const key = `${material.name}|${material.map ? 'tex' : 'flat'}|${cellKey}`;
-      let group = groups.get(key);
-      if (!group) {
-        group = { material, geos: [] };
-        groups.set(key, group);
-      }
-      group.geos.push(geo);
-    });
+      root.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const source = o.material as THREE.Material & { map?: THREE.Texture | null };
+        const geo = (o.geometry as THREE.BufferGeometry).clone();
+        geo.applyMatrix4(o.matrixWorld);
+        // Attribute sets must match to merge: uv only matters on textured materials.
+        if (!source.map) {
+          geo.deleteAttribute('uv');
+          geo.deleteAttribute('uv1');
+        }
+        const pos = geo.attributes.position as THREE.BufferAttribute;
+        const swayAttr = new Float32Array(pos.count);
+        const pivotAttr = new Float32Array(pos.count * 2);
+        for (let i = 0; i < pos.count; i++) {
+          const t = Math.max(0, Math.min(1, (pos.getY(i) - baseY) / span));
+          swayAttr[i] = sway * t * t;
+          pivotAttr[i * 2] = pivotX;
+          pivotAttr[i * 2 + 1] = pivotZ;
+        }
+        geo.setAttribute('aSway', new THREE.BufferAttribute(swayAttr, 1));
+        geo.setAttribute('aPivot', new THREE.BufferAttribute(pivotAttr, 2));
+        const material = this.staticMaterial(source);
+        const key = `${source.name}|${source.map ? 'tex' : 'flat'}|${cellKey}`;
+        let group = groups.get(key);
+        if (!group) {
+          group = { material, geos: [] };
+          groups.set(key, group);
+        }
+        group.geos.push(geo);
+      });
+    }
     for (const { material, geos } of groups.values()) {
       const merged = mergeGeometries(geos, false);
       const batches = merged ? [merged] : geos; // mismatched attributes: keep unmerged
@@ -451,7 +466,9 @@ export class SceneManager {
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        mesh.customDepthMaterial = this.staticDepth;
         this.scene.add(mesh);
+        this.staticMeshes.push(mesh);
       }
     }
     this.staticStage.clear();
@@ -461,6 +478,11 @@ export class SceneManager {
   setFocus(x: number, z: number): void {
     this.sun.target.position.set(x, 0, z);
     this.sun.position.set(x, 0, z).addScaledVector(SUN_DIR, 260);
+  }
+
+  /** Characters near the camera that should bend the grass this frame. */
+  setGrassPushers(pushers: { x: number; z: number; radius: number; strength: number }[]): void {
+    this.grass?.setPushers(pushers);
   }
 
   /**
@@ -481,8 +503,6 @@ export class SceneManager {
         const stone = new THREE.Mesh(STONE_GEO, STONE_MATS[i % 2]!);
         stone.scale.set(ob.hx * 2, ob.height, ob.hz * 2);
         stone.position.y = ob.height / 2 - 0.15; // settle into the ground
-        stone.castShadow = true;
-        stone.receiveShadow = true;
         const holder = new THREE.Group();
         holder.add(stone);
         this.place(holder, ob.x, ob.z);
@@ -497,12 +517,11 @@ export class SceneManager {
           coastRadius(ARENA.coastR ?? ARENA.size / 2, Math.atan2(ob.x, ob.z)) - 50;
         const name = nearShore ? palmPick[i % 2]! : treePick[i % treePick.length]!;
         // Canopy overshoots the collision cylinder; trunks match its radius.
-        const tree = this.assets.modelAtHeight(name, ob.height * 1.45);
+        const tree = this.placeModel(name, ob.height * 1.45, ob.x, ob.z, rot);
         tree.scale.x *= 1.2;
         tree.scale.z *= 1.2;
-        this.place(tree, ob.x, ob.z, rot);
       } else {
-        this.place(this.assets.modelAtHeight(rockPick[i % 3]!, ob.height * 1.1), ob.x, ob.z, rot);
+        this.placeModel(rockPick[i % 3]!, ob.height * 1.1, ob.x, ob.z, rot);
       }
     });
   }
@@ -513,54 +532,64 @@ export class SceneManager {
       switch (lm.kind) {
         case 'wreck': {
           // The beached hulk sits over its collision rock, listing toward the sea.
-          const hulk = this.assets.modelAtHeight('ship-wreck', 12);
-          this.place(hulk, lm.x, lm.z, -0.5);
-          this.place(this.assets.modelAtHeight('flag-pirate-high', 6), lm.x - 10, lm.z + 12, 2.4);
-          this.place(this.assets.modelAtHeight('campfire_logs', 0.8), lm.x - 12, lm.z - 5, 0);
-          this.place(this.assets.modelAtHeight('boat-row-small', 1.4), lm.x + 12, lm.z - 12, 1.1);
+          this.placeModel('ship-wreck', 12, lm.x, lm.z, -0.5);
+          this.placeModel('flag-pirate-high', 6, lm.x - 10, lm.z + 12, 2.4);
+          this.placeModel('campfire_logs', 0.8, lm.x - 12, lm.z - 5, 0);
+          this.placeModel('boat-row-small', 1.4, lm.x + 12, lm.z - 12, 1.1);
+          this.placeModel('crate', 1.0, lm.x + 8, lm.z + 4, 0.3);
+          this.placeModel('barrel', 1.0, lm.x + 9.5, lm.z + 5.2, 0);
+          this.placeModel('cannon', 1.5, lm.x - 6, lm.z + 14, 1.9);
           break;
         }
         case 'spire': {
           // A watchtower on the island's highest point — visible from anywhere.
-          this.place(this.assets.modelAtHeight('tower-watch', 13), lm.x, lm.z, 0.6);
-          this.place(this.assets.modelAtHeight('flag-pirate-high', 6), lm.x + 7, lm.z + 2, -0.4);
+          this.placeModel('tower-watch', 13, lm.x, lm.z, 0.6);
+          this.placeModel('flag-pirate-high', 6, lm.x + 7, lm.z + 2, -0.4);
+          this.placeModel('crate', 0.9, lm.x - 5, lm.z + 3, 0.8);
           break;
         }
         case 'stonering': {
-          this.place(this.assets.modelAtHeight('campfire_logs', 0.9), lm.x, lm.z + 2.5, 0);
+          this.placeModel('campfire_logs', 0.9, lm.x, lm.z + 2.5, 0);
           break;
         }
         case 'grove': {
-          this.place(this.assets.modelAtHeight('log_stack', 1.1), lm.x + 7, lm.z + 6, 0.9);
-          this.place(this.assets.modelAtHeight('stump_old', 0.8), lm.x - 8, lm.z + 3, 0);
+          this.placeModel('log_stack', 1.1, lm.x + 7, lm.z + 6, 0.9);
+          this.placeModel('stump_old', 0.8, lm.x - 8, lm.z + 3, 0);
+          this.placeModel('mushroom_tanGroup', 0.6, lm.x + 4, lm.z - 7, 0.4);
           break;
         }
         case 'pit': {
           // Old digging gear abandoned at the lip.
-          this.place(this.assets.modelAtHeight('log_stack', 1.0), lm.x + lm.r + 3, lm.z + 4, 0.4);
-          this.place(this.assets.modelAtHeight('campfire_logs', 0.8), lm.x - lm.r - 4, lm.z - 2, 0);
+          this.placeModel('log_stack', 1.0, lm.x + lm.r + 3, lm.z + 4, 0.4);
+          this.placeModel('campfire_logs', 0.8, lm.x - lm.r - 4, lm.z - 2, 0);
+          this.placeModel('crate', 0.9, lm.x + lm.r + 1, lm.z - 3, 1.1);
           break;
         }
         case 'ravine': {
           // A camp abandoned at the trench floor.
-          this.place(this.assets.modelAtHeight('campfire_logs', 0.9), lm.x + 2, lm.z - 3, 0);
-          this.place(this.assets.modelAtHeight('stump_old', 0.8), lm.x - 4, lm.z + 2, 1.2);
+          this.placeModel('campfire_logs', 0.9, lm.x + 2, lm.z - 3, 0);
+          this.placeModel('stump_old', 0.8, lm.x - 4, lm.z + 2, 1.2);
+          this.placeModel('barrel', 0.9, lm.x + 4, lm.z + 1, 0.5);
           break;
         }
         case 'hamlet': {
           // What's left of village life among the ruins.
-          this.place(this.assets.modelAtHeight('campfire_logs', 0.9), lm.x + 2, lm.z + 2, 0);
-          this.place(this.assets.modelAtHeight('barrel', 1.0), lm.x - 6, lm.z - 2, 0.7);
-          this.place(this.assets.modelAtHeight('log_stack', 1.0), lm.x + 6, lm.z - 6, 2.1);
+          this.placeModel('campfire_logs', 0.9, lm.x + 2, lm.z + 2, 0);
+          this.placeModel('barrel', 1.0, lm.x - 6, lm.z - 2, 0.7);
+          this.placeModel('log_stack', 1.0, lm.x + 6, lm.z - 6, 2.1);
+          this.placeModel('crate', 0.9, lm.x - 3, lm.z + 7, 0.2);
+          this.placeModel('castle-wall', 3.2, lm.x + 20, lm.z - 4, 1.2);
           break;
         }
         case 'barrow': {
-          this.place(this.assets.modelAtHeight('stump_old', 0.8), lm.x + 12, lm.z + 4, 0.5);
+          this.placeModel('stump_old', 0.8, lm.x + 12, lm.z + 4, 0.5);
+          this.placeModel('mushroom_red', 0.5, lm.x - 6, lm.z + 6, 0);
           break;
         }
         case 'passage': {
           // A smuggler's cache stash marks the midpoint below.
-          this.place(this.assets.modelAtHeight('campfire_logs', 0.8), lm.x - 2, lm.z + 2, 0);
+          this.placeModel('campfire_logs', 0.8, lm.x - 2, lm.z + 2, 0);
+          this.placeModel('crate', 0.9, lm.x + 2, lm.z - 2, 0.6);
           break;
         }
       }
@@ -575,60 +604,157 @@ export class SceneManager {
       [3.0, -1.9],
     ] as const) {
       const r = coastRadius(base, angle) - 10;
-      const boat = this.assets.modelAtHeight('boat-row-small', 1.4);
-      this.place(boat, Math.sin(angle) * r, Math.cos(angle) * r, rot);
+      this.placeModel('boat-row-small', 1.4, Math.sin(angle) * r, Math.cos(angle) * r, rot);
     }
   }
 
-  /** Puffy low-poly clouds drifting high over the island. */
+  /**
+   * Undergrowth: bushes, flower clumps, mushrooms under the trees, and small
+   * boulders scattered where the biome bake says they belong. Purely
+   * decorative (no collision), deterministic, and merged with the rest of
+   * the scenery so the whole island costs a few dozen draw calls.
+   */
+  private scatterFoliage(fraction: number): void {
+    const rng = new Rng(0xf01a6e);
+    const data = this.terrainData;
+    const biome: BiomeSample = { grass: 1, dry: 0, rock: 0, sand: 0, submerged: false, r: 0, g: 0, b: 0 };
+    const coast = ARENA.coastR ?? ARENA.size / 2;
+    const half = ARENA.size / 2;
+    const step = 1.6;
+    const sampleAt = (x: number, z: number): BiomeSample | null => {
+      if (Math.hypot(x, z) > coastRadius(coast, Math.atan2(x, z)) - 14) return null;
+      const h = sampleHeight(data, x, z);
+      const hx = sampleHeight(data, x + step, z) - sampleHeight(data, x - step, z);
+      const hz = sampleHeight(data, x, z + step) - sampleHeight(data, x, z - step);
+      const slope = Math.min(1, Math.hypot(hx, hz) / (2 * step));
+      sampleBiome(x, z, h, slope, biome);
+      if (biome.submerged || slope > 0.5) return null;
+      return biome;
+    };
+    const clearOfObstacles = (x: number, z: number, margin: number): boolean => {
+      for (const ob of ARENA.obstacles) {
+        const r = ob.kind === 'circle' ? ob.r : Math.max(ob.hx, ob.hz);
+        if (Math.hypot(x - ob.x, z - ob.z) < r + margin) return false;
+      }
+      for (const p of ARENA.chests) if (Math.hypot(x - p.x, z - p.z) < 2.6) return false;
+      for (const p of ARENA.scrolls) if (Math.hypot(x - p.x, z - p.z) < 2.2) return false;
+      for (const p of ARENA.items) if (Math.hypot(x - p.x, z - p.z) < 2.2) return false;
+      return true;
+    };
+    const tries = (n: number, fn: () => void): void => {
+      for (let i = 0; i < Math.round(n * fraction); i++) fn();
+    };
+
+    // Bushes on the meadow.
+    tries(520, () => {
+      const x = rng.range(-half, half);
+      const z = rng.range(-half, half);
+      const b = sampleAt(x, z);
+      if (!b || b.grass + b.dry < 0.55 || !clearOfObstacles(x, z, 1.2)) return;
+      const big = rng.next() < 0.3;
+      this.placeModel(big ? 'plant_bushLarge' : 'plant_bush', rng.range(0.9, 1.5) * (big ? 1.25 : 1), x, z, rng.range(0, Math.PI * 2));
+    });
+    // Flower clumps.
+    const flowers: ModelName[] = ['flower_redA', 'flower_purpleA', 'flower_yellowA'];
+    tries(110, () => {
+      const cx = rng.range(-half, half);
+      const cz = rng.range(-half, half);
+      const b = sampleAt(cx, cz);
+      if (!b || b.grass < 0.6) return;
+      const kind = flowers[rng.int(0, flowers.length)]!;
+      for (let k = 0; k < 5; k++) {
+        const x = cx + rng.range(-3, 3);
+        const z = cz + rng.range(-3, 3);
+        if (!sampleAt(x, z) || !clearOfObstacles(x, z, 0.6)) continue;
+        this.placeModel(kind, rng.range(0.45, 0.7), x, z, rng.range(0, Math.PI * 2));
+      }
+    });
+    // Mushrooms in the shade of the trees.
+    const trees = ARENA.obstacles.filter((o) => o.kind === 'circle' && (o.look ?? (o.height >= 5 ? 'tree' : 'rock')) === 'tree');
+    tries(170, () => {
+      const tree = trees[rng.int(0, trees.length)];
+      if (!tree || tree.kind !== 'circle') return;
+      const a = rng.range(0, Math.PI * 2);
+      const d = tree.r + rng.range(0.8, 3.2);
+      const x = tree.x + Math.sin(a) * d;
+      const z = tree.z + Math.cos(a) * d;
+      if (!sampleAt(x, z) || !clearOfObstacles(x, z, 0.5)) return;
+      this.placeModel(rng.next() < 0.5 ? 'mushroom_red' : 'mushroom_tanGroup', rng.range(0.35, 0.6), x, z, a);
+    });
+    // Small boulders on dry and rocky ground.
+    const rocks: ModelName[] = ['rock_largeA', 'rock_largeB', 'rock_largeC'];
+    tries(260, () => {
+      const x = rng.range(-half, half);
+      const z = rng.range(-half, half);
+      const b = sampleAt(x, z);
+      if (!b || b.rock + b.dry + b.sand * 0.5 < 0.3 + rng.next() * 0.5 || !clearOfObstacles(x, z, 1.5)) return;
+      this.placeModel(rocks[rng.int(0, rocks.length)]!, rng.range(0.5, 1.3), x, z, rng.range(0, Math.PI * 2));
+    });
+    // Fallen logs and stumps in the copses.
+    tries(70, () => {
+      const tree = trees[rng.int(0, trees.length)];
+      if (!tree || tree.kind !== 'circle') return;
+      const a = rng.range(0, Math.PI * 2);
+      const d = tree.r + rng.range(2.5, 6);
+      const x = tree.x + Math.sin(a) * d;
+      const z = tree.z + Math.cos(a) * d;
+      if (!sampleAt(x, z) || !clearOfObstacles(x, z, 1.0)) return;
+      this.placeModel(rng.next() < 0.5 ? 'log' : 'stump_round', rng.range(0.5, 0.8), x, z, rng.range(0, Math.PI * 2));
+    });
+  }
+
+  /** Puffy low-poly clouds drifting high over the island, on the same wind as the sky's cloud layer. */
   private buildClouds(): void {
     const rng = new Rng(0xc10d);
-    this.cloudMat = new THREE.MeshStandardMaterial({
-      color: 0xd9dce8,
+    this.puffMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
       roughness: 1,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0.9,
       flatShading: true,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.12,
     });
-    const cloudMat = this.cloudMat;
-    for (let c = 0; c < 14; c++) {
+    for (let c = 0; c < 16; c++) {
       const group = new THREE.Group();
       const puffs = 3 + (c % 3);
       for (let p = 0; p < puffs; p++) {
-        const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), cloudMat);
+        const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), this.puffMat);
         puff.position.set(rng.range(-14, 14), rng.range(-2, 2), rng.range(-6, 6));
         puff.scale.set(rng.range(7, 13), rng.range(3, 4.5), rng.range(5, 8));
         puff.rotation.y = rng.range(0, Math.PI);
         group.add(puff);
       }
       group.position.set(rng.range(-700, 700), rng.range(95, 150), rng.range(-700, 700));
-      this.clouds.push({ group, speed: rng.range(1.5, 4) });
+      this.puffs.push({ group, speed: rng.range(1.5, 4) });
       this.scene.add(group);
     }
   }
 
-  /** Retint sky, fog, lights, water, and clouds to a time-of-day preset. */
+  /** Retint sky, fog, lights, water, clouds, and motes to a time-of-day preset. */
   setEnvironment(id: EnvironmentId): void {
     const env = ENVIRONMENTS[id] ?? ENVIRONMENTS.day;
-    (this.scene.fog as THREE.Fog).color.setHex(env.fog);
+    this.envId = id;
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.setHex(env.fog);
+    fog.near = env.fogNear;
+    fog.far = env.fogFar;
     (this.scene.background as THREE.Color).setHex(env.fog);
-    (this.skyMat.uniforms.uZenith!.value as THREE.Color).setHex(env.zenith);
-    (this.skyMat.uniforms.uHorizon!.value as THREE.Color).setHex(env.horizon);
-    (this.skyMat.uniforms.uGlowColor!.value as THREE.Color).setHex(env.glow);
-    this.skyMat.uniforms.uGlowStrength!.value = env.glowStrength;
+    this.sky.apply(env.sky);
     this.hemi.color.setHex(env.hemiSky);
     this.hemi.groundColor.setHex(env.hemiGround);
     this.hemi.intensity = env.hemiIntensity;
     this.sun.color.setHex(env.sun);
     this.sun.intensity = env.sunIntensity;
-    for (const mat of [this.waterMat, this.lakeMat]) {
-      (mat.uniforms.uFogColor!.value as THREE.Color).setHex(env.fog);
-      (mat.uniforms.uDeep!.value as THREE.Color).setHex(env.waterDeep);
-      (mat.uniforms.uSkyTint!.value as THREE.Color).setHex(env.waterSky);
-    }
+    applyWaterSettings(this.seaMat, env.water, env.fogNear, env.fogFar);
+    applyWaterSettings(this.lakeMat, env.water, env.fogNear, env.fogFar);
     this.renderer.toneMappingExposure = env.exposure;
-    this.cloudMat.color.setHex(env.cloud);
-    this.cloudMat.opacity = env.cloudOpacity;
+    this.puffMat.color.setHex(env.puff);
+    this.puffMat.emissive.setHex(env.puff);
+    this.puffMat.opacity = env.puffOpacity;
+    this.motes?.apply(env.motes.color, env.motes.intensity, env.motes.size, env.motes.rise);
+    SHARED.uCloudShadow.value.z = env.cloudShadow;
+    SHARED.uWind.value.z = env.wind;
   }
 
   setStorm(x: number, z: number, radius: number): void {
@@ -641,19 +767,53 @@ export class SceneManager {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.post?.setSize(window.innerWidth, window.innerHeight);
   }
 
   render(): void {
     const dt = this.clock.getDelta();
     const t = this.clock.elapsedTime;
-    this.sky.position.copy(this.camera.position);
-    this.stormWallMat.uniforms.uTime!.value = t;
-    this.waterMat.uniforms.uTime!.value = t;
-    this.lakeMat.uniforms.uTime!.value = t;
-    for (const cloud of this.clouds) {
-      cloud.group.position.x += cloud.speed * dt;
-      if (cloud.group.position.x > 800) cloud.group.position.x = -800;
+    SHARED.uTime.value = t;
+    this.sky.mesh.position.copy(this.camera.position);
+    this.grass?.update(this.camera.position.x, this.camera.position.z);
+    // Puffs ride the same wind the sky's cloud layer scrolls on.
+    const drift = SHARED.uCloudShadow.value;
+    const dx = (drift.x / drift.w) * dt;
+    const dz = (drift.y / drift.w) * dt;
+    for (const puff of this.puffs) {
+      const k = puff.speed / 2.5;
+      puff.group.position.x += dx * k;
+      puff.group.position.z += dz * k;
+      if (puff.group.position.x > 800) puff.group.position.x = -800;
+      if (puff.group.position.z > 800) puff.group.position.z = -800;
     }
-    this.renderer.render(this.scene, this.camera);
+    if (this.post) this.post.render();
+    else this.renderer.render(this.scene, this.camera);
   }
+}
+
+/** Wire the shared wind into a material: vertices rock around their model's root by their sway weight. */
+function addSway(material: THREE.Material): void {
+  material.onBeforeCompile = (shader) => {
+    bindShared(shader);
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        ${SHARED_PARS}
+        attribute float aSway;
+        attribute vec2 aPivot;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          vec2 w = windAt( aPivot ) * 0.9;
+          float flutter = sin( uTime * 1.9 + aPivot.x * 0.31 + aPivot.y * 0.17 ) * 0.06;
+          transformed.xz += ( w + vec2( flutter, - flutter ) ) * aSway;
+          transformed.y -= dot( w, w ) * 0.25 * aSway;
+        }`,
+      );
+  };
+  material.customProgramCacheKey = () => 'sway';
 }

@@ -24,6 +24,7 @@ import { LocalTransport } from './net/LocalTransport.js';
 import { AssetLibrary } from './render/assets.js';
 import { EntityViews, type HeroModel } from './render/EntityViews.js';
 import { SceneManager, type EnvironmentId } from './render/SceneManager.js';
+import { loadQuality, saveQuality, type Quality } from './render/quality.js';
 import { sfx } from './sfx.js';
 import { StatsTracker, statsStore, type MatchStats } from './stats.js';
 import { Hud } from './ui/Hud.js';
@@ -102,8 +103,14 @@ export class GameApp {
   private pauseOpen = false;
   /** Set before we exit pointer lock on purpose, so it doesn't open the pause menu. */
   private expectedUnlock = false;
+  /**
+   * Dev-only: pins the menu flyover camera to a fixed view, for inspecting
+   * scenery (screenshot tooling drives it through window.__claudestorm).
+   */
+  debugView: { pos: [number, number, number]; target: [number, number, number] } | null = null;
 
   constructor(private readonly container: HTMLElement) {
+    if (import.meta.env.DEV) (window as unknown as { __claudestorm: GameApp }).__claudestorm = this;
     this.hud = new Hud(
       () => this.restart(),
       () => this.startSpectate(),
@@ -351,11 +358,21 @@ export class GameApp {
     document.getElementById('time-choice')!.addEventListener('click', () => {
       this.sceneMgr?.setEnvironment((choiceValue('time-choice') || 'day') as EnvironmentId);
     });
+    // Graphics tier: remembered across visits; phones default to Low.
+    const quality = loadQuality(this.touchMode ? 'low' : 'high');
+    for (const b of document.querySelectorAll<HTMLElement>('#quality-choice button')) {
+      b.classList.toggle('selected', b.dataset.value === quality);
+    }
+    document.getElementById('quality-choice')!.addEventListener('click', () => {
+      const q = (choiceValue('quality-choice') || quality) as Quality;
+      saveQuality(q);
+      this.sceneMgr?.setQuality(q);
+    });
 
     // Scene and renderer come up once the art is in; only then can you start.
     void AssetLibrary.load().then((assets) => {
-      this.sceneMgr = new SceneManager(this.container, assets, this.touchMode);
-      this.views = new EntityViews(this.sceneMgr.scene, assets);
+      this.sceneMgr = new SceneManager(this.container, assets, this.touchMode, quality);
+      this.views = new EntityViews(this.sceneMgr.scene, assets, this.sceneMgr.glowSprite);
       if (this.touchMode) {
         new TouchControls(this.input, this.sceneMgr.renderer.domElement, this.map, () =>
           this.togglePause(),
@@ -613,8 +630,13 @@ export class GameApp {
       this.menuTime += dt;
       const a = this.menuTime * 0.04;
       const r = ARENA.size * 0.36;
-      this.sceneMgr.camera.position.set(Math.cos(a) * r, ARENA.size * 0.18, Math.sin(a) * r);
-      this.sceneMgr.camera.lookAt(0, 6, 0);
+      if (this.debugView) {
+        this.sceneMgr.camera.position.set(...this.debugView.pos);
+        this.sceneMgr.camera.lookAt(...this.debugView.target);
+      } else {
+        this.sceneMgr.camera.position.set(Math.cos(a) * r, ARENA.size * 0.18, Math.sin(a) * r);
+        this.sceneMgr.camera.lookAt(0, 6, 0);
+      }
       this.sceneMgr.render();
       requestAnimationFrame((n) => this.frame(n));
       return;
@@ -643,6 +665,7 @@ export class GameApp {
     if (sampled) {
       const { prev, next, t } = sampled;
       this.views.sync(prev, next, t, SELF_ID, this.sceneMgr.camera, dt);
+      this.sceneMgr.setGrassPushers(this.views.pushers);
       this.sceneMgr.setStorm(
         lerp(prev.storm.x, next.storm.x, t),
         lerp(prev.storm.z, next.storm.z, t),

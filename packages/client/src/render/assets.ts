@@ -17,6 +17,30 @@ export const MODEL_NAMES = [
 export type ModelName = (typeof MODEL_NAMES)[number];
 
 /**
+ * The nature kit ships in Kenney's teal-and-orange palette; the island is
+ * painted in warm meadow greens and earth, so every flat kit material is
+ * remapped by name to sit in that palette (the pirate kit's colormap texture
+ * is left alone). Rocks get real stone instead of the kit's white default.
+ */
+const KIT_PALETTE: Record<string, number> = {
+  leafsGreen: 0x4fb24a,
+  leafsDark: 0x2f8c52,
+  grass: 0x5db44e,
+  dirt: 0x8d6a4a,
+  woodBark: 0x8a583a,
+  woodBarkDark: 0x6c4531,
+  wood: 0xa06f49,
+  woodDark: 0x78503a,
+  woodInner: 0xe9d0a9,
+  _defaultMat: 0xf1e9dc,
+  colorTan: 0xf0c48a,
+  colorRed: 0xe2463e,
+  colorPurple: 0xa27fff,
+  colorYellow: 0xffc63a,
+};
+const STONE = 0x9b9590;
+
+/**
  * All downloaded art, loaded once up front. Models are kept as templates;
  * callers take clones (geometry/materials stay shared, so clones are cheap).
  */
@@ -46,10 +70,21 @@ export class AssetLibrary {
           if (!(o instanceof THREE.Mesh)) return;
           // Push the flat kit colors toward WoW's saturated hand-painted look.
           const mat = o.material as THREE.MeshStandardMaterial;
-          if (seen.has(mat) || mat.map) return;
+          if (seen.has(mat)) return;
           seen.add(mat);
+          if (mat.map) {
+            // The pirate kit's shared colormap: crisp at grazing angles.
+            mat.map.anisotropy = 8;
+            mat.map.minFilter = THREE.LinearMipmapLinearFilter;
+            return;
+          }
+          const isRock = name.startsWith('rock') || name.startsWith('cliff');
+          const remap = isRock && mat.name === '_defaultMat' ? STONE : KIT_PALETTE[mat.name];
+          if (remap !== undefined) mat.color.setHex(remap);
+          if (isRock && mat.name === 'grass') mat.color.setHex(0x6fae52); // moss cap
           mat.color.getHSL(hsl);
-          mat.color.setHSL(hsl.h, Math.min(1, hsl.s * 1.35 + 0.04), Math.min(1, hsl.l * 1.05));
+          mat.color.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(1, hsl.l * 1.05));
+          mat.roughness = 0.9;
         });
         const size = new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3());
         models.set(name, { scene, size });
