@@ -36,6 +36,19 @@ import {
   wardMaterial,
   type FxHandle,
 } from './SpellFX.js';
+import {
+  archonArcs,
+  chicken,
+  launchPad,
+  mechanoHog,
+  rocketFlame,
+  searingAxe,
+  smokeCloud,
+  type Attachment,
+} from './Accessories.js';
+
+/** Motion trails a character can leave: a dash's wind, faeform's sparkle, an arc's vapor, a roll's dust. */
+export type TrailKind = 'wind' | 'fae' | 'air' | 'roll';
 
 /**
  * Draw distances for small entities (players are always drawn). A critter at
@@ -406,6 +419,19 @@ class PlayerView {
   private readonly wardMat: THREE.ShaderMaterial;
   private readonly wisps: THREE.Sprite[] = [];
   private hitFlash = 0;
+  /** Props riding on the body (mounts, the hen, the axe, a rocket plume). */
+  private readonly attachments: Attachment[] = [];
+  private lift = 0;
+  /** Rim color the body glows with: the hero tint, shifting to the spell's element on a cast. */
+  private readonly rimColor = new THREE.Color();
+  private castGlow = 0;
+  /** Trail this frame (see TrailKind), and whether a trail puff is due. */
+  trail: TrailKind | null = null;
+  trailEmit = false;
+  private trailTimer = 0;
+  /** Fade to Shadow: a puff is owed at the arrival point of the blink. */
+  private pendingBlink = false;
+  blinkArrived: { x: number; z: number } | null = null;
   private readonly hpGroup: THREE.Group;
   private readonly hpFill: THREE.Mesh;
   /** Set for one frame when the glider folds away on touchdown. */
@@ -452,6 +478,7 @@ class PlayerView {
       emissiveIntensity: 0,
     });
     this.visorMat = new THREE.MeshBasicMaterial({ color: this.glowBase });
+    this.rimColor.copy(this.glowBase);
 
     // Pivot at mid-body so roll tumbles read naturally.
     this.bodyPivot.position.y = 1.0;
@@ -580,7 +607,7 @@ class PlayerView {
     }
     // Storm energy along every silhouette: the glow tint, brightest on the
     // dark underbellies so the body reads as lit from inside.
-    addRimGlow(mat, this.glowBase, mode === 'dark' ? 0.9 : 0.55);
+    addRimGlow(mat, this.rimColor, mode === 'dark' ? 0.9 : 0.55);
     this.tintMats.push({ mat, mode, baseOpacity });
     return mat;
   }
@@ -796,6 +823,8 @@ class PlayerView {
       auraActive: boolean;
       auraRadius: number;
       charging: number;
+      channeling: number;
+      channelKind: 'chest' | 'heal' | 'revive' | null;
     },
     isSelf: boolean,
     isBot: boolean,
@@ -827,6 +856,10 @@ class PlayerView {
       this.sigil.mesh.visible = false;
       this.chargeOrb.visible = false;
       for (const w of this.wisps) w.visible = false;
+      for (const a of this.attachments) this.group.remove(a.obj);
+      this.attachments.length = 0;
+      this.trail = null;
+      this.trailEmit = false;
       this.landed = false;
       this.wasGliding = false;
       this.reviveBeacon.visible = isRevivableAlly;
@@ -846,6 +879,12 @@ class PlayerView {
 
     this.group.rotation.y = p.facing;
     const now = performance.now() / 1000;
+    // Observed horizontal speed drives the hover cycle, trails, and mounts.
+    const moved = Number.isNaN(this.lastX) ? 0 : Math.hypot(p.x - this.lastX, p.z - this.lastZ);
+    this.lastX = p.x;
+    this.lastZ = p.z;
+    const speed = dt > 0 ? moved / dt : 0;
+    const airborne = p.y > 0.08 && !p.gliding;
     this.shield.visible = p.shielded || p.immune;
     if (this.shield.visible) {
       // Repel's arcane ward vs. Lightning Bulwark's electric charge.
@@ -857,12 +896,20 @@ class PlayerView {
     }
     this.whirl.obj.visible = p.auraActive;
     if (p.auraActive) this.whirl.anim(now, p.auraRadius);
-    // Sigil: flares on every cast, holds while a charge is wound up.
+    // Sigil: flares on every cast, holds while a charge is wound up or a
+    // heal is channeled (in the heal's green).
     this.sigilTimer = Math.max(0, this.sigilTimer - dt);
     const charging = p.charging >= 0;
-    this.sigil.mesh.visible = this.sigilTimer > 0 || charging;
+    const healing = p.channeling >= 0 && p.channelKind === 'heal';
+    if (healing && this.castElement !== 'nature') {
+      this.castElement = 'nature';
+      (this.sigil.mat.uniforms.uColor!.value as THREE.Color).setHex(0x7ee07a);
+    }
+    this.sigil.mesh.visible = this.sigilTimer > 0 || charging || healing;
     if (this.sigil.mesh.visible) {
-      this.sigil.mat.uniforms.uFade!.value = charging ? 0.6 + p.charging * 0.5 : Math.min(1, this.sigilTimer / 0.25);
+      this.sigil.mat.uniforms.uFade!.value = charging
+        ? 0.6 + p.charging * 0.5
+        : healing ? 0.5 + 0.2 * Math.sin(now * 6) : Math.min(1, this.sigilTimer / 0.25);
       this.sigil.mat.uniforms.uSpin!.value = now * 1.2;
       this.sigil.mesh.rotation.y = -p.facing; // stays world-aligned while the body turns
     }
@@ -872,29 +919,85 @@ class PlayerView {
       this.chargeOrb.scale.setScalar(c * (1 + 0.1 * Math.sin(now * 20)));
       this.chargeMat.color.setHex(ELEMENT_PALETTE[this.castElement].glow).multiplyScalar(1.5 + p.charging * 2);
     }
-    // Wisps: shadow motes while stealthed, fae sparkles while transformed.
-    const wispKind = p.stealthed ? 'shadow' : p.fae ? 'fae' : null;
+    // Wisps: shadow motes while stealthed, fae sparkles while transformed,
+    // green mending motes spiraling up while a heal is channeled, and
+    // arcane stars gathering while Celestial Barrage charges.
+    const wispKind = p.stealthed ? 'shadow' : p.fae ? 'fae' : healing ? 'heal' : charging && this.castElement === 'arcane' ? 'stars' : null;
     this.wisps.forEach((w, i) => {
       w.visible = wispKind !== null;
       if (!wispKind) return;
+      const m = w.material as THREE.SpriteMaterial;
+      if (wispKind === 'heal') {
+        const cycle = (now * 0.9 + i / 3) % 1;
+        const a = cycle * Math.PI * 4 + i;
+        w.position.set(Math.sin(a) * 0.6, 0.3 + cycle * 1.8, Math.cos(a) * 0.6);
+        m.color.setHex(0x9df0a5);
+        m.opacity = Math.sin(cycle * Math.PI) * 0.9;
+        w.scale.setScalar(0.4);
+        return;
+      }
+      if (wispKind === 'stars') {
+        const a = now * 5 + (i / 3) * Math.PI * 2;
+        const r = 0.9 - p.charging * 0.4;
+        w.position.set(Math.sin(a) * r, 1.2 + Math.sin(now * 4 + i * 2) * 0.35, Math.cos(a) * r);
+        m.color.setHex(0xd6b8ff);
+        m.opacity = 0.9;
+        w.scale.setScalar(0.5 + p.charging * 0.3);
+        return;
+      }
       const a = now * (wispKind === 'fae' ? 4 : 1.6) + (i / 3) * Math.PI * 2;
       const r = wispKind === 'fae' ? 0.7 : 0.55;
       w.position.set(Math.sin(a) * r, 1 + Math.sin(now * 3 + i) * 0.3, Math.cos(a) * r);
-      const m = w.material as THREE.SpriteMaterial;
       m.color.setHex(wispKind === 'fae' ? 0xffb0e8 : 0x5a3a90);
       m.opacity = wispKind === 'fae' ? 0.9 : 0.6;
+      w.scale.setScalar(0.5);
     });
+    // Cast glow: the body's rim takes the spell's color for a moment.
+    this.castGlow = Math.max(0, this.castGlow - dt * 1.6);
+    this.rimColor.copy(this.glowBase).lerp(TINT_MIX.setHex(ELEMENT_PALETTE[this.castElement].glow), this.castGlow);
+    // Attachments ride along, animate, and expire.
+    let wantLift = 0;
+    for (let i = this.attachments.length - 1; i >= 0; i--) {
+      const a = this.attachments[i]!;
+      a.age += dt;
+      if (a.age >= a.ttl) {
+        this.group.remove(a.obj);
+        this.attachments.splice(i, 1);
+        continue;
+      }
+      a.anim(a.age / a.ttl, now, speed, dt);
+      if (a.lift) wantLift = Math.max(wantLift, a.lift);
+    }
+    this.lift += (wantLift - this.lift) * Math.min(1, dt * 8);
+    this.bodyPivot.position.y += this.lift;
+    // Trails: a dash's wind, faeform's sparkle, an arc's vapor, a roll's dust.
+    this.trail = p.rolling
+      ? 'roll'
+      : p.fae && speed > 1
+        ? 'fae'
+        : airborne && speed > 6
+          ? 'air'
+          : !p.gliding && !airborne && speed > 11
+            ? 'wind'
+            : null;
+    this.trailEmit = false;
+    if (this.trail) {
+      this.trailTimer -= dt;
+      if (this.trailTimer <= 0) {
+        this.trailTimer = this.trail === 'fae' ? 0.08 : 0.05;
+        this.trailEmit = true;
+      }
+    }
+    // Fade to Shadow: the blink lands where the body next appears.
+    if (this.pendingBlink && moved > 2.5) {
+      this.pendingBlink = false;
+      this.blinkArrived = { x: p.x, z: p.z };
+    }
     // Hit flash: the body blinks white for a few frames.
     this.hitFlash = Math.max(0, this.hitFlash - dt * 6);
     for (const t of this.tintMats) t.mat.emissive.setScalar(this.hitFlash * 0.9);
     this.handMat.emissive.copy(this.glowBase).lerp(WHITE, this.hitFlash);
 
-    // Hover cycle driven by observed horizontal speed: faster bob on the move.
-    const moved = Number.isNaN(this.lastX) ? 0 : Math.hypot(p.x - this.lastX, p.z - this.lastZ);
-    this.lastX = p.x;
-    this.lastZ = p.z;
-    const speed = dt > 0 ? moved / dt : 0;
-    const airborne = p.y > 0.08 && !p.gliding;
     // Footsteps: a soft directional tick timed to the stride, silent while
     // airborne, gliding, or rolling — those are tumbles, not a walking gait.
     if (!airborne && !p.gliding && !p.rolling && speed > 0.6) {
@@ -1052,6 +1155,24 @@ class PlayerView {
     this.lunge = combo === 3 ? 0.35 : 0.2;
   }
 
+  /** Mount a prop on the body for its lifetime (chopper, hen, axe, rocket plume). */
+  attach(a: Attachment): void {
+    this.attachments.push(a);
+    this.group.add(a.obj);
+  }
+
+  /** A charge-and-release slam: the body drops into the blow. */
+  slam(): void {
+    this.squash = 1.3;
+    this.lunge = 0.25;
+    this.pulse = 0.6;
+  }
+
+  /** Fade to Shadow was cast: watch for the blink's landing point. */
+  expectBlink(): void {
+    this.pendingBlink = true;
+  }
+
   triggerCast(abilityId?: AbilityId): void {
     this.castTimer = 0.35;
     this.sigilTimer = 0.55;
@@ -1059,6 +1180,7 @@ class PlayerView {
     if (abilityId) {
       this.castElement = elementKeyOf(abilityId);
       (this.sigil.mat.uniforms.uColor!.value as THREE.Color).setHex(ELEMENT_PALETTE[this.castElement].glow);
+      this.castGlow = 1;
     }
   }
 
@@ -1651,6 +1773,8 @@ export class EntityViews {
           auraActive: p.auraActive,
           auraRadius: ABILITIES.fireWhirl.auraRadius ?? 3,
           charging: p.charging,
+          channeling: p.channeling,
+          channelKind: p.channelKind,
         },
         p.id === selfId,
         p.isBot,
@@ -1662,6 +1786,13 @@ export class EntityViews {
         // Touchdown: a puff of dust kicked up as the glider folds.
         this.spawnBurst(ix, iz, 1.8, 0xd8c8a0, 0.4);
         this.spawnElementBurst(ix, iz, 'physical', 0.8);
+      }
+      if (view.trailEmit) this.spawnTrail(ix, lerp(pp.y, p.y, t) + groundAt(ix, iz), iz, view.trail!);
+      if (view.blinkArrived) {
+        // The shadow re-forms where the blink landed.
+        this.spawnBurst(view.blinkArrived.x, view.blinkArrived.z, 1.4, ELEMENT_PALETTE.shadow.core, 0.45, 0.8);
+        this.spawnElementBurst(view.blinkArrived.x, view.blinkArrived.z, 'shadow', 0.9);
+        view.blinkArrived = null;
       }
       if (view.step) {
         view.step = false;
@@ -1999,10 +2130,13 @@ export class EntityViews {
               this.spawnBurst(ev.x, ev.z, 1.2, ELEMENT_PALETTE.fire.core, 0.3);
               break;
             case 'searingAxe': {
-              // The lava spews forward: a molten arc wave along the facing.
+              // The axe itself, molten, chopped through the arc — and the
+              // lava it spews forward along the facing.
               this.spawnBurst(ev.x, ev.z, 1.2, ELEMENT_PALETTE.fire.core, 0.3);
               const caster = playerById.get(ev.casterId);
               if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, ELEMENT_PALETTE.fire.glow);
+              this.players.get(ev.casterId)?.attach(searingAxe());
+              this.spawnElementBurst(ev.x, ev.z, 'fire', 0.9);
               break;
             }
             case 'toxicSmackerel': {
@@ -2017,6 +2151,8 @@ export class EntityViews {
             }
             case 'fadeToShadow':
               this.spawnBurst(ev.x, ev.z, 1.4, ELEMENT_PALETTE.shadow.core, 0.45, 0.8); // shadow puff at origin
+              this.spawnElementBurst(ev.x, ev.z, 'shadow', 0.9);
+              this.players.get(ev.casterId)?.expectBlink();
               break;
             case 'repel':
               this.spawnFlash(ev.x, ev.z, 1.5, ELEMENT_PALETTE.arcane.glow, 0.3); // arcane ward shimmers up
@@ -2029,9 +2165,12 @@ export class EntityViews {
               this.spawnFlash(ev.x, ev.z, 1.4, ELEMENT_PALETTE.arcane.glow, 0.3); // starlight gathers
               break;
             case 'stormArchon':
-              // Yellow spark snapping off the blue charge — the electric two-tone.
+              // The caster becomes the archon for a beat: lightning crawls
+              // over the body while the volley flies. Yellow spark snapping
+              // off the blue charge — the electric two-tone.
               this.spawnFlash(ev.x, ev.z, 1.1, ELEMENT_PALETTE.electric.core, 0.16);
               this.spawnFlash(ev.x, ev.z, 0.6, ELEMENT_PALETTE.electric.glow, 0.12);
+              this.players.get(ev.casterId)?.attach(archonArcs(lightningArcs(4, 6, 0.8)));
               break;
             case 'lightningBulwark':
               this.spawnFlash(ev.x, ev.z, 1.3, ELEMENT_PALETTE.electric.core, 0.3);
@@ -2047,12 +2186,20 @@ export class EntityViews {
           const color = elementOf(ev.abilityId).glow;
           this.spawnBurst(ev.x, ev.z, 1.2 + ev.fraction * 1.6, color, 0.3);
           this.spawnFlash(ev.x, ev.z, 1.0 + ev.fraction, color, 0.2);
+          // Earthbreaker drops the body into the blow; a wind dash streaks.
+          if (ev.abilityId === 'earthbreaker') this.players.get(ev.casterId)?.slam();
+          if (ev.abilityId === 'slicingWinds') {
+            const caster = playerById.get(ev.casterId);
+            if (caster) this.spawnMeleeArc(ev.x, ev.z, caster.facing, 1, ELEMENT_PALETTE.wind.glow);
+          }
           sfx.cast(ev.abilityId, ev);
           break;
         }
         case 'melee': {
           this.spawnMeleeArc(ev.x, ev.z, ev.facing, ev.combo);
           this.players.get(ev.casterId)?.triggerSwing(ev.combo);
+          // The two-handed finisher shakes the ground.
+          if (ev.combo === 3) this.addFx(shockwave(ev.x, groundAt(ev.x, ev.z), ev.z, 2.6, 0xffe38a, 0.35));
           sfx.melee(ev.combo, ev);
           break;
         }
@@ -2166,10 +2313,40 @@ export class EntityViews {
         case 'itemPickup':
           if (ev.playerId === selfId) sfx.equip();
           break;
-        case 'itemUsed':
+        case 'itemUsed': {
           this.spawnBurst(ev.x, ev.z, 1.4, ITEMS[ev.itemId].color, 0.45, 1.0);
+          const view = this.players.get(ev.playerId);
+          const groundY = groundAt(ev.x, ev.z);
+          switch (ev.itemId) {
+            case 'chickenCoup':
+              // A hen struts a lap around you, then gets devoured — feathers everywhere.
+              view?.attach(chicken());
+              this.spawnElementBurst(ev.x, ev.z, 'holy', 0.6);
+              break;
+            case 'smokeBomb':
+              this.addFx(smokeCloud(ev.x, groundY, ev.z, this.glowSprite));
+              break;
+            case 'mechanoHog':
+              // Rev the chopper: mount up in a cloud of dust.
+              view?.attach(mechanoHog());
+              this.spawnBurst(ev.x, ev.z, 1.6, 0xc9b48a, 0.4);
+              this.spawnElementBurst(ev.x, ev.z, 'fire', 0.7);
+              break;
+            case 'gravityLauncher':
+              this.addFx(launchPad(ev.x, groundY, ev.z));
+              this.addFx(shockwave(ev.x, groundY, ev.z, 3.5, 0x7fd4ff, 0.4));
+              this.addFx(lightPillar(ev.x, groundY, ev.z, 0x7fd4ff, 8, 0.6));
+              break;
+            case 'toTheSkies':
+              view?.attach(rocketFlame());
+              this.addFx(shockwave(ev.x, groundY, ev.z, 3, 0xffb347, 0.4));
+              this.spawnBurst(ev.x, ev.z, 1.8, 0xd8c8a0, 0.5);
+              this.spawnElementBurst(ev.x, ev.z, 'fire', 1.0);
+              break;
+          }
           if (ev.playerId === selfId) sfx.equip();
           break;
+        }
         case 'pull': {
           const a = playerById.get(ev.casterId);
           const b = playerById.get(ev.targetId);
@@ -2262,6 +2439,32 @@ export class EntityViews {
         spin: spec.spin * (Math.random() < 0.5 ? 1 : -1),
       });
     }
+  }
+
+  /** A trail puff behind a moving character, styled by what's moving them. */
+  private spawnTrail(x: number, y: number, z: number, kind: TrailKind): void {
+    const style =
+      kind === 'wind'
+        ? { color: 0xdafff0, opacity: 0.5, size: 0.8, ttl: 0.3, rise: 0.2, growth: 1.2 }
+        : kind === 'fae'
+          ? { color: 0xffb0e8, opacity: 0.9, size: 0.35, ttl: 0.55, rise: 0.7, growth: -0.6 }
+          : kind === 'air'
+            ? { color: 0xe8e8f0, opacity: 0.4, size: 0.6, ttl: 0.5, rise: 0.1, growth: 1.4 }
+            : { color: 0xcfc2a0, opacity: 0.35, size: 0.6, ttl: 0.4, rise: 0.4, growth: 1.6 };
+    const mat = new THREE.SpriteMaterial({
+      map: glowTexture,
+      color: style.color,
+      transparent: true,
+      opacity: style.opacity,
+      depthWrite: false,
+      blending: kind === 'fae' || kind === 'wind' ? THREE.AdditiveBlending : THREE.NormalBlending,
+    });
+    const puff = new THREE.Sprite(mat);
+    puff.position.set(x + (Math.random() - 0.5) * 0.4, y + (kind === 'roll' ? 0.2 : 0.9) + (Math.random() - 0.5) * 0.3, z + (Math.random() - 0.5) * 0.4);
+    this.scene.add(puff);
+    this.effects.push({
+      obj: puff, mat, age: 0, ttl: style.ttl, growth: style.growth, baseX: style.size, baseY: style.size, baseZ: 1, rise: style.rise, maxOpacity: style.opacity,
+    });
   }
 
   /** One soft dust puff at ground level: footsteps and scuffs. */
