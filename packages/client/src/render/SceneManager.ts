@@ -43,6 +43,9 @@ interface EnvPreset {
   hemiSky: number;
   hemiGround: number;
   hemiIntensity: number;
+  /** Flat fill so nothing — canopy undersides, shade sides — goes pitch black. */
+  ambient: number;
+  ambientIntensity: number;
   sun: number;
   sunIntensity: number;
   exposure: number;
@@ -65,8 +68,9 @@ const ENVIRONMENTS: Record<EnvironmentId, EnvPreset> = {
       disc: 0xfff6e0, discIntensity: 7, discSize: 0.99945,
       cloudColor: 0xffffff, cloudShade: 0xb4c2d6, cloudCover: 0.5, cloudOpacity: 0.92, stars: 0,
     },
-    hemiSky: 0xd6e8ff, hemiGround: 0x55763f, hemiIntensity: 1.45,
-    sun: 0xfff1d6, sunIntensity: 2.1, exposure: 1.15,
+    hemiSky: 0xd6e8ff, hemiGround: 0x8fb070, hemiIntensity: 1.6,
+    ambient: 0xe4ecff, ambientIntensity: 0.4,
+    sun: 0xfff1d6, sunIntensity: 2.0, exposure: 1.15,
     water: { fog: 0xa7cfe6, deep: 0x0e3f62, shallow: 0x5ec8c2, skyTint: 0x8ec2dd, sunTint: 0xffe2a8 },
     puff: 0xffffff, puffOpacity: 0.9,
     motes: { color: 0xfff0b8, intensity: 0.55, size: 0.08, rise: 0.15 },
@@ -82,7 +86,8 @@ const ENVIRONMENTS: Record<EnvironmentId, EnvPreset> = {
       disc: 0xffc078, discIntensity: 5, discSize: 0.9993,
       cloudColor: 0xf2c5a4, cloudShade: 0x5a4a72, cloudCover: 0.55, cloudOpacity: 0.85, stars: 0.25,
     },
-    hemiSky: 0xc4b4ff, hemiGround: 0x4a3830, hemiIntensity: 1.05,
+    hemiSky: 0xc4b4ff, hemiGround: 0x6a4a3c, hemiIntensity: 1.2,
+    ambient: 0xd0b0c8, ambientIntensity: 0.35,
     sun: 0xffd0a0, sunIntensity: 1.9, exposure: 1.08,
     water: { fog: 0x6d5470, deep: 0x0c1e3a, shallow: 0x3f8a92, skyTint: 0x8a6a80, sunTint: 0xffb070 },
     puff: 0xe8c8d0, puffOpacity: 0.85,
@@ -99,7 +104,8 @@ const ENVIRONMENTS: Record<EnvironmentId, EnvPreset> = {
       disc: 0xe4ecff, discIntensity: 3, discSize: 0.9989,
       cloudColor: 0x2c3654, cloudShade: 0x10141f, cloudCover: 0.4, cloudOpacity: 0.75, stars: 1,
     },
-    hemiSky: 0x8ea4d8, hemiGround: 0x141a22, hemiIntensity: 0.7,
+    hemiSky: 0x8ea4d8, hemiGround: 0x22303a, hemiIntensity: 0.8,
+    ambient: 0x8090c0, ambientIntensity: 0.3,
     sun: 0xbfd0ff, sunIntensity: 1.1, exposure: 1.0,
     water: { fog: 0x16203a, deep: 0x040a14, shallow: 0x1a3e4c, skyTint: 0x2a3550, sunTint: 0xc0d0ff },
     puff: 0x2a3048, puffOpacity: 0.6,
@@ -136,6 +142,7 @@ export class SceneManager {
   private readonly clock = new THREE.Clock();
   private readonly sun: THREE.DirectionalLight;
   private readonly hemi: THREE.HemisphereLight;
+  private readonly ambient: THREE.AmbientLight;
   private readonly sky: SkyDome;
   private puffMat!: THREE.MeshStandardMaterial;
   private readonly terrainData: TerrainData;
@@ -195,7 +202,8 @@ export class SceneManager {
     this.scene.add(this.sky.mesh);
 
     this.hemi = new THREE.HemisphereLight(0xbfd4ff, 0x30281e, 0.85);
-    this.scene.add(this.hemi);
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.3);
+    this.scene.add(this.hemi, this.ambient);
     // The shadow map covers a tight box that follows the player (setFocus)
     // instead of the whole island: far casters skip the shadow pass entirely
     // and the texels land where the fight is.
@@ -744,6 +752,8 @@ export class SceneManager {
     this.hemi.color.setHex(env.hemiSky);
     this.hemi.groundColor.setHex(env.hemiGround);
     this.hemi.intensity = env.hemiIntensity;
+    this.ambient.color.setHex(env.ambient);
+    this.ambient.intensity = env.ambientIntensity;
     this.sun.color.setHex(env.sun);
     this.sun.intensity = env.sunIntensity;
     applyWaterSettings(this.seaMat, env.water, env.fogNear, env.fogFar);

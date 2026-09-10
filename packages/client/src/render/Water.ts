@@ -75,7 +75,9 @@ export function makeWaterMaterial(
         float fresnel = pow( 1.0 - max( dot( viewDir, n ), 0.0 ), 3.0 );
         vec3 body = mix( uShallow, uDeep, smoothstep( 0.0, 3.0, depth ) );
         vec3 col = mix( body, uSkyTint, fresnel * 0.8 );
-        float spec = pow( max( dot( n, normalize( viewDir + uSunDir ) ), 0.0 ), 90.0 );
+        vec3 halfway = viewDir + uSunDir;
+        halfway = dot( halfway, halfway ) > 1e-6 ? normalize( halfway ) : n;
+        float spec = pow( max( dot( n, halfway ), 0.0 ), 90.0 );
         col += uSunTint * spec * 1.4;
         // Shoreline foam: a thin lace at the waterline, lapping in and out,
         // broken up by the noise atlas so it never reads as a solid ring.

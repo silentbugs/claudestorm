@@ -67,15 +67,22 @@ export function buildTerrain(
         }
         // Bump from a scalar height field's screen-space derivatives (the
         // three.js bumpmap chunk, inlined since no bump map is bound).
+        // Guarded against degenerate derivatives: a NaN here would be smeared
+        // into a black block by the bloom blur.
         vec3 perturbNormalTerrain( vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection ) {
-          vec3 vSigmaX = normalize( dFdx( surf_pos.xyz ) );
-          vec3 vSigmaY = normalize( dFdy( surf_pos.xyz ) );
+          vec3 sx = dFdx( surf_pos.xyz );
+          vec3 sy = dFdy( surf_pos.xyz );
+          if ( dot( sx, sx ) < 1e-12 || dot( sy, sy ) < 1e-12 ) return surf_norm;
+          vec3 vSigmaX = normalize( sx );
+          vec3 vSigmaY = normalize( sy );
           vec3 vN = surf_norm;
           vec3 R1 = cross( vSigmaY, vN );
           vec3 R2 = cross( vN, vSigmaX );
           float fDet = dot( vSigmaX, R1 ) * faceDirection;
+          if ( abs( fDet ) < 1e-6 ) return surf_norm;
           vec3 vGrad = sign( fDet ) * ( dHdxy.x * R1 + dHdxy.y * R2 );
-          return normalize( abs( fDet ) * surf_norm - vGrad );
+          vec3 n = abs( fDet ) * surf_norm - vGrad;
+          return dot( n, n ) > 1e-12 ? normalize( n ) : surf_norm;
         }`,
       )
       .replace(

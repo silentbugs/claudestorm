@@ -85,6 +85,13 @@ export class AssetLibrary {
           mat.color.getHSL(hsl);
           mat.color.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(1, hsl.l * 1.05));
           mat.roughness = 0.9;
+          // Foliage glows faintly with its own color, painterly-style, so a
+          // canopy seen from below or in shade still reads green — never a
+          // black block in front of the camera.
+          if (mat.name.startsWith('leafs') || mat.name === 'grass') {
+            mat.emissive.copy(mat.color);
+            mat.emissiveIntensity = 0.28;
+          }
         });
         const size = new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3());
         models.set(name, { scene, size });
