@@ -17,6 +17,7 @@ import { ABILITY_ELEMENT, ELEMENT_PALETTE, elementKeyOf, elementOf, type Element
 import { sfx } from '../sfx.js';
 import type { AssetLibrary } from './assets.js';
 import { addRimGlow } from './shaderlib.js';
+import { iconCanvas, type IconKind } from '../ui/icons.js';
 
 /**
  * Draw distances for small entities (players are always drawn). A critter at
@@ -52,20 +53,16 @@ export const RARITY_COLORS: Record<Rarity, number> = {
   epic: 0xb05df0,
 };
 
-/** Glyphs rendered to textures, so drops show what they are at a glance. */
-const glyphTextures = new Map<string, THREE.Texture>();
-function glyphTexture(glyph: string): THREE.Texture {
-  let tex = glyphTextures.get(glyph);
+/** Painted spell/item icons as sprite textures, so drops show what they are at a glance. */
+const iconTextures = new Map<string, THREE.Texture>();
+function iconTexture(kind: IconKind, id: string): THREE.Texture {
+  const key = `${kind}:${id}`;
+  let tex = iconTextures.get(key);
   if (!tex) {
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 128;
-    const ctx = canvas.getContext('2d')!;
-    ctx.font = '96px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(glyph, 64, 72);
-    tex = new THREE.CanvasTexture(canvas);
-    glyphTextures.set(glyph, tex);
+    tex = new THREE.CanvasTexture(iconCanvas(kind, id));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    iconTextures.set(key, tex);
   }
   return tex;
 }
@@ -164,12 +161,13 @@ function gemMaterial(rarity: Rarity): THREE.MeshStandardMaterial {
   return mat;
 }
 
-const glyphMats = new Map<string, THREE.SpriteMaterial>();
-function glyphMaterial(glyph: string): THREE.SpriteMaterial {
-  let mat = glyphMats.get(glyph);
+const iconMats = new Map<string, THREE.SpriteMaterial>();
+function iconMaterial(kind: IconKind, id: string): THREE.SpriteMaterial {
+  const key = `${kind}:${id}`;
+  let mat = iconMats.get(key);
   if (!mat) {
-    mat = new THREE.SpriteMaterial({ map: glyphTexture(glyph), transparent: true, depthWrite: false });
-    glyphMats.set(glyph, mat);
+    mat = new THREE.SpriteMaterial({ map: iconTexture(kind, id), transparent: true, depthWrite: false });
+    iconMats.set(key, mat);
   }
   return mat;
 }
@@ -1591,8 +1589,8 @@ export class EntityViews {
         const spin = new THREE.Group();
         const gem = new THREE.Mesh(this.scrollGeo, gemMaterial(s.rarity));
         spin.add(gem);
-        const icon = new THREE.Sprite(glyphMaterial(ABILITIES[s.abilityId].icon));
-        icon.scale.set(0.85, 0.85, 1);
+        const icon = new THREE.Sprite(iconMaterial('ability', s.abilityId));
+        icon.scale.set(0.8, 0.8, 1);
         icon.position.y = 0.95;
         spin.add(icon);
         group.add(spin);
@@ -1629,8 +1627,8 @@ export class EntityViews {
       if (!group) {
         group = new THREE.Group();
         group.add(this.assets.modelAtHeight('barrel', 0.75));
-        const icon = new THREE.Sprite(glyphMaterial(ITEMS[it.itemId].icon));
-        icon.scale.set(0.75, 0.75, 1);
+        const icon = new THREE.Sprite(iconMaterial('item', it.itemId));
+        icon.scale.set(0.7, 0.7, 1);
         icon.position.y = 1.25;
         group.add(icon);
         this.items.set(it.id, group);

@@ -14,6 +14,7 @@ import {
   type Rarity,
   type Snapshot,
 } from '@claudestorm/shared';
+import { iconUrl, type BuiltinIconId } from './icons.js';
 
 const RARITY_CSS: Record<Rarity, string> = {
   common: '#b8b5a5',
@@ -130,7 +131,7 @@ export class Hud {
       description: string,
     ) => `
       <div class="skill-row">
-        <span class="skill-icon">${icon}</span>
+        <span class="skill-icon" style="background-image:url('${icon}')"></span>
         <div class="skill-body">
           <div class="skill-head">
             <span class="skill-name">${name}</span>
@@ -168,22 +169,22 @@ export class Hud {
     };
 
     const builtins = [
-      row('👋', 'Slap', 'R', 'Builtin',
+      row(iconUrl('builtin', 'slap' satisfies BuiltinIconId), 'Slap', 'R', 'Builtin',
         `${MELEE_DAMAGE} damage · ${MELEE_INTERVAL}s swing · 3rd hit ×${MELEE_COMBO_FINISHER_MULT}`,
         'Wind up a giant glowing hand and slap everything in a front arc. The third hit is a two-handed finisher.'),
-      row('💚', 'Heal', 'H', 'Builtin',
+      row(iconUrl('builtin', 'heal' satisfies BuiltinIconId), 'Heal', 'H', 'Builtin',
         `${HEAL_TICK_AMOUNT * HEAL_CAST_SECONDS} healing over ${HEAL_CAST_SECONDS}s · ${HEAL_COOLDOWN}s cooldown`,
         'Channel a mend that pulses every second. Taking damage or attacking interrupts it — and the cooldown is spent either way.'),
-      row('🤸', 'Barrel Roll', 'Shift', 'Builtin', `${ROLL_DISTANCE}m · ${ROLL_COOLDOWN}s cooldown`,
+      row(iconUrl('builtin', 'roll' satisfies BuiltinIconId), 'Barrel Roll', 'Shift', 'Builtin', `${ROLL_DISTANCE}m · ${ROLL_COOLDOWN}s cooldown`,
         'Quick dodge roll. You are immune to projectiles while rolling.'),
-      row('🪂', 'Dive', 'Space', 'Builtin', 'hold to plunge · release to re-pop the canopy',
+      row(iconUrl('builtin', 'dive' satisfies BuiltinIconId), 'Dive', 'Space', 'Builtin', 'hold to plunge · release to re-pop the canopy',
         'While gliding, hold to accelerate straight down. Landing on a mob crushes it instantly — even elites.'),
     ].join('');
 
     const abilities = Object.values(ABILITIES)
       .map((def) =>
         row(
-          def.icon,
+          iconUrl('ability', def.id),
           def.name,
           def.category === 'offense' ? '1 / 2' : '3 / 4',
           def.category === 'offense' ? 'Offense' : 'Utility',
@@ -194,7 +195,7 @@ export class Hud {
       .join('');
 
     const items = Object.values(ITEMS)
-      .map((item) => row(item.icon, item.name, 'G', 'Item', 'one held at a time', item.description))
+      .map((item) => row(iconUrl('item', item.id), item.name, 'G', 'Item', 'one held at a time', item.description))
       .join('');
 
     list.innerHTML =
@@ -267,19 +268,19 @@ export class Hud {
         : `${Math.ceil(self.hp)} / ${self.maxHp}`,
     );
 
-    this.updateSlot('melee', 'Slap', '👋', null, self.meleeCd, MELEE_INTERVAL, false);
+    this.updateSlot('melee', 'Slap', iconUrl('builtin', 'slap'), null, self.meleeCd, MELEE_INTERVAL, false);
     this.updateAbilitySlot('0', self, 0);
     this.updateAbilitySlot('1', self, 1);
     this.updateAbilitySlot('2', self, 2);
     this.updateAbilitySlot('3', self, 3);
     if (self.item) {
       const item = ITEMS[self.item];
-      this.updateSlot('item', item.name, item.icon, null, 0, 1, false);
+      this.updateSlot('item', item.name, iconUrl('item', item.id), null, 0, 1, false);
     } else {
-      this.updateSlot('item', '—', '', null, 0, 1, true);
+      this.updateSlot('item', '—', null, null, 0, 1, true);
     }
-    this.updateSlot('heal', 'Heal', '💚', null, self.healCd, HEAL_COOLDOWN, false);
-    this.updateSlot('roll', 'Roll', '🤸', null, self.rollCd, ROLL_COOLDOWN, false);
+    this.updateSlot('heal', 'Heal', iconUrl('builtin', 'heal'), null, self.healCd, HEAL_COOLDOWN, false);
+    this.updateSlot('roll', 'Roll', iconUrl('builtin', 'roll'), null, self.rollCd, ROLL_COOLDOWN, false);
 
     // The channel bar doubles as the charge-and-release meter.
     const progress = self.charging >= 0 ? self.charging : self.channeling;
@@ -314,17 +315,17 @@ export class Hud {
     const equipped =
       slotIndex < 2 ? self.slots.offense[slotIndex] : self.slots.utility[slotIndex - 2];
     if (!equipped) {
-      this.updateSlot(key, '—', '', null, 0, 1, true);
+      this.updateSlot(key, '—', null, null, 0, 1, true);
       return;
     }
     const def = ABILITIES[equipped.abilityId];
-    this.updateSlot(key, def.name, def.icon, equipped.rarity, self.slotCds[slotIndex] ?? 0, def.cooldown, false);
+    this.updateSlot(key, def.name, iconUrl('ability', def.id), equipped.rarity, self.slotCds[slotIndex] ?? 0, def.cooldown, false);
   }
 
   private updateSlot(
     key: string,
     name: string,
-    icon: string,
+    icon: string | null,
     rarity: Rarity | null,
     cd: number,
     cdTotal: number,
@@ -332,7 +333,7 @@ export class Hud {
   ): void {
     const els = this.slotEls.get(key);
     if (!els) return;
-    this.setText(els.icon, icon);
+    this.setStyle(els.icon, 'background-image', icon ? `url('${icon}')` : 'none');
     this.setText(els.name, name);
     els.root.classList.toggle('empty', empty);
     this.setStyle(els.root, 'border-color', rarity ? RARITY_CSS[rarity] : '#444a63');
