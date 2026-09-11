@@ -65,15 +65,38 @@ export interface BiomeSample {
   b: number;
 }
 
-const LOW = new THREE.Color(0x84b050);
-const HIGH = new THREE.Color(0xc9b45c);
-const ROCK = new THREE.Color(0x8d8a80);
-const MARSH = new THREE.Color(0x587c4c);
-const MUD = new THREE.Color(0x8c7a55);
-const SAND = new THREE.Color(0xe0c684);
-const DRY = new THREE.Color(0xc0a95a);
-const LUSH = new THREE.Color(0x4b9a4e);
+// Arathi's palette: chartreuse highland grass yellowing on the crests,
+// browner in the hollows, blue-gray stone on the massifs.
+const LOW = new THREE.Color(0x8fb83e);
+const HIGH = new THREE.Color(0xb8b54a);
+const ROCK = new THREE.Color(0x8b939c);
+const MARSH = new THREE.Color(0x6b7f3a);
+const MUD = new THREE.Color(0x8a7a52);
+const SAND = new THREE.Color(0xd9c58a);
+const DRY = new THREE.Color(0xb1a34a);
+const LUSH = new THREE.Color(0x6aa03a);
+const ROAD = new THREE.Color(0xa39b8c);
 const tmp = new THREE.Color();
+
+/** Distance from a point to the nearest cobbled road, in meters. */
+function roadDistance(x: number, z: number): number {
+  let best = Infinity;
+  for (const road of ARENA.roads) {
+    for (let i = 1; i < road.length; i++) {
+      const a = road[i - 1]!;
+      const b = road[i]!;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2));
+      const px = a.x + dx * t;
+      const pz = a.z + dz * t;
+      const d2 = (x - px) * (x - px) + (z - pz) * (z - pz);
+      if (d2 < best) best = d2;
+    }
+  }
+  return Math.sqrt(best);
+}
 
 export function sampleBiome(x: number, z: number, h: number, slope: number, out: BiomeSample): BiomeSample {
   const half = ARENA.size / 2;
@@ -98,6 +121,13 @@ export function sampleBiome(x: number, z: number, h: number, slope: number, out:
   }
   if (h < -2.5) rock = Math.max(rock, Math.min(1, -(h + 2.5) / 3));
   tmp.lerp(ROCK, rock * 0.6);
+  // Cobbled roads: a worn band of packed earth and stone, ragged at the edges.
+  const roadD = roadDistance(x, z) + valueNoise(x * 0.5, z * 0.5, 1 << 20, 13) * 1.2;
+  const road = 1 - THREE.MathUtils.smoothstep(roadD, 1.6, 3.4);
+  if (road > 0) {
+    tmp.lerp(ROAD, road * 0.8);
+    dry = Math.max(dry, road * 0.9);
+  }
   // Muddy shores ringing each lake's waterline; submerged below it.
   let submerged = false;
   for (const lake of ARENA.lakes) {

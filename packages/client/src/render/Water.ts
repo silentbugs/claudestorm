@@ -68,8 +68,12 @@ export function makeWaterMaterial(
       // The island's irregular coastline (shared/maps coastRadius): the sea
       // exists only outside it, so sunken inland floors — the Undercroft,
       // the Pit, the smugglers' trench — stay dry.
+      // Elliptical base (COAST_STRETCH_X / _Z in shared/maps/arena.ts) with the same bays.
       float coastRadiusAt( float angle ) {
-        return uCoastR * ( 1.0 + 0.08 * sin( angle * 3.0 + 1.7 ) + 0.055 * sin( angle * 5.0 - 0.8 ) + 0.028 * sin( angle * 9.0 + 3.1 ) );
+        float sx = sin( angle ) / 1.16;
+        float cz = cos( angle ) / 0.86;
+        float ellipse = inversesqrt( max( sx * sx + cz * cz, 1e-6 ) );
+        return uCoastR * ellipse * ( 1.0 + 0.08 * sin( angle * 3.0 + 1.7 ) + 0.055 * sin( angle * 5.0 - 0.8 ) + 0.028 * sin( angle * 9.0 + 3.1 ) );
       }
       void main() {
         if ( uCoastR > 0.0 ) {

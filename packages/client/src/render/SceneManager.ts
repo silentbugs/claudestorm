@@ -63,23 +63,25 @@ interface EnvPreset {
 
 /** Day is the default — bright and saturated, the Plunderstorm look. */
 const ENVIRONMENTS: Record<EnvironmentId, EnvPreset> = {
+  // Arathi by day: a hazy highland morning — pale blue sky, soft diffuse
+  // light, distant ridges dissolving into blue-gray haze.
   day: {
-    fog: 0xa7cfe6,
-    fogNear: 260,
-    fogFar: 900,
+    fog: 0xb4c6d4,
+    fogNear: 150,
+    fogFar: 760,
     sky: {
-      zenith: 0x2a6bd4, horizon: 0xa9d5f0, glow: 0xfff0c8, glowStrength: 0.4,
-      disc: 0xfff6e0, discIntensity: 7, discSize: 0.99945,
-      cloudColor: 0xffffff, cloudShade: 0xb4c2d6, cloudCover: 0.5, cloudOpacity: 0.92, stars: 0,
+      zenith: 0x5f90c4, horizon: 0xc2d2dd, glow: 0xf6f1e4, glowStrength: 0.26,
+      disc: 0xfff8ea, discIntensity: 4.5, discSize: 0.9993,
+      cloudColor: 0xf4f6f8, cloudShade: 0xb8c4d0, cloudCover: 0.65, cloudOpacity: 0.55, stars: 0,
     },
-    hemiSky: 0xd6e8ff, hemiGround: 0x6f8f58, hemiIntensity: 1.05,
-    ambient: 0xe4ecff, ambientIntensity: 0.18,
-    sun: 0xfff1d6, sunIntensity: 2.0, exposure: 1.12,
-    water: { fog: 0xa7cfe6, deep: 0x0e3f62, shallow: 0x5ec8c2, skyTint: 0x8ec2dd, sunTint: 0xffe2a8 },
-    puff: 0xffffff, puffOpacity: 0.9,
-    motes: { color: 0xfff0b8, intensity: 0.55, size: 0.08, rise: 0.15 },
-    cloudShadow: 0.2,
-    wind: 0.35,
+    hemiSky: 0xcfdff0, hemiGround: 0x7d9a4c, hemiIntensity: 1.3,
+    ambient: 0xdde6f0, ambientIntensity: 0.3,
+    sun: 0xfff4e4, sunIntensity: 1.55, exposure: 1.06,
+    water: { fog: 0xb4c6d4, deep: 0x1f4a66, shallow: 0x5fa7a8, skyTint: 0xa9bfd0, sunTint: 0xf0e6d0 },
+    puff: 0xf4f6f8, puffOpacity: 0.7,
+    motes: { color: 0xfff0b8, intensity: 0.45, size: 0.08, rise: 0.15 },
+    cloudShadow: 0.14,
+    wind: 0.3,
   },
   dusk: {
     fog: 0x6d5470,
@@ -572,7 +574,7 @@ export class SceneManager {
       'tree_pineDefaultB', 'tree_cone', 'tree_pineRoundC', 'tree_oak_fall', 'tree_detailed_fall',
     ];
     const palmPick: ModelName[] = ['tree_palm', 'palm-detailed-straight', 'tree_palmTall', 'palm-detailed-bend'];
-    const rockPick: ModelName[] = ['rock_tallA', 'stone_tallB', 'rock_tallB', 'stone_tallE', 'rock_tallC', 'stone_largeA'];
+    const rockPick: ModelName[] = ['stone_tallB', 'stone_largeA', 'stone_tallE', 'rock_tallA', 'stone_largeC', 'stone_tallB'];
     const cliffPick: ModelName[] = ['cliff_block_rock', 'stone_tallE', 'cliff_blockDiagonal_rock', 'stone_tallB', 'cliff_blockHalf_rock'];
     const coast = ARENA.coastR ?? ARENA.size / 2;
     const gatePosts: { x: number; z: number; height: number }[] = [];
@@ -618,21 +620,36 @@ export class SceneManager {
       }
       // Built things: towers, huts, totems, pillars, halls.
       const built: Partial<Record<NonNullable<typeof ob.look>, ModelName>> = {
-        tower: lm?.kind === 'fort' ? 'tower-watch' : 'tower-complete-small',
+        tower: lm?.kind === 'fort' || lm?.kind === 'ringfort' ? 'tower-watch' : 'tower-complete-small',
         citadel: 'tower-complete-large',
         hut: lm?.kind === 'village' ? 'tent_detailedOpen' : 'tent_smallClosed',
         totem: 'statue_obelisk',
         pillar: 'cliff_block_rock',
         hall: 'structure',
+        stake: 'fence_simpleHigh',
+        wallseg: 'castle-wall',
+        mine: 'cliff_cave_rock',
       };
       const builtName = built[look];
       if (builtName) {
-        const facing = lm ? Math.atan2(lm.x - ob.x, lm.z - ob.z) : rot;
-        const model = this.placeModel(builtName, ob.height, ob.x, ob.z, look === 'hut' || look === 'hall' ? facing : 0);
+        const toCenter = lm ? Math.atan2(lm.x - ob.x, lm.z - ob.z) : rot;
+        // Palisade stakes stand tangent to their ring (their face toward
+        // the center); wall segments run along their wall (the landmark is
+        // the wall's midpoint, so "toward it" is along the line).
+        const facing =
+          look === 'hut' || look === 'hall' || look === 'stake' || look === 'mine'
+            ? toCenter
+            : look === 'wallseg' ? toCenter - Math.PI / 2 : 0;
+        const model = this.placeModel(builtName, ob.height, ob.x, ob.z, facing);
         const size = this.assets.size(builtName);
         const footprint = Math.max(size.x, size.z) * model.scale.x;
         const wanted = ob.r * 2.3;
-        if (look === 'pillar' || Math.abs(footprint - wanted) > wanted * 0.25) {
+        if (look === 'stake' || look === 'wallseg') {
+          // Flat pieces: span the footprint along the line, keep them thin.
+          model.scale.x = (ob.r * 2.15) / size.x;
+          model.scale.z = Math.min(model.scale.z, (ob.r * 1.2) / size.z);
+          model.position.y -= 0.2;
+        } else if (look === 'pillar' || Math.abs(footprint - wanted) > wanted * 0.25) {
           const k = wanted / Math.max(0.01, footprint);
           model.scale.x *= k;
           model.scale.z *= k;
@@ -898,6 +915,125 @@ export class SceneManager {
           this.placeModel('campfire_stones', 0.8, lm.x - dx * 18, lm.z - dz * 18, 0);
           break;
         }
+        case 'ringfort': {
+          // Ar'gorok: banners on the stakes, fires and pens in the yard, a
+          // war totem before the great hall.
+          for (let k = 0; k < 6; k++) {
+            const a = (k / 6) * Math.PI * 2 + 0.4;
+            this.placeModel('flag-pennant', 3.4, lm.x + Math.sin(a) * 26, lm.z + Math.cos(a) * 26, a);
+          }
+          this.placeModel('campfire_logs', 1.1, lm.x + 6, lm.z - 4, 0);
+          this.placeModel('campfire_stones', 0.9, lm.x - 14, lm.z + 12, 0);
+          this.placeModel('log_stack', 1.1, lm.x + 18, lm.z + 10, 0.7);
+          this.placeModel('log_large', 1.0, lm.x - 8, lm.z - 18, 1.3);
+          this.placeModel('structure-fence', 2.0, lm.x + 20, lm.z - 14, 0.4);
+          this.placeModel('crate', 0.9, lm.x - 2, lm.z + 12, 0.2);
+          this.placeModel('crate-bottles', 0.9, lm.x - 0.6, lm.z + 13.6, 1.1);
+          this.placeModel('barrel', 0.9, lm.x + 1, lm.z + 13.8, 0);
+          this.placeModel('statue_obelisk', 4.5, lm.x + 4, lm.z + 10, 0.3);
+          this.placeModel('tool-shovel', 1.1, lm.x - 10, lm.z + 2, 0.5);
+          this.placeModel('pot_large', 0.9, lm.x + 12, lm.z + 4, 0);
+          break;
+        }
+        case 'town': {
+          // Newstead: picket fences, a well, gardens, a signpost, carts of goods.
+          for (let i = 0; i < 5; i++) this.placeModel('fence_simple', 1.0, lm.x - 16 + i * 2.2, lm.z + 3, 0);
+          for (let i = 0; i < 4; i++) this.placeModel('fence_simple', 1.0, lm.x + 6 + i * 2.2, lm.z + 15, 0);
+          for (let j = 0; j < 3; j++) this.placeModel('fence_simple', 1.0, lm.x + 18, lm.z - 6 + j * 2.2, Math.PI / 2);
+          this.placeModel('sign', 1.6, lm.x + 3, lm.z + 2, 0.4);
+          for (const [ox, oz, kind] of [[-6, 12, 'flower_yellowA'], [-4, 13, 'flower_redA'], [14, 4, 'flower_purpleA'], [-15, -3, 'flower_yellowA']] as const) {
+            this.placeModel(kind, 0.6, lm.x + ox, lm.z + oz, 0.3);
+          }
+          this.placeModel('crate', 0.9, lm.x + 2, lm.z + 8, 0.6);
+          this.placeModel('barrel', 0.9, lm.x + 3.4, lm.z + 8.4, 0);
+          this.placeModel('pot_large', 0.8, lm.x - 6, lm.z + 3.5, 0);
+          this.placeModel('log_stack', 1.0, lm.x + 16, lm.z - 12, 1.2);
+          this.placeModel('campfire_logs', 0.8, lm.x - 4, lm.z - 4, 0);
+          this.placeModel('crop_pumpkin', 0.5, lm.x + 8, lm.z - 12, 0.9);
+          this.placeModel('flag-pennant', 3, lm.x + 6, lm.z - 16, 0).position.y += 10.8;
+          break;
+        }
+        case 'elements': {
+          // Circle of Elements: the hilltop paved around the tower, banners
+          // on the stones, a fire on the summit.
+          this.placeModel('path_stoneCircle', 0.3, lm.x, lm.z, 0.2).scale.multiplyScalar(2.2);
+          this.placeModel('campfire_stones', 1.0, lm.x + 6, lm.z - 4, 0);
+          this.placeModel('statue_ring', 3.4, lm.x - 8, lm.z + 6, 0.9);
+          this.placeModel('statue_block', 1.0, lm.x + 9, lm.z + 9, 0.4);
+          for (let k = 0; k < 4; k++) {
+            const a = (k / 4) * Math.PI * 2 + 0.7;
+            this.placeModel('flag-pennant', 3.2, lm.x + Math.sin(a) * 19, lm.z + Math.cos(a) * 19, a);
+          }
+          break;
+        }
+        case 'perch': {
+          // High Perch: a sentry's fire and a fallen tree at the lookout.
+          this.placeModel('campfire_logs', 0.8, lm.x + 4, lm.z + 6, 0);
+          this.placeModel('log_large', 1.0, lm.x - 6, lm.z + 8, 0.6);
+          this.placeModel('sign', 1.4, lm.x + 7, lm.z - 2, 1.9);
+          this.placeModel('crate', 0.8, lm.x + 2, lm.z + 8, 0.3);
+          break;
+        }
+        case 'mine': {
+          // Galson's Lode: crates and carts at the cave mouth, an ore pile.
+          this.placeModel('crate', 0.9, lm.x + 4, lm.z - 2, 0.6);
+          this.placeModel('crate', 0.9, lm.x + 5.6, lm.z - 0.8, 1.2);
+          this.placeModel('log_stack', 1.0, lm.x - 6, lm.z - 1, 0.4);
+          this.placeModel('tool-shovel', 1.1, lm.x - 2, lm.z - 4, 0.7);
+          this.placeModel('cannon-ball', 0.6, lm.x + 1, lm.z - 6, 0);
+          this.placeModel('stone_smallA', 0.6, lm.x - 4, lm.z - 7, 0.9);
+          this.placeModel('stone_smallD', 0.5, lm.x - 2.6, lm.z - 7.8, 2.1);
+          this.placeModel('campfire_stones', 0.8, lm.x + 8, lm.z - 8, 0);
+          this.placeModel('sign', 1.4, lm.x - 8, lm.z - 8, 0.5);
+          break;
+        }
+        case 'mill': {
+          // Highlands Mill: sacks and carts by the lake, a fenced yard.
+          this.placeModel('crate', 0.9, lm.x - 6, lm.z + 3, 0.3);
+          this.placeModel('crate-bottles', 0.9, lm.x - 4.6, lm.z + 4.4, 1.0);
+          this.placeModel('log_stack', 1.0, lm.x + 5, lm.z + 6, 0.8);
+          this.placeModel('hole', 0.4, lm.x + 2, lm.z + 9, 0);
+          for (let i = 0; i < 4; i++) this.placeModel('fence_simple', 1.0, lm.x - 8 + i * 2.2, lm.z - 8, 0);
+          this.placeModel('pot_large', 0.8, lm.x + 9, lm.z + 2, 0);
+          this.placeModel('crops_wheatStageB', 1.1, lm.x - 10, lm.z - 4, 0);
+          this.placeModel('crops_wheatStageB', 1.1, lm.x - 12.2, lm.z - 4, 0);
+          break;
+        }
+        case 'lumber': {
+          // Hatchet Ridge: stumps, felled logs, the sawyers' tent.
+          this.placeModel('stump_round', 0.7, lm.x + 3, lm.z + 2, 0.4);
+          this.placeModel('stump_oldTall', 1.2, lm.x - 5, lm.z - 2, 1.1);
+          this.placeModel('stump_old', 0.8, lm.x + 8, lm.z - 4, 2.0);
+          this.placeModel('log_large', 1.1, lm.x - 2, lm.z + 8, 0.9);
+          this.placeModel('log_stack', 1.1, lm.x + 6, lm.z + 8, 0.3);
+          this.placeModel('log', 0.7, lm.x - 8, lm.z + 4, 1.6);
+          this.placeModel('tent_smallOpen', 2.3, lm.x - 9, lm.z - 8, 0.8);
+          this.placeModel('campfire_logs', 0.8, lm.x - 5, lm.z - 11, 0);
+          this.placeModel('tool-shovel', 1.1, lm.x + 1, lm.z - 8, 0.2);
+          this.placeModel('sign', 1.4, lm.x + 10, lm.z + 2, 2.3);
+          break;
+        }
+        case 'graveyard': {
+          // Labor's Rest: rows of headstones, a toppled column, lanterns.
+          for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 3; j++) {
+              this.placeModel('statue_block', 0.9, lm.x - 8 + i * 3.4, lm.z - 8 + j * 3.6, 0.1 * ((i + j) % 3));
+            }
+          }
+          this.placeModel('statue_columnDamaged', 2.4, lm.x + 8, lm.z - 7, 0.6);
+          this.placeModel('statue_obelisk', 3.0, lm.x - 10, lm.z + 8, 0.2);
+          this.placeModel('pot_large', 0.8, lm.x + 8, lm.z + 8, 0);
+          this.placeModel('campfire_stones', 0.7, lm.x, lm.z + 8, 0);
+          break;
+        }
+        case 'pass': {
+          // Valorcall Pass: the last camp before the mountains.
+          this.placeModel('campfire_stones', 0.8, lm.x, lm.z - 8, 0);
+          this.placeModel('sign', 1.4, lm.x - 4, lm.z - 10, 0.4);
+          this.placeModel('crate', 0.9, lm.x + 4, lm.z - 10, 0.9);
+          this.placeModel('tent_smallClosed', 2.0, lm.x + 6, lm.z - 15, -0.9);
+          break;
+        }
         case 'stonering': {
           // A Circle of Binding: obelisks (via the obstacles) around a paved
           // circle with an elemental altar burning at its heart.
@@ -1110,9 +1246,10 @@ export class SceneManager {
       if (!sampleAt(x, z) || !clearOfObstacles(x, z, 0.5)) return;
       this.placeModel(rng.next() < 0.5 ? 'mushroom_red' : 'mushroom_tanGroup', rng.range(0.35, 0.6), x, z, a);
     });
-    // Small boulders on dry and rocky ground; sea-worn rocks on the beaches.
-    const rocks: ModelName[] = ['rock_largeA', 'stone_largeA', 'rock_largeB', 'stone_largeC', 'rock_largeC', 'rock_smallA', 'rock_smallB', 'rock_smallFlatA'];
-    tries(300, () => {
+    // Arathi's boulders: big rounded gray stones in clusters on the open
+    // meadow, everywhere — with sea-worn rocks on the beaches.
+    const rocks: ModelName[] = ['stone_largeA', 'stone_largeC', 'stone_tallB', 'stone_largeA', 'stone_smallA', 'stone_smallD', 'rock_largeA', 'stone_largeC'];
+    tries(420, () => {
       const x = rng.range(-half, half);
       const z = rng.range(-half, half);
       const b = sampleAt(x, z);
@@ -1121,8 +1258,14 @@ export class SceneManager {
         if (rng.next() < 0.5) this.placeModel(rng.next() < 0.5 ? 'rocks-sand-a' : 'rocks-sand-b', rng.range(0.4, 1.0), x, z, rng.range(0, Math.PI * 2));
         return;
       }
-      if (b.rock + b.dry < 0.3 + rng.next() * 0.5) return;
-      this.placeModel(rocks[rng.int(0, rocks.length)]!, rng.range(0.45, 1.3), x, z, rng.range(0, Math.PI * 2));
+      if (b.rock + b.dry + 0.35 < rng.next()) return;
+      const n = 1 + rng.int(0, 3);
+      for (let k = 0; k < n; k++) {
+        const bx = x + (k ? rng.range(-3, 3) : 0);
+        const bz = z + (k ? rng.range(-3, 3) : 0);
+        if (k && !clearOfObstacles(bx, bz, 1.2)) continue;
+        this.placeModel(rocks[rng.int(0, rocks.length)]!, rng.range(0.5, 1.6) * (k ? 0.7 : 1), bx, bz, rng.range(0, Math.PI * 2));
+      }
     });
     // Fallen logs and stumps in the copses.
     tries(70, () => {

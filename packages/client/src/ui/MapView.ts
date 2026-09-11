@@ -24,9 +24,9 @@ const SEA: [number, number, number] = [22, 52, 74];
 const SEA_DEEP: [number, number, number] = [10, 28, 46];
 const LAKE: [number, number, number] = [45, 106, 138];
 const LAKE_DEEP: [number, number, number] = [24, 62, 92];
-const GRASS_LOW: [number, number, number] = [132, 176, 80];
-const GRASS_HIGH: [number, number, number] = [201, 180, 92];
-const ROCK: [number, number, number] = [141, 138, 128];
+const GRASS_LOW: [number, number, number] = [143, 184, 62];
+const GRASS_HIGH: [number, number, number] = [184, 181, 74];
+const ROCK: [number, number, number] = [139, 147, 156];
 const MARSH: [number, number, number] = [94, 127, 78];
 const SAND: [number, number, number] = [224, 198, 132];
 
@@ -170,10 +170,20 @@ export class MapView {
     }
     ctx.putImageData(img, 0, 0);
 
-    // Every piece of standing cover, so the map reads like the island.
     const sx = (wx: number): number => ((half - wx) / ARENA.size) * R;
     const sy = (wz: number): number => ((half - wz) / ARENA.size) * R;
     const scale = R / ARENA.size;
+    // The cobbled roads between the places.
+    ctx.strokeStyle = 'rgba(150, 138, 116, 0.9)';
+    ctx.lineWidth = Math.max(1.5, 4 * scale);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const road of ARENA.roads) {
+      ctx.beginPath();
+      road.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+      ctx.stroke();
+    }
+    // Every piece of standing cover, so the map reads like the island.
     for (const ob of ARENA.obstacles) {
       if (ob.kind === 'circle' && ob.look === 'none') continue; // invisible collision
       if (ob.kind === 'box') {

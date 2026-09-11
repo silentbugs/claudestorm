@@ -42,9 +42,9 @@ export type ModelName = (typeof MODEL_NAMES)[number];
  * is left alone). Rocks get real stone instead of the kit's white default.
  */
 const KIT_PALETTE: Record<string, number> = {
-  leafsGreen: 0x3f9e3c,
-  leafsDark: 0x2a7d49,
-  grass: 0x4da545,
+  leafsGreen: 0x86bd45,
+  leafsDark: 0x3c8a4e,
+  grass: 0x5faa3e,
   dirt: 0x8a6647,
   woodBark: 0x8a583a,
   woodBarkDark: 0x6c4531,
@@ -57,12 +57,12 @@ const KIT_PALETTE: Record<string, number> = {
   colorRedDark: 0xa83030,
   colorPurple: 0xa27fff,
   colorYellow: 0xffc63a,
-  stone: 0x9c978e,
-  stoneDark: 0x6b675f,
+  stone: 0x9aa0a8,
+  stoneDark: 0x6a7079,
   leafsFall: 0xe0862f,
   woodBirch: 0xe9e1d2,
 };
-const STONE = 0x8f8a82;
+const STONE = 0x8b939c;
 const WHEAT = 0xe6c45c;
 
 /**

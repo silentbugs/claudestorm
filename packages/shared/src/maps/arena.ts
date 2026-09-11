@@ -28,7 +28,20 @@ export interface CircleObstacle {
    * marks collision-only footprints under landmark dressing (the watchtower,
    * the wreck's hull) that the renderer must not decorate again.
    */
-  look?: 'tree' | 'rock' | 'cliff' | 'tower' | 'citadel' | 'hut' | 'totem' | 'pillar' | 'hall' | 'none';
+  look?:
+    | 'tree'
+    | 'rock'
+    | 'cliff'
+    | 'tower'
+    | 'citadel'
+    | 'hut'
+    | 'totem'
+    | 'pillar'
+    | 'hall'
+    | 'stake'
+    | 'wallseg'
+    | 'mine'
+    | 'none';
 }
 
 export type Obstacle = BoxObstacle | CircleObstacle;
@@ -73,11 +86,20 @@ export type LandmarkKind =
   | 'keep'
   | 'wall'
   | 'fort'
+  | 'ringfort'
+  | 'town'
   | 'farm'
   | 'manor'
   | 'village'
   | 'bridge'
   | 'stonering'
+  | 'elements'
+  | 'perch'
+  | 'mine'
+  | 'mill'
+  | 'lumber'
+  | 'graveyard'
+  | 'pass'
   | 'pit'
   | 'grove'
   | 'ravine'
@@ -119,6 +141,8 @@ export interface MapDef {
   pits: PitDef[];
   /** Named milestone areas (rendered distinctively, labeled on the map). */
   landmarks: LandmarkDef[];
+  /** Cobbled roads between the places, as polylines. Cosmetic: painted on the ground and the map. */
+  roads: Point[][];
 }
 
 /**
@@ -135,13 +159,25 @@ export function terrainHeight(hills: Hill[], x: number, z: number): number {
 }
 
 /**
+ * The island is an ellipse, wide east–west like Arathi's highland bowl:
+ * the coast's base radius is stretched along x and squeezed along z.
+ * (Mirrored in the water shader, client/render/Water.ts.)
+ */
+export const COAST_STRETCH_X = 1.16;
+export const COAST_STRETCH_Z = 0.86;
+
+/**
  * Where the island meets the sea in a given direction (angle in the sim's
- * atan2(x, z) convention): the base radius modulated by fixed sine bands —
- * bays and headlands instead of a square slab.
+ * atan2(x, z) convention): the elliptical base radius modulated by fixed
+ * sine bands — bays and headlands instead of a clean oval.
  */
 export function coastRadius(base: number, angle: number): number {
+  const sx = Math.sin(angle) / COAST_STRETCH_X;
+  const cz = Math.cos(angle) / COAST_STRETCH_Z;
+  const ellipse = 1 / Math.sqrt(sx * sx + cz * cz);
   return (
     base *
+    ellipse *
     (1 +
       0.08 * Math.sin(angle * 3 + 1.7) +
       0.055 * Math.sin(angle * 5 - 0.8) +
@@ -627,6 +663,194 @@ function stampPassage(ctx: PieceCtx, ax: number, az: number, bx: number, bz: num
   ctx.scrolls.push({ x: midX + px * 3, z: midZ + pz * 3 });
 }
 
+/**
+ * Ar'gorok: the Horde's great ring fort of the Fourth War — a circular
+ * palisade of stakes with two gates, a great hall, watch posts and huts
+ * inside. The second-richest ground on the map.
+ */
+function stampRingFort(ctx: PieceCtx, x: number, z: number): void {
+  const R = 30;
+  ctx.landmarks.push({ kind: 'ringfort', name: "Ar'gorok", x, z, r: R + 6 });
+  ctx.hills.push({ x, z, r: 60, h: 3 });
+  const stakes = 40;
+  for (let i = 0; i < stakes; i++) {
+    const a = (i / stakes) * Math.PI * 2;
+    // Gates face south-west (toward Stromgarde) and east.
+    const gateA = Math.abs(((a - 2.2 + Math.PI) % (Math.PI * 2)) - Math.PI) < 0.14;
+    const gateB = Math.abs(((a + 1.5 + Math.PI) % (Math.PI * 2)) - Math.PI) < 0.14;
+    if (gateA || gateB) continue;
+    ctx.obstacles.push({ kind: 'circle', x: x + Math.sin(a) * R, z: z + Math.cos(a) * R, r: 2.4, height: 5.5, look: 'stake' });
+  }
+  for (const a of [0.3, 2.0, 3.4, 5.0]) {
+    ctx.obstacles.push({ kind: 'circle', x: x + Math.sin(a) * (R - 3), z: z + Math.cos(a) * (R - 3), r: 1.6, height: 8, look: 'tower' });
+  }
+  ctx.obstacles.push({ kind: 'circle', x: x - 4, z: z + 5, r: 5, height: 8, look: 'hall' });
+  ctx.obstacles.push(
+    { kind: 'circle', x: x + 14, z: z - 6, r: 2.4, height: 3.8, look: 'hut' },
+    { kind: 'circle', x: x + 10, z: z + 14, r: 2.2, height: 3.6, look: 'hut' },
+    { kind: 'circle', x: x - 16, z: z - 10, r: 2.2, height: 3.6, look: 'hut' },
+    { kind: 'circle', x: x - 2, z: z - 17, r: 2.0, height: 3.4, look: 'hut' },
+  );
+  ctx.chests.push({ x: x - 4, z: z - 2 }, { x: x + 14, z: z }, { x: x - 14, z: z + 8 }, { x: x + 2, z: z + 18 }, { x: x - 8, z: z - 14 });
+  ctx.elites.push({ x: x + 4, z: z + 6 }, { x: x - 10, z: z - 2 }, { x: x + 8, z: z - 12 });
+  ctx.scrolls.push({ x: x + 18, z: z + 8 }, { x: x - 6, z: z + 16 });
+  ctx.items.push({ x: x + 6, z: z - 20 }, { x: x - 20, z: z + 2 });
+  ctx.mobs.push({ x: x + 40, z: z - 10 }, { x: x - 38, z: z + 12 });
+}
+
+/** Newstead: the Alliance town under the wall — cottages, a chapel with its tower, fenced yards. */
+function stampTown(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'town', name: 'Newstead', x, z, r: 30 });
+  ctx.hills.push({ x, z, r: 40, h: 1.5 });
+  ctx.obstacles.push(
+    { kind: 'box', x: x - 10, z: z + 8, hx: 3.4, hz: 2.8, height: 4.4, look: 'house' },
+    { kind: 'box', x: x + 9, z: z + 10, hx: 3.0, hz: 3.2, height: 4.2, look: 'house' },
+    { kind: 'box', x: x + 12, z: z - 8, hx: 3.4, hz: 2.6, height: 4.4, look: 'house' },
+    { kind: 'box', x: x - 12, z: z - 9, hx: 2.8, hz: 2.8, height: 4.0, look: 'house' },
+    { kind: 'box', x: x, z: z - 16, hx: 4.6, hz: 3.2, height: 6.5, look: 'house' },
+    { kind: 'circle', x: x + 6, z: z - 16, r: 2.0, height: 11, look: 'tower' },
+    { kind: 'circle', x: x - 1, z: z, r: 0.9, height: 1.2, look: 'rock' },
+  );
+  ctx.chests.push({ x: x - 10, z: z + 3 }, { x: x + 9, z: z + 5 }, { x: x + 12, z: z - 3 }, { x: x - 2, z: z - 11 });
+  ctx.elites.push({ x: x + 2, z: z + 3 }, { x: x - 6, z: z - 4 });
+  ctx.scrolls.push({ x: x + 16, z: z + 2 }, { x: x - 16, z: z + 1 });
+  ctx.items.push({ x: x + 4, z: z + 16 });
+  ctx.mobs.push({ x: x + 24, z: z + 14 });
+}
+
+/**
+ * Circle of Elements: the hilltop at the heart of the map, ringed by
+ * standing stones with the mage tower rising from its center — the place
+ * every storm seems to close on.
+ */
+function stampElements(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'elements', name: 'Circle of Elements', x, z, r: 30 });
+  ctx.hills.push({ x, z, r: 58, h: 11 }, { x, z, r: 24, h: 3 });
+  const stones = 8;
+  for (let s = 0; s < stones; s++) {
+    const a = (s / stones) * Math.PI * 2 + 0.3;
+    ctx.obstacles.push({ kind: 'circle', x: x + Math.sin(a) * 15, z: z + Math.cos(a) * 15, r: 1.4, height: 7, look: 'rock' });
+  }
+  ctx.obstacles.push({ kind: 'circle', x, z, r: 3.2, height: 18, look: 'citadel' });
+  ctx.chests.push({ x: x + 6, z: z + 2 }, { x: x - 6, z: z - 3 }, { x: x + 2, z: z - 8 });
+  ctx.elites.push({ x: x - 4, z: z + 6 }, { x: x + 7, z: z - 5 });
+  ctx.scrolls.push({ x: x + 9, z: z + 8 }, { x: x - 10, z: z + 2 });
+  ctx.items.push({ x, z: z + 11 });
+}
+
+/** High Perch: the lookout knoll west of the center — a watch post, boulders, a view. */
+function stampPerch(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'perch', name: 'High Perch', x, z, r: 24 });
+  ctx.hills.push({ x, z, r: 44, h: 9 });
+  ctx.obstacles.push(
+    { kind: 'circle', x, z: z + 2, r: 2.0, height: 9, look: 'tower' },
+    { kind: 'circle', x: x + 8, z: z - 6, r: 2.6, height: 4.5, look: 'rock' },
+    { kind: 'circle', x: x - 9, z: z + 5, r: 2.2, height: 4, look: 'rock' },
+    { kind: 'circle', x: x - 4, z: z - 10, r: 1.8, height: 3.4, look: 'rock' },
+  );
+  ctx.chests.push({ x: x + 4, z: z + 6 }, { x: x - 5, z: z - 4 });
+  ctx.elites.push({ x: x + 3, z: z - 3 });
+  ctx.scrolls.push({ x: x - 8, z: z - 2 });
+}
+
+/** Galson's Lode: a mine dug into a rocky outcrop — the cave mouth, crates, a rail of ore carts. */
+function stampMine(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'mine', name: "Galson's Lode", x, z, r: 24 });
+  ctx.hills.push({ x, z: z + 12, r: 34, h: 7 });
+  ctx.obstacles.push(
+    { kind: 'circle', x, z: z + 8, r: 4.5, height: 8, look: 'mine' },
+    { kind: 'circle', x: x + 10, z: z + 10, r: 2.8, height: 6, look: 'rock' },
+    { kind: 'circle', x: x - 10, z: z + 9, r: 2.6, height: 5.5, look: 'rock' },
+    { kind: 'box', x: x + 8, z: z - 6, hx: 2.6, hz: 2.2, height: 3.6, look: 'barn' },
+  );
+  ctx.chests.push({ x, z: z + 2 }, { x: x - 6, z: z - 4 }, { x: x + 9, z: z - 1 });
+  ctx.elites.push({ x: x + 3, z: z - 2 });
+  ctx.scrolls.push({ x: x - 3, z: z - 9 });
+  ctx.items.push({ x: x + 14, z: z - 8 });
+  ctx.mobs.push({ x: x - 16, z: z - 8 });
+}
+
+/** Highlands Mill: the mill house on a lake shore, a millpond, sacks and carts. */
+function stampMill(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'mill', name: 'Highlands Mill', x, z, r: 22 });
+  ctx.obstacles.push(
+    { kind: 'box', x, z, hx: 4.2, hz: 3.4, height: 6, look: 'barn' },
+    { kind: 'box', x: x + 9, z: z - 4, hx: 2.4, hz: 2.0, height: 3.4, look: 'house' },
+    { kind: 'circle', x: x - 8, z: z + 4, r: 1.6, height: 6, look: 'tree' },
+  );
+  ctx.chests.push({ x: x + 1, z: z - 6 }, { x: x - 6, z: z - 3 });
+  ctx.elites.push({ x: x + 5, z: z + 6 });
+  ctx.scrolls.push({ x: x + 12, z: z + 3 });
+  ctx.items.push({ x: x - 3, z: z + 9 });
+}
+
+/** Hatchet Ridge: a lumber camp on a wooded ridge — stumps, log piles, a sawyer's tent. */
+function stampLumber(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'lumber', name: 'Hatchet Ridge', x, z, r: 26 });
+  ctx.hills.push({ x, z, r: 46, h: 6 });
+  ctx.obstacles.push(
+    { kind: 'circle', x: x - 8, z: z + 6, r: 1.9, height: 8, look: 'tree' },
+    { kind: 'circle', x: x + 10, z: z + 9, r: 2.1, height: 8.5, look: 'tree' },
+    { kind: 'circle', x: x + 12, z: z - 6, r: 1.6, height: 6.5, look: 'tree' },
+    { kind: 'circle', x: x - 12, z: z - 8, r: 1.8, height: 7, look: 'tree' },
+    { kind: 'box', x: x + 2, z: z - 12, hx: 2.2, hz: 1.2, height: 1.4, look: 'wood' },
+  );
+  ctx.chests.push({ x, z }, { x: x + 4, z: z - 6 });
+  ctx.elites.push({ x: x - 4, z: z - 3 });
+  ctx.scrolls.push({ x: x + 6, z: z + 3 });
+  ctx.items.push({ x: x - 6, z: z + 10 });
+  ctx.mobs.push({ x: x + 20, z: z + 2 });
+}
+
+/** Labor's Rest: a walled graveyard — headstones, a broken mausoleum, a lantern-lit path. */
+function stampGraveyard(ctx: PieceCtx, x: number, z: number): void {
+  ctx.landmarks.push({ kind: 'graveyard', name: "Labor's Rest", x, z, r: 20 });
+  ctx.obstacles.push(
+    { kind: 'box', x, z: z + 12, hx: 12, hz: 0.5, height: 1.2 },
+    { kind: 'box', x: x + 12, z, hx: 0.5, hz: 12, height: 1.2 },
+    { kind: 'box', x: x - 12, z: z + 3, hx: 0.5, hz: 9, height: 1.2 },
+    { kind: 'box', x: x - 4, z: z - 12, hx: 8, hz: 0.5, height: 1.2 },
+    { kind: 'box', x: x + 4, z: z + 4, hx: 2.6, hz: 2.2, height: 3.6, look: 'house' },
+  );
+  ctx.chests.push({ x: x - 5, z: z - 5 }, { x: x + 6, z: z - 6 });
+  ctx.elites.push({ x: x - 3, z: z + 4 });
+  ctx.scrolls.push({ x: x + 8, z: z + 8 });
+}
+
+/** Valorcall Pass: the north road out through the mountains, watched by two towers. */
+function stampPass(ctx: PieceCtx, x: number, z: number, dirX: number, dirZ: number): void {
+  ctx.landmarks.push({ kind: 'pass', name: 'Valorcall Pass', x, z, r: 20 });
+  const px = dirZ;
+  const pz = -dirX;
+  for (const side of [-1, 1]) {
+    ctx.obstacles.push({ kind: 'circle', x: x + px * side * 7, z: z + pz * side * 7, r: 2.2, height: 10, look: 'tower' });
+    ctx.obstacles.push({ kind: 'circle', x: x + px * side * 13 + dirX * 8, z: z + pz * side * 13 + dirZ * 8, r: 3, height: 7, look: 'cliff' });
+  }
+  ctx.chests.push({ x: x - dirX * 6, z: z - dirZ * 6 });
+  ctx.scrolls.push({ x: x + px * 4, z: z + pz * 4 });
+  ctx.elites.push({ x: x - dirX * 12 + px * 3, z: z - dirZ * 12 + pz * 3 });
+}
+
+/** A dense forest: a tight stand of trees the road has to go around. */
+function stampForest(ctx: PieceCtx, x: number, z: number, r: number, count: number): void {
+  for (let i = 0; i < count; i++) {
+    // Sunflower spiral: even coverage with no lattice.
+    const t = (i + 0.5) / count;
+    const a = i * 2.39996;
+    const d = Math.sqrt(t) * r;
+    ctx.obstacles.push({
+      kind: 'circle',
+      x: x + Math.sin(a) * d,
+      z: z + Math.cos(a) * d,
+      r: ctx.rng.range(1.4, 2.2),
+      height: ctx.rng.range(6, 9),
+      look: 'tree',
+    });
+  }
+  ctx.chests.push({ x: x + r * 0.4, z: z - r * 0.3 });
+  ctx.mobs.push({ x: x - r * 0.5, z: z + r * 0.4 });
+}
+
 /** Minor filler site: a small stand of trees with loot tucked inside. */
 function stampCopse(ctx: PieceCtx, x: number, z: number, s: number): void {
   ctx.obstacles.push(
@@ -647,12 +871,17 @@ function stampBoulders(ctx: PieceCtx, x: number, z: number, s: number): void {
 }
 
 /**
- * Arathi Highlands, the way Plunderstorm plays it: an 840×840 island whose
- * named places sit where they do on the real map (north is +z, west is +x
- * on the in-game map). The landmarks are hand-placed; the geography
- * between them — ridges, lake basins, rolling hills, copses, boulder
- * fields, field cover, and loose loot — is scattered from a fixed-seed Rng
- * around them, so the layout is identical every match.
+ * Arathi Highlands, the way Plunderstorm plays it — laid out from the
+ * game's own zone map. North is +z and west is +x on the in-game map. The
+ * island is a wide ellipse: the green highland bowl in the west and
+ * center, Thoradin's Wall slanting along the north-west edge, Stromgarde
+ * on its hill in the south-west corner by the sea, Ar'gorok's ring fort in
+ * the north-west, Newstead under the wall, the farms across the middle,
+ * Hammerfall in the north-east, Witherbark in the south-east, Faldir's
+ * Cove on the south coast, and a belt of mountains around the north, east
+ * and south. Landmarks, forests, lakes, roads and mountains are placed by
+ * hand from the map; the rolling hills, copses, boulder fields, field cover
+ * and loose loot between them are scattered from a fixed seed.
  */
 function buildArena(): MapDef {
   const rng = new Rng(0x15_1a_9d); // island seed — change for a new layout
@@ -672,7 +901,7 @@ function buildArena(): MapDef {
   const lakes: LakeDef[] = [];
 
   // The irregular coastline everything must stay inside of.
-  const COAST = 356;
+  const COAST = 340;
   const inland =
     (margin: number) =>
     (x: number, z: number): boolean =>
@@ -687,98 +916,166 @@ function buildArena(): MapDef {
     const r = coastRadius(COAST, angle) - inset;
     return { x: Math.sin(angle) * r, z: Math.cos(angle) * r };
   };
+  /** Zone-map pixel (1002×668, north up, west left) → world meters. */
+  const K = 1.07;
+  const map = (px: number, py: number, margin = 40): Point => ashore((430 - px) * K, (330 - py) * K, margin);
 
-  // ── The named places of Arathi, hand-placed ──
-  const keep = ashore(215, -95, 70);
+  // ── The named places, from the zone map ──
+  const keep = map(180, 430, 62);
   stampKeep(ctx, keep.x, keep.z);
-  const wallX = ashore(285, 45, 34).x;
-  stampWall(ctx, wallX, -30, 130);
-  const cove = onCoast(2.35, 24);
+  const argorok = map(275, 178, 50);
+  stampRingFort(ctx, argorok.x, argorok.z);
+  const newstead = map(132, 258, 42);
+  stampTown(ctx, newstead.x, newstead.z);
+  stampElements(ctx, -8, -10);
+  const perch = map(240, 292);
+  stampPerch(ctx, perch.x, perch.z);
+  const refuge = map(405, 288);
+  stampHamlet(ctx, refuge.x, refuge.z);
+  const dabyrie = map(500, 283);
+  stampFarm(ctx, dabyrie.x, dabyrie.z, "Dabyrie's Farmstead", 1);
+  const goshek = map(560, 385);
+  stampFarm(ctx, goshek.x, goshek.z, "Go'Shek Farm", -1);
+  const marrow = map(660, 410, 50);
+  stampFarm(ctx, marrow.x, marrow.z, "Marrow's Farm", 1);
+  const hammerfall = map(690, 275, 55);
+  stampFort(ctx, hammerfall.x, hammerfall.z);
+  const witherbark = map(610, 470, 45);
+  stampVillage(ctx, witherbark.x, witherbark.z);
+  const cove = onCoast(2.69, 24);
   stampCove(ctx, cove.x, cove.z);
-  const grove = ashore(238, 45, 40);
-  stampGroveLandmark(ctx, grove.x, grove.z);
-  const manor = ashore(170, 215, 45);
-  stampManor(ctx, manor.x, manor.z);
-  const outer = ashore(85, 255, 40);
-  stampStoneRing(ctx, outer.x, outer.z, 'Circle of Outer Binding');
   const span = onCoast(0.05, 8);
   stampBridge(ctx, span.x, span.z, Math.sin(0.05), Math.cos(0.05));
-  const dabyrie = ashore(-40, 175, 40);
-  stampFarm(ctx, dabyrie.x, dabyrie.z, "Dabyrie's Farmstead", 1);
-  const gorge = ashore(-165, 225, 60);
-  stampRavine(ctx, gorge.x, gorge.z);
-  const hammerfall = ashore(-235, 120, 55);
-  stampFort(ctx, hammerfall.x, hammerfall.z);
-  const east = ashore(-245, -25, 40);
+  const northfold = map(200, 150, 45);
+  stampManor(ctx, northfold.x, northfold.z);
+  const galen = map(120, 335, 40);
+  stampGroveLandmark(ctx, galen.x, galen.z);
+  const outer = map(360, 215);
+  stampStoneRing(ctx, outer.x, outer.z, 'Circle of Outer Binding');
+  const west = map(280, 362);
+  stampStoneRing(ctx, west.x, west.z, 'Circle of West Binding');
+  const inner = map(450, 432);
+  stampStoneRing(ctx, inner.x, inner.z, 'Circle of Inner Binding');
+  const east = map(740, 330, 45);
   stampStoneRing(ctx, east.x, east.z, 'Circle of East Binding');
-  stampHamlet(ctx, 35, 25);
-  stampStoneRing(ctx, 120, 100, 'Circle of West Binding');
-  stampStoneRing(ctx, -45, -95, 'Circle of Inner Binding');
-  stampPit(ctx, 65, -195);
-  const goshek = ashore(-85, -235, 45);
-  stampFarm(ctx, goshek.x, goshek.z, "Go'Shek Farm", -1);
-  stampBarrow(ctx, -185, -150);
-  const witherbark = ashore(-255, -230, 45);
-  stampVillage(ctx, witherbark.x, witherbark.z);
-  stampPassage(ctx, goshek.x, goshek.z, -185, -150);
+  const boulderfist = map(620, 520, 45);
+  stampBarrow(ctx, boulderfist.x, boulderfist.z);
+  const bouldergor = map(540, 500, 40);
+  stampPit(ctx, bouldergor.x, bouldergor.z);
+  const gorge = map(760, 215, 62);
+  stampRavine(ctx, gorge.x, gorge.z);
+  const hatchet = map(470, 520, 40);
+  stampLumber(ctx, hatchet.x, hatchet.z);
+  const galson = map(610, 330);
+  stampMine(ctx, galson.x, galson.z);
+  const mill = map(505, 445);
+  stampMill(ctx, mill.x, mill.z);
+  const labor = map(460, 470);
+  stampGraveyard(ctx, labor.x, labor.z);
+  const pass = map(300, 118, 48);
+  stampPass(ctx, pass.x, pass.z, Math.sin(0.3), Math.cos(0.3));
+  stampPassage(ctx, hatchet.x, hatchet.z, boulderfist.x, boulderfist.z);
+
+  // Thoradin's Wall slants along the north-west edge: a line of wall
+  // segments with towers and two gates, built from circles so the sim's
+  // collision stays simple while the renderer draws real masonry.
+  {
+    const a = map(215, 62, 34);
+    const b = map(84, 292, 34);
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    const ux = dx / len;
+    const uz = dz / len;
+    ctx.landmarks.push({ kind: 'wall', name: "Thoradin's Wall", x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, r: 22 });
+    const seg = 4.6;
+    const n = Math.floor(len / seg);
+    for (let i = 0; i <= n; i++) {
+      const t = i * seg;
+      const frac = t / len;
+      if (Math.abs(frac - 0.36) < 0.02 || Math.abs(frac - 0.7) < 0.02) continue; // gates
+      const x = a.x + ux * t;
+      const z = a.z + uz * t;
+      if (i % 9 === 0) ctx.obstacles.push({ kind: 'circle', x, z, r: 2.8, height: 11, look: 'tower' });
+      else ctx.obstacles.push({ kind: 'circle', x, z, r: 2.4, height: 7.5, look: 'wallseg' });
+    }
+    ctx.chests.push({ x: a.x + ux * len * 0.36 - uz * 6, z: a.z + uz * len * 0.36 + ux * 6 });
+    ctx.chests.push({ x: a.x + ux * len * 0.7 - uz * 6, z: a.z + uz * len * 0.7 + ux * 6 });
+    ctx.scrolls.push({ x: a.x + ux * len * 0.5 - uz * 7, z: a.z + uz * len * 0.5 + ux * 7 });
+    ctx.elites.push({ x: a.x + ux * len * 0.2 - uz * 8, z: a.z + uz * len * 0.2 + ux * 8 });
+  }
+
+  // ── Lakes, from the map ──
+  for (const [px, py, r] of [[485, 270, 12], [530, 455, 15], [622, 205, 12], [642, 455, 13], [395, 522, 14]] as const) {
+    const p = map(px, py, 50);
+    lakes.push({ x: p.x, z: p.z, r });
+    hills.push({ x: p.x, z: p.z, r: r * 2.6, h: -1.4 }, { x: p.x, z: p.z, r: r * 2.1, h: -3.6 });
+  }
+
+  // ── Forests: the dark stands on the map ──
+  for (const [px, py, r, n] of [[330, 232, 22, 14], [322, 336, 20, 12], [540, 332, 22, 14], [352, 432, 18, 10], [262, 472, 20, 12], [452, 250, 16, 9], [600, 250, 18, 10]] as const) {
+    const p = map(px, py, 40);
+    stampForest(ctx, p.x, p.z, r, n);
+  }
+
+  // ── Roads: cobbled tracks between the places (cosmetic) ──
+  const road = (pts: [number, number][]): Point[] => pts.map(([px, py]) => map(px, py, 20));
+  const roads: Point[][] = [
+    road([[232, 400], [300, 362], [380, 330], [405, 300], [460, 292], [500, 300], [560, 302], [640, 292], [690, 285]]),
+    road([[405, 300], [430, 360], [500, 380], [560, 392], [600, 432], [612, 462]]),
+    road([[232, 400], [300, 432], [360, 472], [395, 505], [340, 548], [315, 560]]),
+    road([[150, 262], [200, 232], [262, 205], [330, 222], [362, 262], [405, 300]]),
+    road([[150, 272], [190, 332], [232, 385]]),
+    road([[690, 285], [652, 332], [612, 352], [568, 385]]),
+    road([[275, 150], [292, 120]]),
+    road([[560, 392], [520, 442], [470, 505]]),
+    road([[240, 292], [300, 340], [360, 340], [405, 300]]),
+  ];
 
   /** Anchors that scattered geography, sites, and loot must keep clear of. */
   const keepOut: { x: number; z: number; r: number }[] = ctx.landmarks.map((l) => ({ x: l.x, z: l.z, r: l.r }));
-  for (let z = -30; z <= 130; z += 12) keepOut.push({ x: wallX, z, r: 10 });
+  for (const lake of lakes) keepOut.push({ x: lake.x, z: lake.z, r: lake.r * 1.8 });
+  for (const ob of obstacles) if (ob.kind === 'circle' && (ob.look === 'wallseg' || ob.look === 'stake')) keepOut.push({ x: ob.x, z: ob.z, r: 8 });
   {
-    // The trench of the passage, too.
-    const dx = -185 - goshek.x;
-    const dz = -150 - goshek.z;
+    const dx = boulderfist.x - hatchet.x;
+    const dz = boulderfist.z - hatchet.z;
     const len = Math.hypot(dx, dz);
-    for (let t = 0; t <= len; t += 12) keepOut.push({ x: goshek.x + (dx / len) * t, z: goshek.z + (dz / len) * t, r: 14 });
+    for (let t = 0; t <= len; t += 12) keepOut.push({ x: hatchet.x + (dx / len) * t, z: hatchet.z + (dz / len) * t, r: 14 });
   }
   const clearOf = (margin: number) => (x: number, z: number): boolean =>
     keepOut.every((k) => Math.hypot(k.x - x, k.z - z) > k.r + margin);
   const both = (...fns: ((x: number, z: number) => boolean)[]) => (x: number, z: number): boolean => fns.every((f) => f(x, z));
 
-  // ── Mountain ridges: chains of tall massifs — open high ground, no walls ──
-  const ridges = scatterPoints(rng, 6, 150, 335, [], both(inland(45), clearOf(40)));
-  for (const ridge of ridges) {
-    const angle = rng.range(0, Math.PI);
-    const len = rng.range(70, 105);
-    const dirX = Math.cos(angle);
-    const dirZ = Math.sin(angle);
-    for (const t of [-0.28, 0.05, 0.32]) {
-      const hx = ridge.x + dirX * t * len;
-      const hz = ridge.z + dirZ * t * len;
-      if (!clearOf(20)(hx, hz)) continue;
-      hills.push({ x: hx, z: hz, r: rng.range(30, 44), h: rng.range(8, 14) });
-    }
-    // Keep sites and loot off the crests.
-    const segs = Math.round(len / 9);
-    for (let s = 0; s <= segs; s++) {
-      const t = s / segs - 0.5;
-      keepOut.push({ x: ridge.x + dirX * t * len, z: ridge.z + dirZ * t * len, r: 12 });
+  // ── The mountain belt: tall massifs along the north, east and south rims,
+  //    with a row of foothills inside them; the west stays open to the sea. ──
+  // (The south arc stops short of Faldir's Cove at 2.69 rad and resumes
+  // beyond it, so the cove keeps its beach.)
+  const mountainArcs: [number, number][] = [
+    [-0.55, 0.62], // north
+    [-2.3, -0.62], // east
+    [2.95, 3.75], // south (through π)
+  ];
+  for (const [a0, a1] of mountainArcs) {
+    for (let a = a0; a <= a1; a += 0.17) {
+      const angle = a > Math.PI ? a - Math.PI * 2 : a;
+      const rim = coastRadius(COAST, angle);
+      const outer = { x: Math.sin(angle) * (rim - 26), z: Math.cos(angle) * (rim - 26) };
+      hills.push({ x: outer.x, z: outer.z, r: rng.range(46, 62), h: rng.range(18, 27) });
+      if (rng.next() < 0.7) {
+        const inner = { x: Math.sin(angle + 0.08) * (rim - 74), z: Math.cos(angle + 0.08) * (rim - 74) };
+        if (clearOf(10)(inner.x, inner.z)) hills.push({ x: inner.x, z: inner.z, r: rng.range(36, 48), h: rng.range(9, 14) });
+      }
+      keepOut.push({ x: outer.x, z: outer.z, r: 40 });
     }
   }
 
-  // ── Lowland basins; the first five hold lakes ──
-  const basins = scatterPoints(rng, 8, 120, 345, [], both(inland(48), clearOf(45)));
-  basins.forEach((b, i) => {
-    hills.push({ x: b.x, z: b.z, r: rng.range(36, 52), h: rng.range(-1.6, -1.0) });
-    if (i < 5) {
-      const r = rng.range(13, 20);
-      lakes.push({ x: b.x, z: b.z, r });
-      // A real pool: over your head in the middle, water filling the bowl up
-      // to the waterline, so a chest-deep wader only has to nudge the camera
-      // down for it to submerge.
-      hills.push({ x: b.x, z: b.z, r: r * 2.1, h: -3.6 });
-      keepOut.push({ x: b.x, z: b.z, r: r * 1.6 });
-    }
-  });
-
   // Rolling hills across the rest of the island.
-  for (const p of scatterPoints(rng, 44, 44, 365, [], both(inland(28), clearOf(14)))) {
-    hills.push({ x: p.x, z: p.z, r: rng.range(24, 42), h: rng.range(2.5, 7) });
+  for (const p of scatterPoints(rng, 40, 44, 400, [], both(inland(30), clearOf(12)))) {
+    hills.push({ x: p.x, z: p.z, r: rng.range(24, 42), h: rng.range(2, 6) });
   }
 
   // ── Minor sites: copses and boulder fields with loot tucked inside ──
-  const sites = scatterPoints(rng, 22, 65, 365, [], both(inland(30), clearOf(24)));
+  const sites = scatterPoints(rng, 18, 60, 400, [], both(inland(34), clearOf(22)));
   sites.forEach((site, i) => {
     const { x: px, z: pz } = site;
     const s = i % 2 === 0 ? 1 : -1;
@@ -793,7 +1090,7 @@ function buildArena(): MapDef {
   });
 
   // ── Field cover between the sites (kept clear of them and the landmarks) ──
-  const cover = scatterPoints(rng, 110, 16, 390, sites, both(inland(16), clearOf(6)));
+  const cover = scatterPoints(rng, 100, 16, 420, sites, both(inland(20), clearOf(6)));
   cover.forEach((p, i) => {
     if (i % 3 === 0) {
       obstacles.push({ kind: 'circle', x: p.x, z: p.z, r: 2 + (i % 3) * 0.3, height: 3.4, look: 'rock' });
@@ -803,11 +1100,11 @@ function buildArena(): MapDef {
   });
 
   // ── Loose pickings and roaming packs for the space between sites ──
-  const openGround = both(inland(18), clearOf(4));
-  for (const p of scatterPoints(rng, 46, 28, 375, sites, openGround)) chests.push(p);
-  for (const p of scatterPoints(rng, 56, 22, 385, sites, openGround)) mobs.push(p);
-  for (const p of scatterPoints(rng, 28, 32, 370, sites, openGround)) scrolls.push(p);
-  for (const p of scatterPoints(rng, 26, 30, 375, sites, openGround)) items.push(p);
+  const openGround = both(inland(24), clearOf(4));
+  for (const p of scatterPoints(rng, 42, 28, 410, sites, openGround)) chests.push(p);
+  for (const p of scatterPoints(rng, 52, 22, 420, sites, openGround)) mobs.push(p);
+  for (const p of scatterPoints(rng, 26, 32, 400, sites, openGround)) scrolls.push(p);
+  for (const p of scatterPoints(rng, 24, 30, 410, sites, openGround)) items.push(p);
 
   // ── Nudge every static pickup out of anything it spawned inside ──
   // A chest inside a tree trunk helps no one.
@@ -850,7 +1147,7 @@ function buildArena(): MapDef {
   clearLoot(mobs);
 
   return {
-    size: 840,
+    size: 920,
     coastR: COAST,
     obstacles,
     chests,
@@ -862,6 +1159,7 @@ function buildArena(): MapDef {
     lakes,
     pits: ctx.pits,
     landmarks: ctx.landmarks,
+    roads,
   };
 }
 

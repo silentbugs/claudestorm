@@ -21,6 +21,7 @@ export const FLAT_MAP: MapDef = {
   lakes: [],
   pits: [],
   landmarks: [],
+  roads: [],
 };
 
 /** Storm that never threatens anyone — for tests that aren't about the storm. */
