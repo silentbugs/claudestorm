@@ -21,6 +21,8 @@ export const MODEL_NAMES = [
   'tent_detailedOpen', 'tent_smallClosed', 'canoe', 'sign', 'pot_large', 'fence_simple', 'fence_simpleHigh',
   'path_stoneCircle', 'hanging_moss', 'lily_large', 'lily_small',
   'crops_wheatStageB', 'crops_cornStageC', 'crop_pumpkin',
+  'bridge_stone', 'bridge_stoneRound', 'bridge_side_stone', 'bridge_center_stone',
+  'stone_smallA', 'stone_smallD', 'fence_planks', 'fence_corner', 'tent_smallOpen', 'campfire_bricks', 'pot_small',
   // pirate kit
   'chest', 'crate', 'crate-bottles', 'barrel', 'bottle', 'cannon-ball', 'structure', 'structure-roof', 'structure-platform',
   'structure-fence', 'structure-platform-dock', 'structure-platform-dock-small', 'platform-planks',
@@ -29,6 +31,7 @@ export const MODEL_NAMES = [
   'ship-wreck', 'ship-pirate-medium', 'boat-row-small', 'mast', 'cannon', 'flag-pirate-high', 'flag-pennant',
   'palm-detailed-straight', 'palm-detailed-bend', 'rocks-sand-a', 'rocks-sand-b', 'patch-sand-foliage',
   'tool-shovel', 'hole',
+  'ship-pirate-large', 'ship-medium', 'tower-top', 'tower-middle', 'tower-roof', 'tower-base-door', 'structure-fence-sides',
 ] as const;
 export type ModelName = (typeof MODEL_NAMES)[number];
 

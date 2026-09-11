@@ -24,8 +24,8 @@ const SEA: [number, number, number] = [22, 52, 74];
 const SEA_DEEP: [number, number, number] = [10, 28, 46];
 const LAKE: [number, number, number] = [45, 106, 138];
 const LAKE_DEEP: [number, number, number] = [24, 62, 92];
-const GRASS_LOW: [number, number, number] = [118, 179, 86];
-const GRASS_HIGH: [number, number, number] = [195, 189, 102];
+const GRASS_LOW: [number, number, number] = [132, 176, 80];
+const GRASS_HIGH: [number, number, number] = [201, 180, 92];
 const ROCK: [number, number, number] = [141, 138, 128];
 const MARSH: [number, number, number] = [94, 127, 78];
 const SAND: [number, number, number] = [224, 198, 132];
@@ -177,7 +177,8 @@ export class MapView {
     for (const ob of ARENA.obstacles) {
       if (ob.kind === 'circle' && ob.look === 'none') continue; // invisible collision
       if (ob.kind === 'box') {
-        ctx.fillStyle = 'rgba(196, 190, 176, 0.95)';
+        if (ob.look === 'none') continue;
+        ctx.fillStyle = ob.look === 'wood' || ob.look === 'barn' ? 'rgba(150, 104, 62, 0.95)' : 'rgba(196, 190, 176, 0.95)';
         ctx.fillRect(
           sx(ob.x) - ob.hx * scale,
           sy(ob.z) - ob.hz * scale,

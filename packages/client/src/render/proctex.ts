@@ -78,7 +78,7 @@ export function cellNoise(x: number, y: number, period: number, seed: number): {
   return { f1: Math.sqrt(f1), f2: Math.sqrt(f2) };
 }
 
-function finish(tex: THREE.DataTexture, srgb: boolean, anisotropy: number): THREE.DataTexture {
+function finish<T extends THREE.Texture>(tex: T, srgb: boolean, anisotropy: number): T {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
@@ -115,8 +115,17 @@ export function makeNoiseTexture(size = 256): THREE.DataTexture {
 
 type Painter = (u: number, v: number, out: THREE.Color) => void;
 
-function paint(size: number, painter: Painter, anisotropy: number): THREE.DataTexture {
-  const data = new Uint8Array(size * size * 4);
+/**
+ * Paints into a canvas rather than a raw DataTexture: the painted textures
+ * double as ordinary `map`s on standard materials (ruin walls, palisades),
+ * and the canvas upload path is the one every GPU driver exercises.
+ */
+function paint(size: number, painter: Painter, anisotropy: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(size, size);
+  const data = img.data;
   const c = new THREE.Color();
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -128,14 +137,15 @@ function paint(size: number, painter: Painter, anisotropy: number): THREE.DataTe
       data[i + 3] = 255;
     }
   }
-  return finish(new THREE.DataTexture(data, size, size, THREE.RGBAFormat), true, anisotropy);
+  ctx.putImageData(img, 0, 0);
+  return finish(new THREE.CanvasTexture(canvas), true, anisotropy);
 }
 
 export interface DetailTextures {
-  grass: THREE.DataTexture;
-  dry: THREE.DataTexture;
-  rock: THREE.DataTexture;
-  sand: THREE.DataTexture;
+  grass: THREE.Texture;
+  dry: THREE.Texture;
+  rock: THREE.Texture;
+  sand: THREE.Texture;
 }
 
 /**
@@ -183,9 +193,11 @@ export function makeDetailTextures(anisotropy: number, size = 256): DetailTextur
       const cells = cellNoise(x * 2.2, y * 2.2, Math.round(P * 2.2), 71);
       const crack = smooth(THREE.MathUtils.clamp((cells.f2 - cells.f1) * 5, 0, 1)); // 0 at the seams
       const grain = fbm(x * 3, y * 3, P * 3, 3, 77);
-      out.setHex(0x8b8781).lerp(tmp.setHex(0x5e5b5c), (1 - crack) * 0.7);
-      out.lerp(tmp.setHex(0xa3a09a), grain * 0.35);
-      out.lerp(tmp.setHex(0x6e7a86), (1 - grain) * 0.15); // cool shadows in the pits
+      // Mid-gray slabs with darker seams: bright enough to serve as a plain
+      // material map on masonry, not just as terrain detail.
+      out.setHex(0xc4bfb7).lerp(tmp.setHex(0x8a867f), (1 - crack) * 0.5);
+      out.lerp(tmp.setHex(0xdcd8d0), grain * 0.35);
+      out.lerp(tmp.setHex(0x95a0ac), (1 - grain) * 0.12); // cool shadows in the pits
     },
     anisotropy,
   );

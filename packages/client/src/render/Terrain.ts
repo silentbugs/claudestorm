@@ -95,7 +95,7 @@ export function buildTerrain(
           bomb = smoothstep( 0.35, 0.65, bomb );
           vec3 g = detailAt( uGrassTex, vTWorld.xz, 3.6, bomb );
           vec3 d = detailAt( uDryTex, vTWorld.xz, 3.1, bomb );
-          vec3 r = detailAt( uRockTex, vTWorld.xz, 5.2, bomb );
+          vec3 r = detailAt( uRockTex, vTWorld.xz, 9.0, bomb );
           vec3 s = detailAt( uSandTex, vTWorld.xz, 2.7, bomb );
           // Sharpen the transitions: the dominant layer wins a little extra.
           vec4 w = tSplat * tSplat * ( 1.0 + tSplat );

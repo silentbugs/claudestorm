@@ -23,14 +23,18 @@ import { applyWaterSettings, makeWaterMaterial, type WaterSettings } from './Wat
 
 const SUN_DIR = SHARED.uSunDir.value;
 
-/** Ruined masonry: box obstacles render as clean stone blocks (the sim shape, exactly). */
+/** Masonry and palisade: box obstacles render as blocks matching the sim shape exactly. */
 const STONE_GEO = new THREE.BoxGeometry(1, 1, 1);
+// Near-white base colors: the cracked-stone / plank detail texture carries
+// the tone (a gray base times a mid-gray texture goes near black).
 const STONE_MATS = [
-  new THREE.MeshStandardMaterial({ color: 0x9a938a, roughness: 0.95 }),
-  new THREE.MeshStandardMaterial({ color: 0x867f76, roughness: 0.95 }),
+  new THREE.MeshStandardMaterial({ color: 0xe8e2d8, roughness: 0.95 }),
+  new THREE.MeshStandardMaterial({ color: 0xcfc8be, roughness: 0.95 }),
 ];
 STONE_MATS[0]!.name = 'stoneA';
 STONE_MATS[1]!.name = 'stoneB';
+const WOOD_MAT = new THREE.MeshStandardMaterial({ color: 0xf2c494, roughness: 0.9 });
+WOOD_MAT.name = 'palisade';
 
 /** Start-screen time-of-day choices. */
 export type EnvironmentId = 'day' | 'dusk' | 'night';
@@ -127,7 +131,7 @@ const SWAY: Partial<Record<ModelName, number>> = {
   'palm-detailed-straight': 1.4, 'palm-detailed-bend': 1.4,
   plant_bushDetailed: 0.7, plant_bushLargeTriangle: 0.6, grass_leafsLarge: 1.1,
   crops_wheatStageB: 1.2, crops_cornStageC: 0.9, lily_large: 0.1, lily_small: 0.1,
-  'flag-pennant': 1.8, hanging_moss: 1.2,
+  'flag-pennant': 1.8, hanging_moss: 1.2, tent_smallOpen: 0.15, fence_planks: 0.05,
 };
 
 /** Nearest landmark within reach of a point, for landmark-flavored dressing. */
@@ -251,6 +255,8 @@ export class SceneManager {
       m.map = this.details.rock;
       m.needsUpdate = true;
     }
+    WOOD_MAT.map = this.details.dry;
+    WOOD_MAT.needsUpdate = true;
 
     this.buildWater();
     this.buildLakes();
@@ -552,10 +558,12 @@ export class SceneManager {
 
   /**
    * Obstacle dressing with real models (visual only — the sim collides with
-   * the raw circles). The map's `look` hint picks trees or rocks, and the
-   * nearest landmark flavors the pick: standing obelisks at the Stone Ring,
-   * a ruined colonnade on the Barrow, cliff faces along the Undercroft and
-   * the smugglers' trench, sea-worn boulders at the cove.
+   * the raw shapes). Circles carry a `look` — trees, rocks, towers, huts,
+   * totems, pillars, halls — and the nearest landmark flavors the pick:
+   * standing obelisks at the Circles of Binding, a ruined colonnade on
+   * Boulderfist Hall, cliff faces along the gorge and the trench, sea-worn
+   * boulders at the cove. Boxes are masonry or palisade blocks; roofed
+   * looks get a roof model on top, and gate footprints get an arch.
    */
   private buildObstacles(): void {
     const treePick: ModelName[] = [
@@ -567,15 +575,29 @@ export class SceneManager {
     const rockPick: ModelName[] = ['rock_tallA', 'stone_tallB', 'rock_tallB', 'stone_tallE', 'rock_tallC', 'stone_largeA'];
     const cliffPick: ModelName[] = ['cliff_block_rock', 'stone_tallE', 'cliff_blockDiagonal_rock', 'stone_tallB', 'cliff_blockHalf_rock'];
     const coast = ARENA.coastR ?? ARENA.size / 2;
+    const gatePosts: { x: number; z: number; height: number }[] = [];
 
     ARENA.obstacles.forEach((ob, i) => {
       if (ob.kind === 'box') {
-        // Ruin walls and rubble: a stone block matching the collision exactly.
-        const stone = new THREE.Mesh(STONE_GEO, STONE_MATS[i % 2]!);
-        stone.scale.set(ob.hx * 2, ob.height, ob.hz * 2);
-        stone.position.y = ob.height / 2 - 0.15; // settle into the ground
+        const look = ob.look ?? 'stone';
+        if (look === 'none') {
+          gatePosts.push({ x: ob.x, z: ob.z, height: ob.height });
+          return;
+        }
         const holder = new THREE.Group();
-        holder.add(stone);
+        const block = new THREE.Mesh(STONE_GEO, look === 'wood' || look === 'barn' ? WOOD_MAT : STONE_MATS[i % 2]!);
+        block.scale.set(ob.hx * 2, ob.height, ob.hz * 2);
+        block.position.y = ob.height / 2 - 0.15; // settle into the ground
+        holder.add(block);
+        if (look === 'house' || look === 'barn') {
+          // A pitched roof over the walls, hanging a little past them.
+          const roof = this.assets.modelAtHeight('tower-roof', ob.height * 0.6);
+          const size = this.assets.size('tower-roof');
+          roof.scale.x = (ob.hx * 2.4) / size.x;
+          roof.scale.z = (ob.hz * 2.4) / size.z;
+          roof.position.y = ob.height - 0.35;
+          holder.add(roof);
+        }
         this.place(holder, ob.x, ob.z);
         return;
       }
@@ -592,6 +614,42 @@ export class SceneManager {
         const tree = this.placeModel(name, ob.height * 1.45, ob.x, ob.z, rot);
         tree.scale.x *= 1.2;
         tree.scale.z *= 1.2;
+        return;
+      }
+      // Built things: towers, huts, totems, pillars, halls.
+      const built: Partial<Record<NonNullable<typeof ob.look>, ModelName>> = {
+        tower: lm?.kind === 'fort' ? 'tower-watch' : 'tower-complete-small',
+        citadel: 'tower-complete-large',
+        hut: lm?.kind === 'village' ? 'tent_detailedOpen' : 'tent_smallClosed',
+        totem: 'statue_obelisk',
+        pillar: 'cliff_block_rock',
+        hall: 'structure',
+      };
+      const builtName = built[look];
+      if (builtName) {
+        const facing = lm ? Math.atan2(lm.x - ob.x, lm.z - ob.z) : rot;
+        const model = this.placeModel(builtName, ob.height, ob.x, ob.z, look === 'hut' || look === 'hall' ? facing : 0);
+        const size = this.assets.size(builtName);
+        const footprint = Math.max(size.x, size.z) * model.scale.x;
+        const wanted = ob.r * 2.3;
+        if (look === 'pillar' || Math.abs(footprint - wanted) > wanted * 0.25) {
+          const k = wanted / Math.max(0.01, footprint);
+          model.scale.x *= k;
+          model.scale.z *= k;
+        }
+        if (look === 'hall') {
+          const roof = this.assets.modelAtHeight('structure-roof', ob.height * 0.5);
+          const rs = this.assets.size('structure-roof');
+          roof.scale.x = (ob.r * 2.5) / rs.x;
+          roof.scale.z = (ob.r * 2.5) / rs.z;
+          roof.position.set(ob.x, groundHeight(ARENA, ob.x, ob.z) + ob.height * 0.92, ob.z);
+          roof.rotation.y = facing;
+          roof.userData.sway = 0;
+          this.staticStage.add(roof);
+        }
+        if (look === 'tower' || look === 'citadel') {
+          this.placeModel('flag-pennant', 2.2, ob.x, ob.z, 0).position.y += ob.height * 0.98;
+        }
         return;
       }
       let name: ModelName = rockPick[i % rockPick.length]!;
@@ -618,12 +676,18 @@ export class SceneManager {
         case 'pit':
           name = i % 2 === 0 ? 'cliff_blockHalf_rock' : 'stone_largeC';
           break;
-        case 'wreck':
+        case 'cove':
           name = i % 2 === 0 ? 'rocks-sand-a' : 'rocks-sand-b';
           height = ob.height * 1.3;
           break;
         case 'hamlet':
+        case 'keep':
           name = 'stone_largeC';
+          break;
+        case 'farm':
+        case 'manor':
+          name = 'stone_smallD'; // the well's rim
+          height = ob.height * 1.4;
           break;
       }
       const rock = this.placeModel(name, height, ob.x, ob.z, facing);
@@ -642,15 +706,42 @@ export class SceneManager {
         rock.position.y -= 0.4; // seat the block into the slope
       }
     });
+
+    // Gates: every pair of footprint posts gets a stone arch across it.
+    const used = new Set<number>();
+    gatePosts.forEach((a, i) => {
+      if (used.has(i)) return;
+      let best = -1;
+      let bestD = 6;
+      gatePosts.forEach((b, j) => {
+        if (j === i || used.has(j)) return;
+        const d = Math.hypot(a.x - b.x, a.z - b.z);
+        if (d < bestD) {
+          bestD = d;
+          best = j;
+        }
+      });
+      if (best < 0) return;
+      used.add(i);
+      used.add(best);
+      const b = gatePosts[best]!;
+      const mx = (a.x + b.x) / 2;
+      const mz = (a.z + b.z) / 2;
+      const along = Math.atan2(b.x - a.x, b.z - a.z);
+      const arch = this.placeModel('castle-gate', a.height * 1.05, mx, mz, along);
+      const gs = this.assets.size('castle-gate');
+      arch.scale.x = (bestD + 1.4) / gs.x;
+    });
   }
 
   /** Set dressing that makes each milestone area readable from a distance. */
   private buildLandmarks(): void {
     const coast = ARENA.coastR ?? ARENA.size / 2;
+    const rng = new Rng(0x5e7d);
     for (const lm of ARENA.landmarks) {
       switch (lm.kind) {
-        case 'wreck': {
-          // Shipwreck Cove: the beached hulk over its collision rock, a dock
+        case 'cove': {
+          // Faldir's Cove: the beached hulk over its collision rock, a dock
           // running out into the water with a pirate sloop moored at its
           // end, and the flotsam of a camp on the sand.
           this.placeModel('ship-wreck', 12, lm.x, lm.z, -0.5);
@@ -665,53 +756,159 @@ export class SceneManager {
           this.placeModel('tent_smallClosed', 2.2, lm.x - 16, lm.z - 8, 2.6);
           this.placeModel('tool-shovel', 1.1, lm.x - 13, lm.z - 3, 0.4);
           this.placeModel('patch-sand-foliage', 0.5, lm.x + 3, lm.z + 15, 0.8);
-          // The dock: the cove's shore direction is outward from the island.
           const seaward = Math.atan2(lm.x, lm.z);
           const dx = Math.sin(seaward);
           const dz = Math.cos(seaward);
           const px = Math.cos(seaward);
           const pz = -Math.sin(seaward);
-          const dockX = lm.x + px * 18;
-          const dockZ = lm.z + pz * 18;
-          // Re-anchor the dock on the actual shoreline in that direction.
-          const dockAngle = Math.atan2(dockX, dockZ);
+          const dockAngle = Math.atan2(lm.x + px * 18, lm.z + pz * 18);
           const startR = coastRadius(coast, dockAngle) - 1.5;
           const sx = Math.sin(dockAngle) * startR;
           const sz = Math.cos(dockAngle) * startR;
-          // Dock piles stand on the seabed; the deck ends up knee-high above the water.
           for (let k = 0; k < 4; k++) {
             const t = k * 3.05;
             this.placeRaised('structure-platform-dock', 1.6, sx + dx * t, sz + dz * t, seaward, -0.95);
           }
           this.placeRaised('structure-platform-dock-small', 1.6, sx + dx * 12.2, sz + dz * 12.2, seaward, -0.95);
           this.placeRaised('ship-pirate-medium', 11, sx + dx * 16 + px * 6.5, sz + dz * 16 + pz * 6.5, seaward + 1.5, -1.3);
+          this.placeRaised('ship-pirate-large', 13, sx + dx * 34 - px * 14, sz + dz * 34 - pz * 14, seaward + 1.1, -1.6);
           this.placeRaised('flag-pennant', 3, sx + dx * 12.2 + px * 1.4, sz + dz * 12.2 + pz * 1.4, seaward, 0.65);
           this.placeRaised('crate', 0.8, sx + dx * 6.1 + px * 1.2, sz + dz * 6.1 + pz * 1.2, seaward + 0.4, 0.65);
           this.placeRaised('barrel', 0.8, sx + dx * 9.2 - px * 1.2, sz + dz * 9.2 - pz * 1.2, 0, 0.65);
           break;
         }
-        case 'spire': {
-          // Skyreach Spire: a full stone tower on the island's highest point,
-          // visible from anywhere, with a lookout's camp at its foot.
-          this.placeModel('tower-complete-large', 15, lm.x, lm.z, 0.6);
-          this.placeModel('flag-pirate-high', 6, lm.x + 7, lm.z + 2, -0.4);
-          this.placeModel('crate', 0.9, lm.x - 5, lm.z + 3, 0.8);
-          this.placeModel('structure-fence', 1.2, lm.x - 6, lm.z - 4, 0.6);
-          this.placeModel('sign', 1.4, lm.x + 5, lm.z - 5, 2.2);
-          this.placeModel('campfire_stones', 0.8, lm.x - 7, lm.z + 6, 0);
+        case 'keep': {
+          // Stromgarde: a paved plaza before the citadel, statues, banners,
+          // windows in the long walls, the wreckage of a garrison.
+          this.placeModel('path_stoneCircle', 0.3, lm.x - 4, lm.z - 2, 0.3).scale.multiplyScalar(1.6);
+          this.placeModel('statue_column', 3.2, lm.x - 10, lm.z + 2, 0);
+          this.placeModel('statue_columnDamaged', 2.6, lm.x + 2, lm.z - 8, 0.8);
+          this.placeModel('statue_block', 1.2, lm.x - 6, lm.z + 16, 0.4);
+          this.placeModel('statue_head', 2.2, lm.x + 20, lm.z - 4, 2.0);
+          for (const [ox, oz] of [[-12, 25], [0, 25], [12, 25], [29, -8], [29, 10]] as const) {
+            this.placeModel('castle-window', 3.2, lm.x + ox, lm.z + oz, oz > 20 ? 0 : Math.PI / 2);
+          }
+          this.placeModel('crate', 0.9, lm.x + 8, lm.z - 18, 0.5);
+          this.placeModel('crate-bottles', 0.9, lm.x + 9.4, lm.z - 16.8, 1.2);
+          this.placeModel('barrel', 0.9, lm.x + 6.5, lm.z - 17, 0);
+          this.placeModel('cannon', 1.4, lm.x - 24, lm.z - 18, 2.6);
+          this.placeModel('campfire_bricks', 0.8, lm.x - 6, lm.z - 12, 0);
+          this.placeModel('flag-pennant', 3, lm.x - 26, lm.z + 20, 0.4);
+          this.placeModel('log_stack', 1.0, lm.x + 14, lm.z + 3, 1.1);
+          break;
+        }
+        case 'wall': {
+          // Thoradin's Wall: nothing but the wall itself and a sentry's fire.
+          this.placeModel('campfire_stones', 0.8, lm.x - 6, lm.z + 8, 0);
+          this.placeModel('crate', 0.9, lm.x - 5, lm.z + 12, 0.7);
+          break;
+        }
+        case 'fort': {
+          // Hammerfall: the Horde's yard — tents, fires, banners, woodpiles.
+          this.placeModel('campfire_logs', 1.0, lm.x + 3, lm.z - 4, 0);
+          this.placeModel('tent_smallClosed', 2.4, lm.x - 12, lm.z + 8, 1.9);
+          this.placeModel('tent_smallOpen', 2.4, lm.x + 4, lm.z + 13, -2.2);
+          this.placeModel('log_stack', 1.1, lm.x - 15, lm.z - 6, 0.4);
+          this.placeModel('log_large', 1.0, lm.x + 13, lm.z + 1, 1.6);
+          this.placeModel('crate', 0.9, lm.x - 3, lm.z - 14, 0.2);
+          this.placeModel('barrel', 0.9, lm.x - 1.6, lm.z - 14.4, 0);
+          this.placeModel('pot_large', 0.8, lm.x + 7, lm.z - 12, 0);
+          for (const [ox, oz] of [[-18, 18], [18, 18], [-18, -18], [18, -18]] as const) {
+            this.placeModel('flag-pennant', 3.2, lm.x + ox, lm.z + oz, 0.6);
+          }
+          this.placeModel('structure-fence', 2.0, lm.x + 16, lm.z - 14, 0.8);
+          this.placeModel('tool-shovel', 1.1, lm.x - 8, lm.z - 3, 0.4);
+          break;
+        }
+        case 'farm': {
+          // A working farm: wheat and corn in fenced fields, a scarecrow,
+          // pumpkins by the door, hay by the barn.
+          const s = lm.name.startsWith("Go") ? -1 : 1;
+          const fx = lm.x + 3 * s;
+          const fz = lm.z + 9;
+          for (let i = 0; i < 5; i++) {
+            for (let j = 0; j < 3; j++) {
+              this.placeModel('crops_wheatStageB', 1.1, fx + (i - 2) * 2.2 * s, fz + j * 2.2, 0);
+            }
+          }
+          for (let i = 0; i < 7; i++) this.placeModel('fence_simple', 1.0, fx + (i - 3) * 2.2 * s, fz - 1.8, 0);
+          for (let j = 0; j < 4; j++) this.placeModel('fence_simple', 1.0, fx + 6.6 * s, fz - 1.0 + j * 2.2, Math.PI / 2);
+          this.placeModel('sign', 1.8, fx - 7 * s, fz + 3, 0.2);
+          for (let k = 0; k < 4; k++) this.placeModel('crops_cornStageC', 1.6, lm.x + (14 + k * 1.6) * s, lm.z + 2 + (k % 2) * 1.5, k * 0.7);
+          this.placeModel('crop_pumpkin', 0.5, lm.x - 5 * s, lm.z + 2, 0.9);
+          this.placeModel('crop_pumpkin', 0.45, lm.x - 6.5 * s, lm.z + 1, 2.1);
+          this.placeModel('log_stack', 1.0, lm.x + 15 * s, lm.z - 4, 0.3);
+          this.placeModel('pot_large', 0.8, lm.x - 13 * s, lm.z + 3, 0);
+          this.placeModel('campfire_logs', 0.8, lm.x - 4 * s, lm.z - 8, 0);
+          this.placeModel('fence_planks', 1.0, lm.x + 6 * s, lm.z - 14, 0);
+          this.placeModel('fence_planks', 1.0, lm.x + 8.2 * s, lm.z - 14, 0);
+          break;
+        }
+        case 'manor': {
+          // Northfold Manor: hedged gardens and a colonnaded gate.
+          for (let i = 0; i < 8; i++) this.placeModel('plant_bush', 1.1, lm.x - 6 + i * 2.4, lm.z - 10, i * 0.9);
+          for (let j = 0; j < 4; j++) this.placeModel('plant_bush', 1.1, lm.x + 11.5, lm.z - 8 + j * 2.4, j * 1.1);
+          for (const [ox, oz, kind] of [[2, -6, 'flower_redA'], [5, -7, 'flower_purpleA'], [-2, -8, 'flower_yellowA'], [8, -5, 'flower_redA']] as const) {
+            this.placeModel(kind, 0.6, lm.x + ox, lm.z + oz, 0.3);
+          }
+          this.placeModel('statue_column', 2.8, lm.x + 15, lm.z - 12, 0);
+          this.placeModel('statue_column', 2.8, lm.x + 11, lm.z - 14.5, 0);
+          this.placeModel('sign', 1.6, lm.x - 15, lm.z - 4, 1.4);
+          this.placeModel('pot_large', 0.8, lm.x + 5, lm.z - 3, 0);
+          this.placeModel('pot_small', 0.5, lm.x + 6.2, lm.z - 3.4, 0);
+          this.placeModel('crate', 0.9, lm.x - 13, lm.z + 4, 0.5);
+          this.placeModel('flag-pennant', 3, lm.x + 9, lm.z + 7, 0).position.y += 9.2;
+          break;
+        }
+        case 'village': {
+          // Witherbark Village: the bonfire the trolls dance around, pots
+          // and bones, a fish rack.
+          this.placeModel('campfire_stones', 1.6, lm.x, lm.z, 0);
+          this.placeModel('pot_large', 0.9, lm.x + 4, lm.z + 3, 0);
+          this.placeModel('pot_small', 0.5, lm.x + 5.2, lm.z + 2.4, 0);
+          this.placeModel('pot_large', 0.9, lm.x - 5, lm.z - 3, 0.8);
+          this.placeModel('hole', 0.4, lm.x - 6, lm.z + 6, 0);
+          this.placeModel('crate-bottles', 0.9, lm.x + 3, lm.z - 6, 1.1);
+          this.placeModel('log_large', 1.0, lm.x - 2, lm.z + 8, 0.4);
+          this.placeModel('structure-fence-sides', 1.8, lm.x + 9, lm.z - 4, 0.6);
+          break;
+        }
+        case 'bridge': {
+          // Thandol Span: the deck marches out over the water on its pillars
+          // and breaks off; a gate arch guards the landward end.
+          const seaward = Math.atan2(lm.x, lm.z);
+          const dx = Math.sin(seaward);
+          const dz = Math.cos(seaward);
+          const groundY = groundHeight(ARENA, lm.x - dx * 8, lm.z - dz * 8);
+          const deckY = groundY + 8.4;
+          const pieces: [number, ModelName, number][] = [[-9, 'bridge_side_stone', 0], [-2, 'bridge_stone', 0], [5, 'bridge_stone', 0], [12, 'bridge_stone', 0], [19, 'bridge_side_stone', 0.28]];
+          for (const [t, name, tilt] of pieces) {
+            const piece = this.assets.modelAtHeight(name, 3.2);
+            const size = this.assets.size(name);
+            piece.scale.x = 11 / size.x;
+            piece.scale.z = 7.2 / size.z;
+            piece.position.set(lm.x + dx * t, deckY - (t > 15 ? 1.4 : 0), lm.z + dz * t);
+            piece.rotation.y = seaward;
+            piece.rotation.x = tilt;
+            piece.userData.sway = 0;
+            this.staticStage.add(piece);
+          }
+          this.placeModel('castle-gate', 9, lm.x - dx * 8, lm.z - dz * 8, seaward).scale.x *= 1.6;
+          this.placeModel('flag-pennant', 3, lm.x - dx * 14 + dz * 8, lm.z - dz * 14 - dx * 8, 0);
+          this.placeModel('campfire_stones', 0.8, lm.x - dx * 18, lm.z - dz * 18, 0);
           break;
         }
         case 'stonering': {
-          // The Stone Ring: obelisks (via the obstacles) around a paved
-          // circle with a broken ring-altar and a fire at its heart.
+          // A Circle of Binding: obelisks (via the obstacles) around a paved
+          // circle with an elemental altar burning at its heart.
           this.placeModel('path_stoneCircle', 0.3, lm.x, lm.z, 0.2);
-          this.placeModel('campfire_stones', 0.9, lm.x, lm.z + 2.5, 0);
-          this.placeModel('statue_ring', 3.2, lm.x - 6, lm.z - 4, 0.9);
-          this.placeModel('statue_block', 1.0, lm.x + 7, lm.z + 1, 0.4);
+          this.placeModel('campfire_stones', 1.1, lm.x, lm.z + 2.5, 0);
+          this.placeModel('statue_ring', 3.0, lm.x - 6, lm.z - 4, 0.9);
+          this.placeModel('statue_block', 1.0, lm.x + 6, lm.z + 1, 0.4);
           break;
         }
         case 'grove': {
-          // Elder Grove: a hermit's camp under the great tree.
+          // Galen's Fall: a hermit's camp under the great tree.
           this.placeModel('log_large', 1.2, lm.x + 7, lm.z + 6, 0.9);
           this.placeModel('stump_oldTall', 1.3, lm.x - 8, lm.z + 3, 0);
           this.placeModel('mushroom_tanTall', 0.9, lm.x + 4, lm.z - 7, 0.4);
@@ -722,7 +919,7 @@ export class SceneManager {
           break;
         }
         case 'pit': {
-          // The Sunken Pit: an abandoned dig at the lip.
+          // Bouldergor: the ogres' abandoned dig at the lip.
           this.placeModel('log_stack', 1.0, lm.x + lm.r + 3, lm.z + 4, 0.4);
           this.placeModel('campfire_logs', 0.8, lm.x - lm.r - 4, lm.z - 2, 0);
           this.placeModel('crate', 0.9, lm.x + lm.r + 1, lm.z - 3, 1.1);
@@ -733,46 +930,34 @@ export class SceneManager {
           break;
         }
         case 'ravine': {
-          // The Undercroft: a camp abandoned on the trench floor.
+          // Drywhisker Gorge: the kobolds' camp on the trench floor.
           this.placeModel('campfire_stones', 0.9, lm.x + 2, lm.z - 3, 0);
           this.placeModel('stump_old', 0.8, lm.x - 4, lm.z + 2, 1.2);
           this.placeModel('barrel', 0.9, lm.x + 4, lm.z + 1, 0.5);
           this.placeModel('crate-bottles', 0.9, lm.x - 2, lm.z - 5, 0.3);
           this.placeModel('tent_smallClosed', 2.2, lm.x + 6, lm.z + 5, -0.8);
           this.placeModel('sign', 1.4, lm.x - 6, lm.z + 6, 2.0);
+          this.placeModel('tool-shovel', 1.1, lm.x + 1, lm.z + 6, 0.9);
           break;
         }
         case 'hamlet': {
-          // Fallen Hamlet: what's left of village life among the ruins — a
-          // broken gate, a toppled column, and the wheat field it once fed on.
+          // Refuge Pointe: the Alliance camp among the ruins — tents, a
+          // fire, banners, the quartermaster's crates.
           this.placeModel('campfire_logs', 0.9, lm.x + 2, lm.z + 2, 0);
           this.placeModel('barrel', 1.0, lm.x - 6, lm.z - 2, 0.7);
           this.placeModel('log_stack', 1.0, lm.x + 6, lm.z - 6, 2.1);
           this.placeModel('crate', 0.9, lm.x - 3, lm.z + 7, 0.2);
-          this.placeModel('castle-gate', 4.2, lm.x + 20, lm.z - 4, 1.2);
-          this.placeModel('castle-window', 3.2, lm.x - 21, lm.z + 3, -0.4);
+          this.placeModel('tent_detailedOpen', 2.4, lm.x - 4, lm.z + 12, 0.4);
+          this.placeModel('tent_smallClosed', 2.2, lm.x + 8, lm.z + 6, -0.6);
+          this.placeModel('flag-pennant', 3, lm.x + 4, lm.z + 11, 0.3);
           this.placeModel('statue_columnDamaged', 2.6, lm.x - 1, lm.z - 3, 0.5);
           this.placeModel('pot_large', 0.8, lm.x + 8, lm.z + 9, 0);
-          this.placeModel('sign', 1.4, lm.x + 4, lm.z + 11, 0.3);
-          this.placeModel('crop_pumpkin', 0.5, lm.x - 8, lm.z + 9, 0.9);
-          this.placeModel('crop_pumpkin', 0.45, lm.x - 9.5, lm.z + 8, 2.1);
-          // Wheat: a 5×3 field east of the plaza, fenced along two sides.
-          const fx = lm.x + 24;
-          const fz = lm.z + 10;
-          for (let i = 0; i < 5; i++) {
-            for (let j = 0; j < 3; j++) {
-              this.placeModel('crops_wheatStageB', 1.1, fx + i * 2.2, fz + j * 2.2, 0);
-            }
-          }
-          for (let i = 0; i < 6; i++) this.placeModel('fence_simple', 1.0, fx - 1.6 + i * 2.2, fz - 1.8, 0);
-          for (let j = 0; j < 4; j++) this.placeModel('fence_simple', 1.0, fx - 2.4, fz - 1.0 + j * 2.2, Math.PI / 2);
-          this.placeModel('crops_cornStageC', 1.6, fx - 4, fz + 6, 0.3);
-          this.placeModel('crops_cornStageC', 1.5, fx - 2.4, fz + 7, 1.1);
+          this.placeModel('sign', 1.4, lm.x + 4, lm.z - 8, 0.3);
           break;
         }
         case 'barrow': {
-          // The Barrow: a colonnade (via the obstacles) around a mound where
-          // a giant's stone head lies half-buried.
+          // Boulderfist Hall: a colonnade (via the obstacles) around a mound
+          // where a giant's stone head lies half-buried.
           this.placeModel('stump_old', 0.8, lm.x + 12, lm.z + 4, 0.5);
           this.placeModel('mushroom_red', 0.5, lm.x - 6, lm.z + 6, 0);
           const head = this.placeModel('statue_head', 3.4, lm.x + 3, lm.z - 3, 2.4);
@@ -780,6 +965,7 @@ export class SceneManager {
           head.position.y -= 0.6;
           this.placeModel('statue_block', 1.2, lm.x - 4, lm.z - 5, 0.7);
           this.placeModel('campfire_stones', 0.8, lm.x + 5, lm.z + 5, 0);
+          this.placeModel('pot_large', 1.0, lm.x - 8, lm.z + 1, 0);
           break;
         }
         case 'passage': {
@@ -793,6 +979,7 @@ export class SceneManager {
         }
       }
     }
+    void rng;
   }
 
   /** Stage a model at an absolute height (docks on the seabed, moored ships). */

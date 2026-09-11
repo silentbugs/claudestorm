@@ -65,13 +65,13 @@ export interface BiomeSample {
   b: number;
 }
 
-const LOW = new THREE.Color(0x76b356);
-const HIGH = new THREE.Color(0xb9b664);
+const LOW = new THREE.Color(0x84b050);
+const HIGH = new THREE.Color(0xc9b45c);
 const ROCK = new THREE.Color(0x8d8a80);
 const MARSH = new THREE.Color(0x587c4c);
 const MUD = new THREE.Color(0x8c7a55);
 const SAND = new THREE.Color(0xe0c684);
-const DRY = new THREE.Color(0xb3a95e);
+const DRY = new THREE.Color(0xc0a95a);
 const LUSH = new THREE.Color(0x4b9a4e);
 const tmp = new THREE.Color();
 
@@ -83,7 +83,7 @@ export function sampleBiome(x: number, z: number, h: number, slope: number, out:
   // one repeating green. Non-tileable is fine — this is world space.
   const patch = fbm(x * 0.012, z * 0.012, 1 << 20, 3, 5) * 0.65 + valueNoise(x * 0.05, z * 0.05, 1 << 20, 7) * 0.35;
   let dry = 0;
-  if (patch > 0.56) dry = Math.min(1, (patch - 0.56) * 2.4);
+  if (patch > 0.52) dry = Math.min(1, (patch - 0.52) * 2.2);
   else if (patch < 0.44) tmp.lerp(LUSH, Math.min(1, (0.44 - patch) * 2.2));
   tmp.lerp(DRY, dry * 0.5);
   tmp.multiplyScalar(0.94 + valueNoise(x * 0.14 + 41, z * 0.14 - 17, 1 << 20, 9) * 0.12);

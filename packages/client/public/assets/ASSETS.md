@@ -2,7 +2,7 @@
 
 - `models/tree_*`, `rock_*`, `stone_*`, `cliff_*`, `statue_*`, `stump_*`, `log*`, `campfire_*`,
   `grass*`, `plant_*`, `flower_*`, `mushroom_*`, `tent_*`, `canoe`, `sign`, `pot_large`,
-  `fence_*`, `path_stoneCircle`, `hanging_moss`, `lily_*`, `crops_*`, `crop_pumpkin` —
+  `fence_*`, `path_stoneCircle`, `hanging_moss`, `lily_*`, `crops_*`, `crop_pumpkin`, `bridge_*` —
   [Kenney Nature Kit](https://kenney.nl/assets/nature-kit) (CC0)
 - `models/chest`, `crate*`, `barrel`, `bottle`, `cannon*`, `structure*`, `platform-planks`,
   `tower-*`, `castle-*`, `ship-*`, `boat-row-small`, `mast`, `flag-*`, `palm-detailed-*`,
